@@ -9,7 +9,7 @@
 [![auto-editor](https://img.shields.io/badge/Engine-auto--editor-FF6B6B?style=for-the-badge)](https://github.com/WyattBlue/auto-editor)
 [![License](https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Windows-0078D4?style=for-the-badge&logo=windows&logoColor=white)](https://www.microsoft.com/windows)
-[![Version](https://img.shields.io/badge/Version-v1.3.1-success?style=for-the-badge)](https://github.com/)
+[![Version](https://img.shields.io/badge/Version-v1.0.0-success?style=for-the-badge)](https://github.com/R3NeR3N/SnipSync/releases/latest)
 
 [English](README.md) | [日本語](README_JA.md) | [简体中文](README_ZH.md) | [한국어](README_KO.md)
 
@@ -64,7 +64,7 @@
 
 > 无需 Python 或任何其他软件。
 
-1. 从 [Releases](https://github.com/) 页面下载 `SnipSync.exe`。
+1. 从 [Releases](https://github.com/R3NeR3N/SnipSync/releases/latest) 页面下载 `SnipSync.exe`。
 2. 将其放置在您电脑上的任何位置（例如，桌面）。
 3. 双击 `SnipSync.exe` 启动。
 
@@ -89,7 +89,7 @@
 #### 步骤 1 — 克隆仓库
 
 ```bash
-git clone https://github.com/your-username/SnipSync.git
+git clone https://github.com/R3NeR3N/SnipSync.git
 cd SnipSync
 ```
 
