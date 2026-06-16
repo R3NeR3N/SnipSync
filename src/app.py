@@ -699,7 +699,7 @@ class SnipSyncApp(_Base):
 def main():
     app = SnipSyncApp()
     if not WHISPER_AVAILABLE:
-        app._log("⚠ faster-whisper がインストールされていないため、字幕機能は利用できません。", "warn")
+        app._log(app.t("log_whisper_unavailable"), "warn")
     app._log(app.t("log_welcome"), "muted")
     app.mainloop()
 
