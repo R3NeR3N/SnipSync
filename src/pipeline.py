@@ -174,41 +174,37 @@ def run_pipeline(
                 on_log(tr("log_srt_analyze", params.model_size), "info")
                 try:
                     device, compute_type = resolve_device(params.use_gpu)
-                    if transcribe is not None:
-                        try:
-                            if device == "cuda":
-                                try:
-                                    segments, info = transcribe(temp_wav, params.model_size)
-                                    on_log(tr("log_device", "cuda"), "muted")
-                                except Exception as e:
-                                    on_log(tr("log_gpu_fallback"), "warn")
-                                    device = "cpu"
-                            if device == "cpu":
-                                segments, info = transcribe(temp_wav, params.model_size)
-                                on_log(tr("log_device", "cpu"), "muted")
-                        except Exception as e:
-                            raise e
-                    else:
-                        from faster_whisper import WhisperModel
-                        try:
-                            if device == "cuda":
-                                try:
-                                    model = WhisperModel(params.model_size, device="cuda", compute_type="int8_float16")
-                                    segments, info = model.transcribe(str(temp_wav), beam_size=5, language=None)
-                                    on_log(tr("log_device", "cuda"), "muted")
-                                except Exception as e:
-                                    on_log(tr("log_gpu_fallback"), "warn")
-                                    device = "cpu"
-                            if device == "cpu":
-                                model = WhisperModel(params.model_size, device="cpu", compute_type="int8")
-                                segments, info = model.transcribe(str(temp_wav), beam_size=5, language=None)
-                                on_log(tr("log_device", "cpu"), "muted")
-                        except Exception as e:
-                            raise e
-                    
+
+                    def _decode(dev, ctype):
+                        # transcribe を呼び、ジェネレータをリスト化して“この場で”デコードを完走させる。
+                        # → CUDA 実行時エラーをこの try 内で確実に捕捉できる。
+                        if transcribe is not None:
+                            seg_iter, inf = transcribe(temp_wav, params.model_size)
+                        else:
+                            from faster_whisper import WhisperModel
+                            model = WhisperModel(params.model_size, device=dev, compute_type=ctype)
+                            seg_iter, inf = model.transcribe(str(temp_wav), beam_size=5, language=None)
+                        return list(seg_iter), inf   # ← list() でデコード完走（例外はここで出る）
+
+                    try:
+                        if device == "cuda":
+                            segments, info = _decode("cuda", compute_type)
+                            on_log(tr("log_device", "cuda"), "muted")
+                        else:
+                            segments, info = _decode("cpu", compute_type)
+                            on_log(tr("log_device", "cpu"), "muted")
+                    except Exception:
+                        if device == "cuda":
+                            on_log(tr("log_gpu_fallback"), "warn")
+                            device, compute_type = "cpu", "int8"   # ← device/compute_type を同時に CPU へ
+                            segments, info = _decode("cpu", compute_type)
+                            on_log(tr("log_device", "cpu"), "muted")
+                        else:
+                            raise   # CPU でも失敗なら外側 except へ（log_unexpected）
+
                     on_log(tr("log_lang_detected", info.language, info.language_probability), "muted")
-                    
-                    # Generate SRT
+
+                    # SRT 書き込み（segments は確定済みリスト）
                     with open(output_srt, "w", encoding="utf-8") as srt_file:
                         for i, segment in enumerate(segments, start=1):
                             if should_stop():
@@ -218,9 +214,8 @@ def run_pipeline(
                             end = format_timestamp(segment.end)
                             text = segment.text.strip()
                             srt_file.write(f"{i}\n{start} --> {end}\n{text}\n\n")
-                            # Log partial progress
                             on_log(f"  [{start} -> {end}] {text}", "muted")
-                    
+
                     if should_stop() or result.stopped:
                         result.stopped = True
                         on_log(tr("log_stopped"), "warn")
@@ -228,7 +223,7 @@ def run_pipeline(
                         on_log(tr("log_srt_done"), "success")
                         on_log(f"   {output_srt.name}", "success")
                         result.srt_path = output_srt
-                except Exception as e:
+                except Exception:
                     on_log(tr("log_unexpected", traceback.format_exc()), "error")
             
             # 2c. Cleanup Temp WAV
