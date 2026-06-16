@@ -1,0 +1,11 @@
+"""Color palette. Mirrors DESIGN.md §2. Change both together."""
+
+ACCENT       = "#6C63FF"
+ACCENT_HOVER = "#5a52e0"
+SUCCESS      = "#2ECC71"
+ERROR_COL    = "#E74C3C"
+WARN_COL     = "#F39C12"
+BG_DARK      = "#1a1a2e"
+BG_CARD      = "#16213e"
+BG_CONSOLE   = "#0d1117"
+TEXT_MUTED   = "#8892a4"
