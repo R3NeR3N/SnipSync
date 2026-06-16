@@ -19,6 +19,8 @@ try:
 except ImportError:
     WHISPER_AVAILABLE = False
 
+APP_VERSION = "1.0.0"
+
 # ── PyInstaller resource path ──────────────────────────────────────────────────
 def resource_path(rel):
     try:
@@ -40,7 +42,7 @@ def get_auto_editor_path():
 # ── i18n Dictionaries ──────────────────────────────────────────────────────────
 I18N = {
     "ja": {
-        "title":          "SnipSync  v1.3.1",
+        "title":          f"SnipSync  v{APP_VERSION}",
         "subtitle":       "無音自動カット ＆ 字幕生成",
         "lang_label":     "言語",
         "drop_hint":      "🎬  ここに動画ファイルをドラッグ＆ドロップ\n（または クリックして選択）",
@@ -95,7 +97,7 @@ I18N = {
         }
     },
     "en": {
-        "title":          "SnipSync  v1.3.1",
+        "title":          f"SnipSync  v{APP_VERSION}",
         "subtitle":       "Silent Auto-Cutter & Subtitles",
         "lang_label":     "Language",
         "drop_hint":      "🎬  Drag & Drop a video file here\n(or click to browse)",
@@ -170,10 +172,11 @@ TEXT_MUTED   = "#8892a4"
 
 # ── SRT Formatting Helper ──────────────────────────────────────────────────────
 def format_timestamp(seconds: float) -> str:
-    hrs = int(seconds // 3600)
-    mins = int((seconds % 3600) // 60)
-    secs = int(seconds % 60)
-    ms = int((seconds - int(seconds)) * 1000)
+    total_ms = int(round(seconds * 1000))
+    hrs = total_ms // 3600000
+    mins = (total_ms % 3600000) // 60000
+    secs = (total_ms % 60000) // 1000
+    ms = total_ms % 1000
     return f"{hrs:02d}:{mins:02d}:{secs:02d},{ms:03d}"
 
 # ── Base class ─────────────────────────────────────────────────────────────────
@@ -681,7 +684,7 @@ class SnipSyncApp(_Base):
                         model = WhisperModel(model_size, device="cpu", compute_type="int8")
                         
                         # Transcribe
-                        segments, info = model.transcribe(str(temp_wav), beam_size=5, language="ja")
+                        segments, info = model.transcribe(str(temp_wav), beam_size=5, language=None)
                         
                         self._log(f"  音声検出: {info.language} (確率: {info.language_probability:.2f})", "muted")
                         
