@@ -447,9 +447,9 @@ class SnipSyncApp(_Base):
         if "srt" in s:
             self.srt_var.set(s["srt"])
         if "model" in s:
-            self.model_key_var.set(s["model"])
             opts_dict = self.t("model_options")
             if s["model"] in opts_dict:
+                self.model_key_var.set(s["model"])
                 self.model_display_var.set(opts_dict[s["model"]])
         if "output_dir" in s:
             self.output_dir = s["output_dir"]
