@@ -2,10 +2,11 @@
 
 > 「なぜそうしたか」を時系列で残す。実装を変えたら追記する。新しいものを上に。
 > 失敗した手順そのものは PITFALLS.md、ここには**採用した決定とその理由**を書く。
+> 見出しには**日付＋時刻**（`YYYY-MM-DD HH:MM`）を記載する。
 
 書式:
 ```
-## YYYY-MM-DD — タイトル
+## YYYY-MM-DD HH:MM — タイトル
 - 決定:
 - 理由:
 - 影響/トレードオフ:
@@ -14,7 +15,7 @@
 
 ---
 
-## 2026-06-17 — P2 残2件（GPU対応 / 出力プリセット）の設計（頭脳: Opus 4.8）
+## 2026-06-17 04:26 — P2 残2件（GPU対応 / 出力プリセット）の設計（頭脳: Opus 4.8）
 - 決定: 即時停止(課題C)の実装完了(commit 0dbe9e9)を受け、P2 残りの2件を設計。設計書を2本作成（実装は🔧Gemini へハンドオフ）: `docs/handoff/P2-gpu-support.md`, `docs/handoff/P2-output-presets.md`。
 - GPU判断: CUDA/cuDNN は **EXE 非同梱**（CONTEXT §7 / 配布肥大回避）。**オプトイン（既定OFF）+ `ctranslate2.get_cuda_device_count()` 自動検出 + GPU失敗時CPUフォールバック**。compute_type は GPU時 `int8_float16` / CPU時 `int8`。`PipelineParams.use_gpu`（末尾・既定False＝後方互換）で意図のみ渡し、`subtitles.resolve_device()` で解決（UI非依存維持）。新規依存なし（torch等足さない）。
 - プリセット設計: 新規 `src/presets.py`（Tk非依存・JSON I/O のみ）に store 操作を閉じ、UI が Tk変数⇄dict 変換を担当。永続先 `%APPDATA%/SnipSync/presets.json`（utf-8/ensure_ascii=False）。名前付きプリセット 保存/読込/削除 + 前回設定の自動復元(last_used, WM_DELETE_WINDOW)。壊れ/不在JSONでも落ちず既定構造。
