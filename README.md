@@ -157,6 +157,7 @@ The standalone executable will be output to `dist\SnipSync.exe`.
 - **RAM:** 4 GB minimum; 8 GB+ recommended for `medium` model
 - **Disk:** ~2–4 GB free space for Whisper model cache (first run only)
 - **Internet:** Required only on first run to download the selected Whisper model
+- **GPU:** (Optional) NVIDIA GPU with CUDA 12 and cuDNN 9 installed on your system PATH is required to use GPU acceleration. GPU binaries are NOT bundled in the EXE.
 
 ### Development (Source users)
 

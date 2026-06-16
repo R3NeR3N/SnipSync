@@ -5,7 +5,8 @@ import subprocess
 import sys
 
 from autoeditor import build_cut_cmd, build_extract_wav_cmd
-from subtitles import format_timestamp
+from subtitles import format_timestamp, resolve_device
+
 
 CREATE_NEW_PROCESS_GROUP = 0x00000200 if sys.platform == "win32" else 0
 
@@ -80,6 +81,7 @@ class PipelineParams:
     export_key: str          # "resolve" | "premiere" | "final-cut-pro"
     do_srt: bool
     model_size: str          # "tiny" | "base" | "small" | "medium"
+    use_gpu: bool = False
 
 
 @dataclass
@@ -171,12 +173,38 @@ def run_pipeline(
             if temp_success and not result.stopped:
                 on_log(tr("log_srt_analyze", params.model_size), "info")
                 try:
+                    device, compute_type = resolve_device(params.use_gpu)
                     if transcribe is not None:
-                        segments, info = transcribe(temp_wav, params.model_size)
+                        try:
+                            if device == "cuda":
+                                try:
+                                    segments, info = transcribe(temp_wav, params.model_size)
+                                    on_log(tr("log_device", "cuda"), "muted")
+                                except Exception as e:
+                                    on_log(tr("log_gpu_fallback"), "warn")
+                                    device = "cpu"
+                            if device == "cpu":
+                                segments, info = transcribe(temp_wav, params.model_size)
+                                on_log(tr("log_device", "cpu"), "muted")
+                        except Exception as e:
+                            raise e
                     else:
                         from faster_whisper import WhisperModel
-                        model = WhisperModel(params.model_size, device="cpu", compute_type="int8")
-                        segments, info = model.transcribe(str(temp_wav), beam_size=5, language=None)
+                        try:
+                            if device == "cuda":
+                                try:
+                                    model = WhisperModel(params.model_size, device="cuda", compute_type="int8_float16")
+                                    segments, info = model.transcribe(str(temp_wav), beam_size=5, language=None)
+                                    on_log(tr("log_device", "cuda"), "muted")
+                                except Exception as e:
+                                    on_log(tr("log_gpu_fallback"), "warn")
+                                    device = "cpu"
+                            if device == "cpu":
+                                model = WhisperModel(params.model_size, device="cpu", compute_type="int8")
+                                segments, info = model.transcribe(str(temp_wav), beam_size=5, language=None)
+                                on_log(tr("log_device", "cpu"), "muted")
+                        except Exception as e:
+                            raise e
                     
                     on_log(tr("log_lang_detected", info.language, info.language_probability), "muted")
                     
@@ -208,7 +236,7 @@ def run_pipeline(
                 if temp_wav.exists():
                     temp_wav.unlink()
             except Exception as e:
-                on_log(f"Temp file cleanup failed: {e}", "warn")
+                on_log(tr("log_cleanup_failed", str(e)), "warn")
                 
     except Exception as e:
         # Catch any unexpected top-level worker thread crashes

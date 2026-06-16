@@ -15,6 +15,18 @@
 
 ---
 
+## 2026-06-17 04:32 — P2 GPU対応の実装完了（作業: Gemini 3.5）
+- 決定: 設計書 `docs/handoff/P2-gpu-support.md` に基づき、オプトイン方式の GPU (CUDA) サポートを実装。
+- 理由: CUDAが利用可能な環境で ASR 字幕生成の処理速度を向上させるため。
+- 実装詳細:
+  1. `src/subtitles.py` に `cuda_available()` と `resolve_device()` を実装。
+  2. `src/pipeline.py` にて `PipelineParams` に `use_gpu` を追加し、`resolve_device` を経由してモデルの初期化を行う。GPU での初期化・処理に失敗した場合は CPU での 1 回リトライ（フォールバック）を行い、その旨を警告ログとして可視化。
+  3. `src/app.py` にて設定 UI 内に GPU チェックボックスを新設（既定 OFF、CUDA 不在または字幕機能 OFF 時は disabled）。
+  4. `src/i18n.py` に `gpu_label` / `log_device` / `log_gpu_unavailable` / `log_gpu_fallback` キーを日英辞書に追加。また、`pipeline.py:211` の cleanup 警告を i18n 経由 (`log_cleanup_failed`) に修正。
+  5. 各 `README*.md`（4言語）の動作要件に GPU 要件を追記。
+- 検証: `tests/test_pipeline.py` に `cuda_available`、`resolve_device`、GPU フォールバックの単体・統合テストを追加し、既存テストを含む全 19 テストがグリーンであることを検証。
+- 関連: `src/subtitles.py`, `src/pipeline.py`, `src/app.py`, `src/i18n.py`, `tests/test_pipeline.py`, `README.md`, `README_JA.md`, `README_KO.md`, `README_ZH.md`, `ROADMAP.md`
+
 ## 2026-06-17 04:26 — P2 残2件（GPU対応 / 出力プリセット）の設計（頭脳: Opus 4.8）
 - 決定: 即時停止(課題C)の実装完了(commit 0dbe9e9)を受け、P2 残りの2件を設計。設計書を2本作成（実装は🔧Gemini へハンドオフ）: `docs/handoff/P2-gpu-support.md`, `docs/handoff/P2-output-presets.md`。
 - GPU判断: CUDA/cuDNN は **EXE 非同梱**（CONTEXT §7 / 配布肥大回避）。**オプトイン（既定OFF）+ `ctranslate2.get_cuda_device_count()` 自動検出 + GPU失敗時CPUフォールバック**。compute_type は GPU時 `int8_float16` / CPU時 `int8`。`PipelineParams.use_gpu`（末尾・既定False＝後方互換）で意図のみ渡し、`subtitles.resolve_device()` で解決（UI非依存維持）。新規依存なし（torch等足さない）。

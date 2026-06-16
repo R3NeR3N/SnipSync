@@ -7,6 +7,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from pipeline import run_pipeline, PipelineParams, PipelineResult, _kill_tree
+from subtitles import cuda_available, resolve_device
 
 
 class DummySegment:
@@ -576,3 +577,120 @@ def test_kill_tree_timeout(monkeypatch):
     assert proc.terminated is True
     assert proc.killed is True
     assert proc.wait_called is True
+
+
+def test_cuda_available(monkeypatch):
+    import sys
+    
+    # 1. Success case
+    class MockCtranslate2:
+        @staticmethod
+        def get_cuda_device_count():
+            return 1
+            
+    monkeypatch.setitem(sys.modules, "ctranslate2", MockCtranslate2)
+    assert cuda_available() is True
+
+    # 2. No device case
+    class MockCtranslate2Zero:
+        @staticmethod
+        def get_cuda_device_count():
+            return 0
+            
+    monkeypatch.setitem(sys.modules, "ctranslate2", MockCtranslate2Zero)
+    assert cuda_available() is False
+
+    # 3. ImportError case
+    monkeypatch.setitem(sys.modules, "ctranslate2", None)
+    assert cuda_available() is False
+
+    # 4. Exception case
+    class MockCtranslate2Exception:
+        @staticmethod
+        def get_cuda_device_count():
+            raise RuntimeError("CUDA driver error")
+            
+    monkeypatch.setitem(sys.modules, "ctranslate2", MockCtranslate2Exception)
+    assert cuda_available() is False
+
+
+def test_resolve_device(monkeypatch):
+    # Mock cuda_available to return True
+    monkeypatch.setattr("subtitles.cuda_available", lambda: True)
+    assert resolve_device(use_gpu=True) == ("cuda", "int8_float16")
+    assert resolve_device(use_gpu=False) == ("cpu", "int8")
+
+    # Mock cuda_available to return False
+    monkeypatch.setattr("subtitles.cuda_available", lambda: False)
+    assert resolve_device(use_gpu=True) == ("cpu", "int8")
+    assert resolve_device(use_gpu=False) == ("cpu", "int8")
+
+
+def test_pipeline_gpu_fallback(temp_dirs, monkeypatch):
+    inp, out_dir = temp_dirs
+    
+    def mock_write(cmd):
+        output_path = None
+        if "--output" in cmd:
+            idx = cmd.index("--output")
+            output_path = Path(cmd[idx + 1])
+        if output_path:
+            output_path.write_bytes(b"dummy")
+
+    monkeypatch.setattr(subprocess, "Popen", make_mock_popen(
+        stdout_lines=["progress line"], write_output=mock_write
+    ))
+    
+    # Mock cuda_available to return True
+    monkeypatch.setattr("subtitles.cuda_available", lambda: True)
+    
+    segments = [
+        DummySegment(0.5, 2.3, "Fallback transcription test"),
+    ]
+    
+    class DummyInfo:
+        language = "en"
+        language_probability = 0.99
+        
+    call_history = []
+    
+    def mock_transcribe_with_fallback(wav_path, model_size):
+        # We simulate a fallback scenario: the first call (GPU) fails, the second (CPU retry) succeeds.
+        call_history.append("called")
+        if len(call_history) == 1:
+            raise RuntimeError("GPU Out of Memory or CUDA driver error")
+        return segments, DummyInfo()
+        
+    params = PipelineParams(
+        margin=0.2,
+        threshold=4.0,
+        export_key="premiere",
+        do_srt=True,
+        model_size="small",
+        use_gpu=True  # Opt-in GPU
+    )
+    
+    logs = []
+    def on_log(msg, level=""):
+        logs.append((msg, level))
+        
+    res = run_pipeline(
+        ae_path="dummy-ae",
+        inp=inp,
+        out_dir=out_dir,
+        params=params,
+        on_log=on_log,
+        should_stop=lambda: False,
+        tr=stub_tr,
+        transcribe=mock_transcribe_with_fallback
+    )
+    
+    assert res.ok is True
+    assert res.stopped is False
+    assert res.srt_path == out_dir / "input.srt"
+    assert len(call_history) == 2  # First call on GPU failed, second call on CPU succeeded
+    
+    # Verify warning and device logging
+    assert ("log_gpu_fallback", "warn") in logs
+    assert ("log_device:cpu", "muted") in logs
+

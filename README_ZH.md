@@ -157,6 +157,7 @@ pyinstaller build/app.spec
 - **内存 (RAM):** 最低 4 GB；如果使用 `medium` 模型，推荐 8 GB 以上
 - **磁盘空间:** 首次运行需预留 2–4 GB 空间用于缓存 Whisper 模型
 - **网络连接:** 仅首次运行下载 Whisper 模型时需要
+- **GPU:** (可选) 若要使用 GPU 加速生成字幕，您需要在系统 `PATH` 中额外安装 NVIDIA 驱动、CUDA 12 Toolkit 和 cuDNN 9。EXE 中未捆绑 GPU 二进制文件。
 
 ### 开发环境（源码用户）
 

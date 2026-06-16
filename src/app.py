@@ -23,7 +23,7 @@ from version import APP_VERSION
 from i18n import I18N
 from theme import (ACCENT, ACCENT_HOVER, SUCCESS, ERROR_COL, WARN_COL,
                    BG_DARK, BG_CARD, BG_CONSOLE, TEXT_MUTED)
-from subtitles import format_timestamp
+from subtitles import format_timestamp, cuda_available
 from pipeline import run_pipeline, PipelineParams
 
 # ── PyInstaller resource path ──────────────────────────────────────────────────
@@ -75,6 +75,7 @@ class SnipSyncApp(_Base):
         self.threshold_var = ctk.DoubleVar(value=4.0)
         self.export_var  = ctk.StringVar(value=list(EXPORT_MODES.keys())[0])
         self.srt_var     = ctk.BooleanVar(value=True)
+        self.gpu_var     = ctk.BooleanVar(value=False)
         # Store the internal model key (tiny, base, small, medium)
         self.model_key_var = ctk.StringVar(value="small")
         # Store the translated display string for OptionMenu
@@ -93,6 +94,9 @@ class SnipSyncApp(_Base):
         self._build_ui()
         self._update_margin_label()
         self._update_threshold_label()
+        if not cuda_available():
+            self.gpu_checkbox.configure(state="disabled")
+            self._log(self.t("log_gpu_unavailable"), "muted")
         self._apply_lang()
 
     def t(self, key, *args):
@@ -237,10 +241,17 @@ class SnipSyncApp(_Base):
             button_hover_color=ACCENT_HOVER, dropdown_fg_color=BG_DARK, width=160,
             command=self._on_model_select)
         self.model_menu.pack(side="left")
+
+        self.gpu_checkbox = ctk.CTkCheckBox(
+            srt_frame, text="", variable=self.gpu_var, font=ctk.CTkFont(family="Segoe UI", size=11),
+            fg_color=ACCENT, hover_color=ACCENT_HOVER)
+        self.gpu_checkbox.pack(side="left", padx=(20, 0))
+
         if not WHISPER_AVAILABLE:
             self.srt_var.set(False)
             self.srt_checkbox.configure(state="disabled")
             self.model_menu.configure(state="disabled")
+            self.gpu_checkbox.configure(state="disabled")
 
         # 5. Output dir
         self.outdir_lbl_w = ctk.CTkLabel(
@@ -325,6 +336,7 @@ class SnipSyncApp(_Base):
         self.export_lbl_w.configure(text=self.t("export_label"))
         self.srt_lbl_w.configure(text=self.t("srt_label"))
         self.srt_checkbox.configure(text=self.t("srt_check"))
+        self.gpu_checkbox.configure(text=self.t("gpu_label"))
         self.model_lbl_w.configure(text=self.t("model_label"))
         
         # Update Model OptionMenu
@@ -359,8 +371,13 @@ class SnipSyncApp(_Base):
     def _on_srt_toggle(self):
         if self.srt_var.get():
             self.model_menu.configure(state="normal")
+            if cuda_available():
+                self.gpu_checkbox.configure(state="normal")
+            else:
+                self.gpu_checkbox.configure(state="disabled")
         else:
             self.model_menu.configure(state="disabled")
+            self.gpu_checkbox.configure(state="disabled")
 
     def _on_drop(self, event):
         raw = event.data.strip()
@@ -471,6 +488,7 @@ class SnipSyncApp(_Base):
             export_key=ae_key,
             do_srt=do_srt,
             model_size=model_size,
+            use_gpu=self.gpu_var.get(),
         )
 
         threading.Thread(

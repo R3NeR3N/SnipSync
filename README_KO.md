@@ -157,6 +157,7 @@ pyinstaller build/app.spec
 - **RAM:** 최소 4GB, `medium` 모델 사용 시 8GB 이상 권장
 - **디스크 여유 공간:** Whisper 모델 캐시를 위해 2~4GB의 여유 공간 필요(첫 실행 시에만 해당)
 - **인터넷:** 선택한 Whisper 모델을 다운로드하기 위한 첫 실행 시에만 필요
+- **GPU:** (선택 사항) 자막 생성에 GPU 가속을 사용하려면 NVIDIA 그래픽 드라이버, CUDA 12 Toolkit 및 cuDNN 9를 별도로 설치하여 환경 변수 `PATH`에 추가해야 합니다. GPU 바이너리는 EXE 파일에 포함되어 있지 않습니다.
 
 ### 개발 환경 (소스 사용자)
 
