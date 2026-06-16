@@ -15,6 +15,15 @@
 
 ---
 
+## 2026-06-17 05:30 — バージョニング規則の策定（頭脳: Opus 4.8）
+- 決定: SemVer 2.0 を正式採用し AGENTS.md §5 を「既知の不整合」記述から正式な規則へ書き換え。
+- 桁の SnipSync 固有定義: MAJOR=ユーザー互換性破壊（出力XML構造変更でNLE取込不可 / エクスポート形式削除 / presets.jsonスキーマ破壊 / 対応NLE廃止 / 最低要件引上げ）、MINOR=後方互換の機能追加、PATCH=機能追加なしのバグ修正のみ。内部リファクタは単独では桁を動かさず相乗り。
+- 単一ソース: `src/version.py` の `APP_VERSION`（既に 1.0.0 で一元化済・UIは参照のみ）。
+- リリース手順を6ステップで固定（version→CHANGELOG確定→README4言語→chore(release)コミット→git tag→exe）。プレリリースは `-rc.N`/`-beta.N`。
+- 次リリース判定: `[Unreleased]` にプリセット/GPU/即時停止＝**機能追加あり** → MINOR → 次は **1.1.0**（PATCHではない）。確定はリリース時。
+- 経緯: ユーザーが非開発者向けに MAJOR(互換性破壊)の噛み砕き説明を要望→平易な例示で合意。記載先は AGENTS §5 拡張をユーザー選択。
+- 関連: `AGENTS.md` §5, `src/version.py`, `CHANGELOG.md`, README×4
+
 ## 2026-06-17 05:10 — P2 完了の整理 + Gemini出力言語ルール追加（頭脳: Opus 4.8）
 - 決定1: Gemini の出力する "Implementation Plan" / "Walkthrough" は**日本語で記述**するルールを AGENTS.md §4.1 に追記。理由: レビュー効率・チーム言語統一。見出し名は英語可・本文は日本語。
 - 決定2: P0/P1/P2 が全完了（Gemini 実装 commit bab6009/3a95c9d ほか、tree clean）したのを受け、ドキュメント同期を実施。

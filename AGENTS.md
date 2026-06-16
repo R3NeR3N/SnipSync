@@ -79,16 +79,37 @@ pyinstaller build/app.spec   # → dist/SnipSync.exe
 
 ---
 
-## 5. バージョン整合性（既知の不整合）
+## 5. バージョニング規則
 
-現在 **コード = `v1.3.1`**（`src/app.py` の `I18N[*]["title"]`）に対し **README = `v1.0.0`**。
-バージョンに触れる変更では以下をすべて同期する:
+### 5.1 方式: Semantic Versioning 2.0（`MAJOR.MINOR.PATCH`）
 
-- `src/app.py` の `title` 文字列（ja/en 両方）
-- `README.md` / `README_JA.md` / `README_ZH.md` / `README_KO.md` のバッジ
-- `CHANGELOG.md`（作成推奨。§7）
+現行 `1.0.0` から継続。各桁の意味は SnipSync 固有に以下で定義する。
 
-将来は単一定数 `__version__` を導入し UI から参照する（ARCHITECTURE.md の TODO）。
+| 桁 | 上げる条件 | 例 |
+|---|---|---|
+| **MAJOR** | ユーザーの互換性が壊れる変更（前のやり方が通じなくなる） | 出力 XML/FCPXML の構造変更で既存 NLE が取込不可 / エクスポート形式の削除 / `presets.json` スキーマ破壊 / 対応 NLE の廃止 / 最低要件（Python・FFmpeg）の引上げ |
+| **MINOR** | 後方互換のある機能追加（既存はそのまま動く） | GPU 対応 / プリセット / 新エクスポート形式 / 新 Whisper モデル / 新 UI 言語 / バッチ処理 |
+| **PATCH** | 機能追加なしのバグ修正のみ | 無音検出のズレ修正 / i18n 誤訳 / クラッシュ修正 / 文字化け修正 |
+
+判断補助:
+- 内部リファクタ・テスト追加・依存整理など**ユーザーに見えない変更**は単独では桁を動かさない（次の MINOR/PATCH に相乗り）。
+- 1リリースに複数種が混在したら**最も大きい桁**を採用（機能追加＋修正 → MINOR）。
+- 配布前テストはプレリリース接尾辞 `-rc.1` / `-beta.1` を付ける（例 `1.1.0-rc.1`）。本番は接尾辞なし。
+
+### 5.2 単一ソース
+
+`src/version.py` の `APP_VERSION` が**唯一の真実**。UI（`src/i18n.py` の `title`）は `APP_VERSION` を参照するのみ（ハードコード禁止）。
+
+### 5.3 リリース手順（順守）
+
+1. `src/version.py` の `APP_VERSION` を上げる。
+2. `CHANGELOG.md`: `[Unreleased]` を `[X.Y.Z] — YYYY-MM-DD` に確定し、新しい空の `[Unreleased]` を追加。比較リンクも更新。
+3. README バッジ4言語（`README.md` / `README_JA.md` / `README_ZH.md` / `README_KO.md`）を同期。
+4. `chore(release): vX.Y.Z` でコミット。
+5. `git tag vX.Y.Z` を打つ。
+6. `pyinstaller build/app.spec` で exe 生成。
+
+> ❌ バージョン番号を一箇所だけ更新しない（上記 1〜3 は必ずセットで揃える。§4.2）。
 
 ---
 
