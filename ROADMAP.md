@@ -15,10 +15,10 @@
 
 ## P1（品質・保守性）
 
-- [ ] **単体テスト導入** — `format_timestamp`、コマンド組み立て（subprocess はモック）。テストは設計書から作成。担当: 🧠(設計書)→🔧(テスト実装)
-- [ ] **モノリス分割（段階1）** — `i18n.py` と `ui/theme.py` を `src/app.py` から切り出し。担当: 🧠(分割設計)→🔧(機械的移動)
-- [ ] **モノリス分割（段階2）** — `core/{autoeditor,subtitles,pipeline}.py` を分離。担当: 🧠(設計)→🔧(実装)
-- [ ] **依存管理整理** — `pyproject.toml` に直接依存を切り出し、`requirements-lock.txt` を自動生成扱いに。担当: 🧠→🔧
+- [x] **単体テスト導入** — `tests/test_unit.py`: `format_timestamp` + `build_cut_cmd`/`build_extract_wav_cmd`（純関数なので subprocess モック不要）。P-2同期も検証。
+- [x] **モノリス分割（段階1）** — `version.py` / `i18n.py` / `theme.py` を `src/app.py` から切り出し（flat配置・pathex=src で読込）。
+- [~] **モノリス分割（段階2）** — `autoeditor.py`(コマンド組立) / `subtitles.py`(`format_timestamp`) を分離済み。**残**: `_worker` の pipeline オーケストレーション抽出（UI/ログ結合のため要コールバック設計、別途）。
+- [x] **依存管理整理** — `pyproject.toml` に直接依存を切り出し。`requirements.txt` はロックとして据え置き（全行書換は §4.2 で禁止）。
 
 ## P2（機能・UX）
 

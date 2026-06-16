@@ -19,7 +19,12 @@ try:
 except ImportError:
     WHISPER_AVAILABLE = False
 
-APP_VERSION = "1.0.0"
+from version import APP_VERSION
+from i18n import I18N
+from theme import (ACCENT, ACCENT_HOVER, SUCCESS, ERROR_COL, WARN_COL,
+                   BG_DARK, BG_CARD, BG_CONSOLE, TEXT_MUTED)
+from autoeditor import build_cut_cmd, build_extract_wav_cmd
+from subtitles import format_timestamp
 
 # ── PyInstaller resource path ──────────────────────────────────────────────────
 def resource_path(rel):
@@ -39,145 +44,11 @@ def get_auto_editor_path():
     except ImportError:
         return "auto-editor" # fallback to PATH if not bundled properly
 
-# ── i18n Dictionaries ──────────────────────────────────────────────────────────
-I18N = {
-    "ja": {
-        "title":          f"SnipSync  v{APP_VERSION}",
-        "subtitle":       "無音自動カット ＆ 字幕生成",
-        "lang_label":     "言語",
-        "drop_hint":      "🎬  ここに動画ファイルをドラッグ＆ドロップ\n（または クリックして選択）",
-        "margin_label":   "無音マージン（秒）",
-        "threshold_label":"音量閾値（%）",
-        "export_label":   "出力形式",
-        "srt_label":      "字幕自動生成",
-        "srt_check":      ".srt ファイルも同時に生成する",
-        "model_label":    "AIモデル精度",
-        "outdir_label":   "出力先フォルダ",
-        "outdir_default": "（入力ファイルと同じフォルダ）",
-        "outdir_change":  "変更",
-        "run_btn":        "▶  処理を開始する",
-        "stop_btn":       "⬛  停止",
-        "log_header":     "ログ",
-        "log_clear":      "クリア",
-        "warn_no_file":   "動画ファイルを選択してください。",
-        "warn_title":     "ファイル未選択",
-        "err_not_found":  "選択されたファイルが見つかりません。",
-        "err_title":      "エラー",
-        "log_welcome":    "SnipSync へようこそ！動画ファイルを選択してください。",
-        "log_start":      "▶ 処理開始",
-        "log_input":      "  入力",
-        "log_margin":     "  マージン",
-        "log_threshold":  "  音量閾値",
-        "log_format":     "  出力形式",
-        "log_output":     "  出力先",
-        "log_cmd":        "  コマンド",
-        "log_done_ae":    "✅ カット処理完了！ 出力ファイル:",
-        "log_srt_temp_start": "⏳ カット済み音声の一時ファイルを作成中...",
-        "log_srt_analyze": "⏳ 一時ファイルから音声を解析中... (モデル: {})",
-        "log_srt_start":  "⏳ 音声認識を開始します (モデル: {}) ... ※初回はダウンロードが発生します",
-        "log_srt_done":   "✅ 字幕生成が完了しました！ 出力ファイル:",
-        "log_error":      "❌ エラーが発生しました（終了コード: {}）\n詳細:\n{}",
-        "log_wav_missing":"❌ WAVファイルの生成に失敗しました。処理を中断します。",
-        "log_ae_missing": "❌ auto-editor が見つかりません: {}",
-        "log_unexpected": "❌ 予期しないエラー:\n{}",
-        "log_stopped":    "⬛ 処理を停止しました。",
-        "done_title":     "処理完了",
-        "done_msg":       "処理がすべて完了しました！\n\n出力フォルダを開きますか？",
-        "file_dialog":    "動画ファイルを選択",
-        "dir_dialog":     "出力先フォルダを選択",
-        "log_file":       "ファイル選択: {}",
-        "log_outdir":     "出力先変更: {}",
-        "margin_unit":    "秒",
-        "threshold_unit": "%",
-        "model_options":  {
-            "tiny":   "tiny (最速/低精度)",
-            "base":   "base (高速)",
-            "small":  "small (標準)",
-            "medium": "medium (高精度/遅い)"
-        }
-    },
-    "en": {
-        "title":          f"SnipSync  v{APP_VERSION}",
-        "subtitle":       "Silent Auto-Cutter & Subtitles",
-        "lang_label":     "Language",
-        "drop_hint":      "🎬  Drag & Drop a video file here\n(or click to browse)",
-        "margin_label":   "Silence Margin (sec)",
-        "threshold_label":"Volume Threshold (%)",
-        "export_label":   "Export Format",
-        "srt_label":      "Subtitles",
-        "srt_check":      "Generate .srt file simultaneously",
-        "model_label":    "AI Model Size",
-        "outdir_label":   "Output Folder",
-        "outdir_default": "(Same folder as input file)",
-        "outdir_change":  "Change",
-        "run_btn":        "▶  Start Processing",
-        "stop_btn":       "⬛  Stop",
-        "log_header":     "Log",
-        "log_clear":      "Clear",
-        "warn_no_file":   "Please select a video file.",
-        "warn_title":     "No File Selected",
-        "err_not_found":  "The selected file was not found.",
-        "err_title":      "Error",
-        "log_welcome":    "Welcome to SnipSync! Please select a video file.",
-        "log_start":      "▶ Processing started",
-        "log_input":      "  Input",
-        "log_margin":     "  Margin",
-        "log_threshold":  "  Threshold",
-        "log_format":     "  Export format",
-        "log_output":     "  Output",
-        "log_cmd":        "  Command",
-        "log_done_ae":    "✅ Cutting done! Output file:",
-        "log_srt_temp_start": "⏳ Creating temporary cut audio file...",
-        "log_srt_analyze": "⏳ Analyzing temporary audio file... (Model: {})",
-        "log_srt_start":  "⏳ Starting transcription (Model: {}) ... *May download on first run",
-        "log_srt_done":   "✅ Subtitles generated! Output file:",
-        "log_error":      "❌ Error occurred (exit code: {})\nDetails:\n{}",
-        "log_wav_missing":"❌ Failed to generate the temporary WAV file. Aborting.",
-        "log_ae_missing": "❌ auto-editor not found: {}",
-        "log_unexpected": "❌ Unexpected error:\n{}",
-        "log_stopped":    "⬛ Processing stopped.",
-        "done_title":     "Processing Complete",
-        "done_msg":       "All processing is complete!\n\nOpen output folder?",
-        "file_dialog":    "Select Video File",
-        "dir_dialog":     "Select Output Folder",
-        "log_file":       "File selected: {}",
-        "log_outdir":     "Output folder changed: {}",
-        "margin_unit":    "sec",
-        "threshold_unit": "%",
-        "model_options":  {
-            "tiny":   "tiny (Fastest/Low Acc)",
-            "base":   "base (Fast)",
-            "small":  "small (Standard)",
-            "medium": "medium (Accurate/Slow)"
-        }
-    },
-}
-
 EXPORT_MODES = {
     "DaVinci Resolve (.fcpxml)":    ("resolve",       ".fcpxml"),
     "Premiere Pro (.xml)":          ("premiere",      ".xml"),
     "Final Cut Pro (.fcpxml)":      ("final-cut-pro", ".fcpxml"),
 }
-
-# ── Colors ─────────────────────────────────────────────────────────────────────
-ACCENT       = "#6C63FF"
-ACCENT_HOVER = "#5a52e0"
-SUCCESS      = "#2ECC71"
-ERROR_COL    = "#E74C3C"
-WARN_COL     = "#F39C12"
-BG_DARK      = "#1a1a2e"
-BG_CARD      = "#16213e"
-BG_CONSOLE   = "#0d1117"
-TEXT_MUTED   = "#8892a4"
-
-# ── SRT Formatting Helper ──────────────────────────────────────────────────────
-def format_timestamp(seconds: float) -> str:
-    total_ms = int(round(seconds * 1000))
-    hrs = total_ms // 3600000
-    mins = (total_ms % 3600000) // 60000
-    secs = (total_ms % 60000) // 1000
-    ms = total_ms % 1000
-    return f"{hrs:02d}:{mins:02d}:{secs:02d},{ms:03d}"
 
 # ── Base class ─────────────────────────────────────────────────────────────────
 if DND_AVAILABLE:
@@ -577,14 +448,7 @@ class SnipSyncApp(_Base):
         model_size = self.model_key_var.get()
 
         ae_path = get_auto_editor_path()
-        cmd = [
-            str(ae_path), str(inp),
-            "--margin", f"{margin:.3f}s",
-            "--edit", f"audio:threshold={threshold:.1f}%",
-            "--export", ae_key,
-            "--output", str(output_ae),
-            "--no-open",
-        ]
+        cmd = build_cut_cmd(ae_path, inp, margin, threshold, ae_key, output_ae)
 
         sep = "─" * 50
         self._log(sep, "muted")
@@ -650,15 +514,7 @@ class SnipSyncApp(_Base):
 
                 # 2a. Generate Temp WAV
                 self._log(self.t("log_srt_temp_start"), "info")
-                temp_cmd = [
-                    str(ae_path), str(inp),
-                    "--margin", f"{margin:.3f}s",
-                    "--edit", f"audio:threshold={threshold:.1f}%",
-                    "-vn", "-sn", "-dn",
-                    "--mix-audio-streams",
-                    "--output", str(temp_wav),
-                    "--no-open"
-                ]
+                temp_cmd = build_extract_wav_cmd(ae_path, inp, margin, threshold, temp_wav)
                 try:
                     res_temp = subprocess.run(
                         temp_cmd, capture_output=True, text=True, encoding="utf-8", errors="replace"
