@@ -16,6 +16,13 @@
 
 ---
 
+## 2026-06-17 — テスト内で subprocess.Popen をモックすると taskkill 等の subprocess.run も巻き込まれる
+- やったこと: `tests/test_pipeline.py` で `subprocess.Popen` をモックした。また、`_kill_tree` の Windows 用処理で `subprocess.run(["taskkill", ...])` を呼び出した。
+- 何が起きたか: `subprocess.run` は内部で `Popen` を呼び出すため、モックされた `Popen` が返された。モッククラスがコンテキストマネージャプロトコル (`__enter__`/`__exit__`) や `communicate` / `args` などの属性を実装していなかったため、`TypeError` や `AttributeError` が発生した。
+- 原因: グローバルな `subprocess.Popen` のモックが、テストフレームワークや `subprocess.run` の内部呼び出しに影響を与えたため。
+- 回避策 / 正しい手順: モック用の `Popen` に `__enter__`, `__exit__`, `communicate() -> ("", "")`, `args` を持たせる。また、コマンドが `"taskkill"` のときはダミーの MockPopen を返すようにモック関数内で条件分岐させる。
+- 関連: `tests/test_pipeline.py`, `src/pipeline.py` `_kill_tree`
+
 ## （初期エントリ）プロジェクト固有の既知の落とし穴
 
 実コードと環境から判明している、繰り返しやすい失敗を先に登録しておく。

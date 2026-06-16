@@ -2,9 +2,75 @@ import traceback
 from dataclasses import dataclass
 from pathlib import Path
 import subprocess
+import sys
 
 from autoeditor import build_cut_cmd, build_extract_wav_cmd
 from subtitles import format_timestamp
+
+CREATE_NEW_PROCESS_GROUP = 0x00000200 if sys.platform == "win32" else 0
+
+def _kill_tree(proc):
+    if proc.poll() is not None:
+        return
+    if sys.platform == "win32":
+        subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                       capture_output=True)
+    else:
+        proc.terminate()
+    try:
+        proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+
+def _run_streaming(cmd, *, on_log, should_stop) -> tuple[int, bool]:
+    """auto-editor を Popen で起動し stdout を1行ずつ on_log。
+    should_stop() が真になったらプロセスツリーを kill して打ち切る。
+    戻り値: (returncode, stopped)。stopped=True のとき returncode は不定(kill)。
+    """
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        creationflags=CREATE_NEW_PROCESS_GROUP
+    )
+    
+    stopped = False
+    
+    try:
+        for line in proc.stdout:
+            if should_stop():
+                _kill_tree(proc)
+                stopped = True
+                break
+            
+            line = line.rstrip()
+            if not line:
+                continue
+                
+            # Log classification
+            if any(k in line.lower() for k in ("error", "failed", "exception")):
+                on_log(line, "error")
+            elif any(k in line.lower() for k in ("warning", "warn")):
+                on_log(line, "warn")
+            else:
+                on_log(line)
+    except Exception as e:
+        _kill_tree(proc)
+        raise e
+        
+    if stopped:
+        return -1, True
+        
+    rc = proc.wait()
+    
+    if should_stop():
+        _kill_tree(proc)
+        return -1, True
+        
+    return rc, False
 
 
 @dataclass
@@ -57,25 +123,8 @@ def run_pipeline(
         cmd = build_cut_cmd(ae_path, inp, params.margin, params.threshold, params.export_key, output_ae)
         
         try:
-            res = subprocess.run(
-                cmd, capture_output=True, text=True, encoding="utf-8", errors="replace"
-            )
-            
-            # Log stdout
-            if res.stdout:
-                for line in res.stdout.splitlines():
-                    line = line.rstrip()
-                    if not line:
-                        continue
-                    if any(k in line.lower() for k in ("error", "failed", "exception")):
-                        on_log(line, "error")
-                    elif any(k in line.lower() for k in ("warning", "warn")):
-                        on_log(line, "warn")
-                    else:
-                        on_log(line)
-            
-            rc = res.returncode
-            if should_stop():
+            rc, stopped = _run_streaming(cmd, on_log=on_log, should_stop=should_stop)
+            if stopped:
                 result.stopped = True
                 on_log(tr("log_stopped"), "warn")
             elif rc == 0:
@@ -84,15 +133,11 @@ def run_pipeline(
                 result.ok = True
                 result.timeline_path = output_ae
             else:
-                on_log(tr("log_error", rc, res.stderr), "error")
+                on_log(tr("log_error", rc, ""), "error")
         except FileNotFoundError as e:
             on_log(tr("log_ae_missing", e), "error")
         except Exception as e:
             on_log(tr("log_unexpected", traceback.format_exc()), "error")
-
-        if should_stop() and not result.stopped:
-            result.stopped = True
-            on_log(tr("log_stopped"), "warn")
 
         # 2. Faster-Whisper Processing via Temp WAV
         if result.ok and params.do_srt and not result.stopped:
@@ -103,20 +148,18 @@ def run_pipeline(
             on_log(tr("log_srt_temp_start"), "info")
             temp_cmd = build_extract_wav_cmd(ae_path, inp, params.margin, params.threshold, temp_wav)
             try:
-                res_temp = subprocess.run(
-                    temp_cmd, capture_output=True, text=True, encoding="utf-8", errors="replace"
-                )
+                rc_temp, stopped_temp = _run_streaming(temp_cmd, on_log=on_log, should_stop=should_stop)
                 
-                if should_stop():
+                if stopped_temp:
                     result.stopped = True
                     on_log(tr("log_stopped"), "warn")
-                elif res_temp.returncode == 0:
+                elif rc_temp == 0:
                     if temp_wav.exists():
                         temp_success = True
                     else:
                         on_log(tr("log_wav_missing"), "error")
                 else:
-                    on_log(tr("log_error", res_temp.returncode, res_temp.stderr), "error")
+                    on_log(tr("log_error", rc_temp, ""), "error")
             except Exception as e:
                 on_log(tr("log_unexpected", traceback.format_exc()), "error")
                 
@@ -135,7 +178,7 @@ def run_pipeline(
                         model = WhisperModel(params.model_size, device="cpu", compute_type="int8")
                         segments, info = model.transcribe(str(temp_wav), beam_size=5, language=None)
                     
-                    on_log(f"  音声検出: {info.language} (確率: {info.language_probability:.2f})", "muted")
+                    on_log(tr("log_lang_detected", info.language, info.language_probability), "muted")
                     
                     # Generate SRT
                     with open(output_srt, "w", encoding="utf-8") as srt_file:

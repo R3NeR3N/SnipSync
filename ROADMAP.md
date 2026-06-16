@@ -22,7 +22,7 @@
 
 ## P2（機能・UX）
 
-- [ ] **即時停止対応** — `subprocess.Popen` + プロセスツリー kill（`taskkill /F /T`）化、ログのストリーミング。担当: 🧠(設計)→🔧(実装)。**設計済**: `docs/handoff/P2-immediate-stop.md`（実装は Gemini）
+- [x] **即時停止対応** — `subprocess.Popen` + プロセスツリー kill（`taskkill /F /T`）化、ログのストリーミング。担当: 🧠(設計)→🔧(実装)。**設計済**: `docs/handoff/P2-immediate-stop.md`（実装は Gemini）
 - [ ] **GPU 対応の検討** — CUDA 環境で `compute_type` 切替（配布サイズとのトレードオフ）。担当: 🧠(判断)→🔧
 - [ ] **出力プリセット保存** — よく使う設定の記憶。担当: 🧠→🔧
 

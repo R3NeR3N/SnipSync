@@ -455,7 +455,7 @@ class SnipSyncApp(_Base):
         self._log(f"{self.t('log_threshold')}: {threshold:.1f} {self.t('threshold_unit')}", "muted")
         self._log(f"{self.t('log_format')}: {label}", "muted")
         if do_srt:
-            self._log(f"  SRT生成: 有効 (モデル: {model_size})", "muted")
+            self._log(self.t("log_srt_enabled", model_size), "muted")
         self._log(f"{self.t('log_output')}: {out_dir}", "muted")
         self._log(sep, "muted")
 
@@ -495,10 +495,8 @@ class SnipSyncApp(_Base):
         self.after(0, _show)
 
     def _stop_process(self):
-        # When using subprocess.run, immediate process termination from outside is harder.
-        # We set the flag so the next stages skip.
         self.stop_requested = True
-        self._log("⬛ 停止リクエストを受け付けました。現在の処理が完了すると停止します...", "warn")
+        self._log(self.t("log_stop_requested"), "warn")
 
     def _reset_ui(self):
         self.running = False

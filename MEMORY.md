@@ -14,6 +14,14 @@
 
 ---
 
+## 2026-06-17 — P2 課題C: 即時停止の実装（作業: Gemini 3.5）
+- 決定: 設計書 `docs/handoff/P2-immediate-stop.md` に従い、`src/pipeline.py` に `_run_streaming` と `_kill_tree` を実装し、`run_pipeline` の外部プロセス呼び出し（メインカットおよび一時WAV抽出）を `subprocess.Popen` によるストリーミングに移行。
+- 理由: ユーザーが停止ボタンを押した際に、実行中の外部プロセス（auto-editor/ffmpeg）を即座に強制終了し、無駄な処理を防止するため。
+- 実装詳細: Windows では `creationflags=CREATE_NEW_PROCESS_GROUP` でプロセスグループを作成し、停止時に `taskkill /F /T /PID` で子プロセスを含めたプロセスツリーを強制終了。非 Windows では `proc.terminate()` 後に必要に応じて `proc.kill()` を呼び出す。i18n キー違反（ハードコード3箇所）を `log_stop_requested`/`log_srt_enabled`/`log_lang_detected` に置き換え。
+- テスト: `tests/test_pipeline.py` を Popen モック用に全面改修。リアルタイムログストリーミング、中途停止時のプロセスツリー終了、エラーハンドリング、正常動作等の計19テストが全パス。
+- 関連: `src/pipeline.py`, `src/app.py`, `src/i18n.py`, `tests/test_pipeline.py`
+
+
 ## 2026-06-17 — P2 課題C: 即時停止の設計（頭脳: Opus 4.8）
 - 決定: P1 完了を受け P2 先頭「即時停止対応」を設計。設計書 `docs/handoff/P2-immediate-stop.md` を作成（実装は 🔧Gemini へハンドオフ）。
 - 設計判断1: `pipeline.run_pipeline` の auto-editor 呼出を `subprocess.run`→`Popen` ストリーミング化し、`should_stop()` 監視で実行中プロセスを kill。`run_pipeline` の公開シグネチャは不変（内部ヘルパ `_run_streaming`/`_kill_tree` 追加）。kill は pipeline 内に閉じ、UI `_stop_process` は従来どおりフラグ立てのみ＝UI 非依存維持。
@@ -75,7 +83,7 @@
 - 関連: `src/app.py` `_worker` 2b ブロック（684 行付近）
 
 ### 課題C: 停止が即時でない
-- 状態: 仕様（暫定）。
-- 内容: `subprocess.run` を使用しているため、停止押下後も実行中の外部プロセスは完了を待つ。`stop_requested` フラグで次ステージをスキップするのみ。
-- 方針: 即時停止が要件化したら `subprocess.Popen` + `terminate()` への移行を検討。トレードオフはログのストリーミング実装が必要になる点。
-- 関連: `src/app.py` `_stop_process`, `_worker`
+### 課題C: 停止が即時でない
+- 状態: 解消。
+- 内容: `subprocess.run` から `subprocess.Popen` へ移行し、`_run_streaming` 内で `should_stop()` を監視。停止時は `taskkill /F /T` によるプロセスツリーの即時強制終了を Windows で行い、非 Windows では `terminate()` と `kill()` で終了。
+- 関連: `src/pipeline.py`, `src/app.py`, `tests/test_pipeline.py`
