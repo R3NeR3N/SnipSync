@@ -23,8 +23,8 @@ from version import APP_VERSION
 from i18n import I18N
 from theme import (ACCENT, ACCENT_HOVER, SUCCESS, ERROR_COL, WARN_COL,
                    BG_DARK, BG_CARD, BG_CONSOLE, TEXT_MUTED)
-from autoeditor import build_cut_cmd, build_extract_wav_cmd
 from subtitles import format_timestamp
+from pipeline import run_pipeline, PipelineParams
 
 # ── PyInstaller resource path ──────────────────────────────────────────────────
 def resource_path(rel):
@@ -441,14 +441,11 @@ class SnipSyncApp(_Base):
         # USE ABSOLUTE PATHS TO PREVENT PATH ERRORS
         inp         = Path(self.input_file).resolve()
         out_dir     = Path(self.output_dir).resolve() if self.output_dir else inp.parent
-        output_ae   = out_dir / f"{inp.stem}_snipsynced{ext}"
-        output_srt  = out_dir / f"{inp.stem}.srt"
         
         do_srt = self.srt_var.get()
         model_size = self.model_key_var.get()
 
         ae_path = get_auto_editor_path()
-        cmd = build_cut_cmd(ae_path, inp, margin, threshold, ae_key, output_ae)
 
         sep = "─" * 50
         self._log(sep, "muted")
@@ -468,118 +465,28 @@ class SnipSyncApp(_Base):
         self.stop_btn.configure(state="normal")
         self.progress.start()
 
+        params = PipelineParams(
+            margin=margin,
+            threshold=threshold,
+            export_key=ae_key,
+            do_srt=do_srt,
+            model_size=model_size,
+        )
+
         threading.Thread(
-            target=self._worker, args=(cmd, output_ae, inp, output_srt, do_srt, model_size, ae_path, margin, threshold), daemon=True).start()
+            target=self._worker, args=(ae_path, inp, out_dir, params), daemon=True).start()
 
-    def _worker(self, cmd, output_ae, inp, output_srt, do_srt, model_size, ae_path, margin, threshold):
-        try:
-            success = False
-            # 1. Auto-Editor Processing
-            try:
-                # Use subprocess.run as requested for capture_output=True
-                res = subprocess.run(
-                    cmd, capture_output=True, text=True, encoding="utf-8", errors="replace"
-                )
-                
-                # Log stdout
-                if res.stdout:
-                    for line in res.stdout.splitlines():
-                        line = line.rstrip()
-                        if not line: continue
-                        if any(k in line.lower() for k in ("error", "failed", "exception")):
-                            self._log(line, "error")
-                        elif any(k in line.lower() for k in ("warning", "warn")):
-                            self._log(line, "warn")
-                        else:
-                            self._log(line)
-                            
-                rc = res.returncode
-                if rc == 0 and not self.stop_requested:
-                    self._log(self.t("log_done_ae"), "success")
-                    self._log(f"   {output_ae.name}", "success")
-                    success = True
-                elif self.stop_requested:
-                    self._log(self.t("log_stopped"), "warn")
-                else:
-                    self._log(self.t("log_error", rc, res.stderr), "error")
-            except FileNotFoundError as e:
-                self._log(self.t("log_ae_missing", e), "error")
-            except Exception as e:
-                self._log(self.t("log_unexpected", traceback.format_exc()), "error")
-
-            # 2. Faster-Whisper Processing via Temp WAV
-            if success and do_srt and not self.stop_requested:
-                temp_wav = output_ae.parent / f"{inp.stem}_temp_audio.wav"
-                temp_success = False
-
-                # 2a. Generate Temp WAV
-                self._log(self.t("log_srt_temp_start"), "info")
-                temp_cmd = build_extract_wav_cmd(ae_path, inp, margin, threshold, temp_wav)
-                try:
-                    res_temp = subprocess.run(
-                        temp_cmd, capture_output=True, text=True, encoding="utf-8", errors="replace"
-                    )
-                    
-                    if res_temp.returncode == 0 and not self.stop_requested:
-                        # Ensure the file actually exists
-                        if temp_wav.exists():
-                            temp_success = True
-                        else:
-                            self._log(self.t("log_wav_missing"), "error")
-                    else:
-                        if not self.stop_requested:
-                            self._log(self.t("log_error", res_temp.returncode, res_temp.stderr), "error")
-                except Exception as e:
-                    self._log(self.t("log_unexpected", traceback.format_exc()), "error")
-
-                # 2b. Transcribe Temp WAV
-                if temp_success and not self.stop_requested:
-                    self._log(self.t("log_srt_analyze", model_size), "info")
-                    try:
-                        # Load model (CPU + int8 for compatibility and speed without huge GPU binary bundles)
-                        model = WhisperModel(model_size, device="cpu", compute_type="int8")
-                        
-                        # Transcribe
-                        segments, info = model.transcribe(str(temp_wav), beam_size=5, language=None)
-                        
-                        self._log(f"  音声検出: {info.language} (確率: {info.language_probability:.2f})", "muted")
-                        
-                        # Generate SRT
-                        with open(output_srt, "w", encoding="utf-8") as srt_file:
-                            for i, segment in enumerate(segments, start=1):
-                                if self.stop_requested:
-                                    break
-                                start = format_timestamp(segment.start)
-                                end = format_timestamp(segment.end)
-                                text = segment.text.strip()
-                                srt_file.write(f"{i}\n{start} --> {end}\n{text}\n\n")
-                                # Log partial progress
-                                self._log(f"  [{start} -> {end}] {text}", "muted")
-
-                        if not self.stop_requested:
-                            self._log(self.t("log_srt_done"), "success")
-                            self._log(f"   {output_srt.name}", "success")
-                        else:
-                            self._log(self.t("log_stopped"), "warn")
-                            
-                    except Exception as e:
-                        self._log(self.t("log_unexpected", traceback.format_exc()), "error")
-
-                # 2c. Cleanup Temp WAV
-                try:
-                    if temp_wav.exists():
-                        temp_wav.unlink()
-                except Exception as e:
-                    self._log(f"Temp file cleanup failed: {e}", "warn")
-
-        except Exception as e:
-            # Catch any unexpected top-level worker thread crashes
-            self._log(self.t("log_unexpected", traceback.format_exc()), "error")
-        finally:
-            self.running = False
-            if not self.stop_requested and success:
-                self.after(0, lambda: self._popup_done(out_dir=output_ae.parent))
-            self.after(0, self._reset_ui)
+    def _worker(self, ae_path, inp, out_dir, params):
+        result = run_pipeline(
+            ae_path, inp, out_dir, params,
+            on_log=self._log,
+            should_stop=lambda: self.stop_requested,
+            tr=self.t,
+        )
+        self.running = False
+        if not result.stopped and result.ok:
+            self.after(0, lambda: self._popup_done(out_dir=out_dir))
+        self.after(0, self._reset_ui)
 
     def _popup_done(self, out_dir):
         def _show():

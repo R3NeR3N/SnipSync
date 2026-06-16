@@ -38,10 +38,10 @@ def test_version_consistency():
 
 def test_no_hardcoded_transcribe_language():
     project_root = Path(__file__).parent.parent
-    app_py_path = project_root / "src" / "app.py"
+    pipeline_py_path = project_root / "src" / "pipeline.py"
     
-    assert app_py_path.exists()
-    content = app_py_path.read_text(encoding="utf-8")
+    assert pipeline_py_path.exists()
+    content = pipeline_py_path.read_text(encoding="utf-8")
     
     assert 'language="ja"' not in content, "Should not contain language=\"ja\""
     assert 'language=None' in content, "Should contain language=None"
