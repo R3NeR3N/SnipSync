@@ -15,6 +15,14 @@
 
 ---
 
+## 2026-06-17 05:28 — code-review 指摘5件の実装完了とテスト追加（作業: Gemini 3.5）
+- 決定: 設計書 `docs/handoff/P3-review-fixes.md` に従い、GPUフォールバックバグ修正、多言語化（log_whisper_unavailable）、log_errorプレースホルダ修正、プリセット適用時モデルガードの5件を実装。
+- 理由: CUDA OOM 等の実行時エラーが遅延ジェネレータの遅延評価（イテレーション）時に発生するため、確実に try-except 内で捕捉して CPU 再試行にフォールバックできるようにするため。また、既存コードの i18n 違反や不整合を解消するため。
+- 影響/トレードオフ:
+  1. `list(seg_iter)` でデコードを一括完走させてから SRT 書き込みを行うため、デコード中に 1 字幕ずつログ出力されていた動作は、デコード完了後に一括でログ出力されるように変更された。デコード中の進捗を隠さないよう、`log_srt_analyze` で開始情報を出力する。
+  2. 遅延ジェネレータがイテレーション中に例外を投げる状況を再現するモックテスト (`test_pipeline_gpu_fallback_lazy_generator`) を追加し、フォールバックの動作検証を確実にした。
+- 関連: `src/pipeline.py`, `src/app.py`, `src/i18n.py`, `tests/test_pipeline.py`
+
 ## 2026-06-17 05:45 — code-review 指摘5件の修正設計（頭脳: Opus 4.8）
 - 経緯: `feat/p1-refactor`（P1/P2全実装・8コミット）へ /code-review high。確定5件。設計書 `docs/handoff/P3-review-fixes.md` を作成（実装は🔧Gemini）。
 - 確定した実バグ #1: faster-whisper `transcribe()` は**遅延ジェネレータ**。実デコードは `segments` 反復時（SRT書込ループ）に起きるため、GPUフォールバックの try が model構築/呼出までしか覆っておらず、**デコード途中のCUDA実行時エラー（OOM等）がフォールバックを素通り**→ `log_unexpected` で握りつぶし＝CPU再試行されない。DIモックが即時例外で落ちるためテストでは露見しなかった。修正方針=`list(seg_iter)` で try 内にデコードを完走させ、フォールバック時 device/compute_type を同時にCPUへ。トレードオフ: デコード中のライブ字幕ログが一括化（正確性優先、GPUはopt-in/稀）。
