@@ -15,6 +15,19 @@
 
 ---
 
+## 2026-06-17 04:38 — P2 出力プリセット保存の実装完了（作業: Gemini 3.5）
+- 決定: 設計書 `docs/handoff/P2-output-presets.md` に基づき、名前付きプリセット保存/読込/削除および前回終了時設定の自動復元機能（last_used）を実装。
+- 理由: ユーザーが起動するたびに設定を再入力する手間を排除し、よく使用する設定の組み合わせを簡単に保存・復元できるようにするため。
+- 実装詳細:
+  1. 新規 `src/presets.py` を作成し、Tk/UI 依存なしのピュア Python モジュールとして JSON I/O をカプセル化（`%APPDATA%/SnipSync/presets.json` への読み書き）。
+  2. 既存の GPU オプトイン対応に合わせて `SETTING_KEYS` に `"gpu"` を追加。存在するキーだけを読み書き・適用する前方/後方互換設計。
+  3. `src/app.py` にて `_collect_settings()` と `_apply_settings()` を実装し、UI 側での Tk 変数と辞書の相互変換をハンドリング。適用後はスライダーと値ラベル、SRT オプションを双方向同期。
+  4. 設定カード上部にプリセット OptionMenu、および「保存」「削除」ボタンを追加。言語切替 (`_apply_lang`) の同期、起動時の last_used 復元、`WM_DELETE_WINDOW` 終了時の last_used 自動保存を実装。
+  5. `src/i18n.py` に `preset_label` / `preset_none` / `preset_save` / `preset_delete` / `preset_name_prompt` / `log_preset_saved` / `log_preset_deleted` を日英双方に追加。
+  6. 新規 `tests/test_presets.py` で temporary directory の隔離環境で load/save、壊れた JSON 処理、日本語/マルチバイト名の upsert/delete、last_used の往復をテスト。
+- 検証: `tests/test_presets.py` を含む全 25 テストがグリーンであることを確認。
+- 関連: `src/presets.py`, `src/app.py`, `src/i18n.py`, `tests/test_presets.py`, `ROADMAP.md`
+
 ## 2026-06-17 04:32 — P2 GPU対応の実装完了（作業: Gemini 3.5）
 - 決定: 設計書 `docs/handoff/P2-gpu-support.md` に基づき、オプトイン方式の GPU (CUDA) サポートを実装。
 - 理由: CUDAが利用可能な環境で ASR 字幕生成の処理速度を向上させるため。

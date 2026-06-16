@@ -25,6 +25,7 @@ from theme import (ACCENT, ACCENT_HOVER, SUCCESS, ERROR_COL, WARN_COL,
                    BG_DARK, BG_CARD, BG_CONSOLE, TEXT_MUTED)
 from subtitles import format_timestamp, cuda_available
 from pipeline import run_pipeline, PipelineParams
+from presets import load_store, save_store, upsert_preset, delete_preset, set_last_used
 
 # ── PyInstaller resource path ──────────────────────────────────────────────────
 def resource_path(rel):
@@ -97,7 +98,14 @@ class SnipSyncApp(_Base):
         if not cuda_available():
             self.gpu_checkbox.configure(state="disabled")
             self._log(self.t("log_gpu_unavailable"), "muted")
+        
+        # Load preset store and apply last used settings
+        store = load_store()
+        if store.get("last_used"):
+            self._apply_settings(store["last_used"])
+            
         self._apply_lang()
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
 
     def t(self, key, *args):
         s = I18N[self.lang].get(key, key)
@@ -161,13 +169,39 @@ class SnipSyncApp(_Base):
         card.columnconfigure((1, 3), weight=1)
         pad = {"padx": 20, "pady": 8}
 
+        # 0. Preset
+        self.preset_lbl_w = ctk.CTkLabel(
+            card, text="", font=ctk.CTkFont(family="Segoe UI", size=12, weight="bold"), text_color="white")
+        self.preset_lbl_w.grid(row=0, column=0, sticky="w", **pad)
+
+        preset_frame = ctk.CTkFrame(card, fg_color="transparent")
+        preset_frame.grid(row=0, column=1, columnspan=3, sticky="w", padx=(0, 20), pady=8)
+
+        self.preset_menu_var = ctk.StringVar()
+        self.preset_menu = ctk.CTkOptionMenu(
+            preset_frame, values=[], variable=self.preset_menu_var,
+            font=ctk.CTkFont(family="Segoe UI", size=12), fg_color=BG_DARK, button_color=ACCENT,
+            button_hover_color=ACCENT_HOVER, dropdown_fg_color=BG_DARK, width=200,
+            command=self._on_preset_select)
+        self.preset_menu.pack(side="left")
+
+        self.preset_save_btn = ctk.CTkButton(
+            preset_frame, text="", width=60, font=ctk.CTkFont(family="Segoe UI", size=11),
+            fg_color=BG_DARK, hover_color=ACCENT, command=self._on_preset_save)
+        self.preset_save_btn.pack(side="left", padx=(10, 0))
+
+        self.preset_delete_btn = ctk.CTkButton(
+            preset_frame, text="", width=60, font=ctk.CTkFont(family="Segoe UI", size=11),
+            fg_color=BG_DARK, hover_color=ERROR_COL, command=self._on_preset_delete)
+        self.preset_delete_btn.pack(side="left", padx=(10, 0))
+
         # 1. Margin
         self.margin_lbl_w = ctk.CTkLabel(
             card, text="", font=ctk.CTkFont(family="Segoe UI", size=12, weight="bold"), text_color="white")
-        self.margin_lbl_w.grid(row=0, column=0, sticky="w", **pad)
+        self.margin_lbl_w.grid(row=1, column=0, sticky="w", **pad)
 
         sf1 = ctk.CTkFrame(card, fg_color="transparent")
-        sf1.grid(row=0, column=1, sticky="ew", padx=(0, 10), pady=8)
+        sf1.grid(row=1, column=1, sticky="ew", padx=(0, 10), pady=8)
         sf1.columnconfigure(0, weight=1)
         self.slider_margin = ctk.CTkSlider(
             sf1, from_=0.0, to=2.0, number_of_steps=40, variable=self.margin_var, command=self._on_slider_margin,
@@ -176,21 +210,21 @@ class SnipSyncApp(_Base):
 
         self.margin_val_lbl = ctk.CTkLabel(
             card, text="", font=ctk.CTkFont(family="Consolas", size=13, weight="bold"), text_color=ACCENT, width=60)
-        self.margin_val_lbl.grid(row=0, column=2, padx=(0, 6), pady=8)
+        self.margin_val_lbl.grid(row=1, column=2, padx=(0, 6), pady=8)
 
         self.margin_entry = ctk.CTkEntry(
             card, width=70, textvariable=self.margin_var, font=ctk.CTkFont(family="Consolas", size=12), justify="center")
-        self.margin_entry.grid(row=0, column=3, sticky="w", padx=(0, 20), pady=8)
+        self.margin_entry.grid(row=1, column=3, sticky="w", padx=(0, 20), pady=8)
         self.margin_entry.bind("<Return>", self._on_entry_margin_commit)
         self.margin_entry.bind("<FocusOut>", self._on_entry_margin_commit)
 
         # 2. Threshold
         self.threshold_lbl_w = ctk.CTkLabel(
             card, text="", font=ctk.CTkFont(family="Segoe UI", size=12, weight="bold"), text_color="white")
-        self.threshold_lbl_w.grid(row=1, column=0, sticky="w", **pad)
+        self.threshold_lbl_w.grid(row=2, column=0, sticky="w", **pad)
 
         sf2 = ctk.CTkFrame(card, fg_color="transparent")
-        sf2.grid(row=1, column=1, sticky="ew", padx=(0, 10), pady=8)
+        sf2.grid(row=2, column=1, sticky="ew", padx=(0, 10), pady=8)
         sf2.columnconfigure(0, weight=1)
         self.slider_threshold = ctk.CTkSlider(
             sf2, from_=0.0, to=50.0, number_of_steps=100, variable=self.threshold_var, command=self._on_slider_threshold,
@@ -199,32 +233,32 @@ class SnipSyncApp(_Base):
 
         self.threshold_val_lbl = ctk.CTkLabel(
             card, text="", font=ctk.CTkFont(family="Consolas", size=13, weight="bold"), text_color=ACCENT, width=60)
-        self.threshold_val_lbl.grid(row=1, column=2, padx=(0, 6), pady=8)
+        self.threshold_val_lbl.grid(row=2, column=2, padx=(0, 6), pady=8)
 
         self.threshold_entry = ctk.CTkEntry(
             card, width=70, textvariable=self.threshold_var, font=ctk.CTkFont(family="Consolas", size=12), justify="center")
-        self.threshold_entry.grid(row=1, column=3, sticky="w", padx=(0, 20), pady=8)
+        self.threshold_entry.grid(row=2, column=3, sticky="w", padx=(0, 20), pady=8)
         self.threshold_entry.bind("<Return>", self._on_entry_threshold_commit)
         self.threshold_entry.bind("<FocusOut>", self._on_entry_threshold_commit)
 
         # 3. Export format
         self.export_lbl_w = ctk.CTkLabel(
             card, text="", font=ctk.CTkFont(family="Segoe UI", size=12, weight="bold"), text_color="white")
-        self.export_lbl_w.grid(row=2, column=0, sticky="w", **pad)
+        self.export_lbl_w.grid(row=3, column=0, sticky="w", **pad)
 
         self.export_menu = ctk.CTkOptionMenu(
             card, values=list(EXPORT_MODES.keys()), variable=self.export_var,
             font=ctk.CTkFont(family="Segoe UI", size=12), fg_color=BG_DARK, button_color=ACCENT,
             button_hover_color=ACCENT_HOVER, dropdown_fg_color=BG_DARK, width=240)
-        self.export_menu.grid(row=2, column=1, columnspan=3, sticky="w", padx=(0, 20), pady=8)
+        self.export_menu.grid(row=3, column=1, columnspan=3, sticky="w", padx=(0, 20), pady=8)
 
         # 4. SRT Generation settings
         self.srt_lbl_w = ctk.CTkLabel(
             card, text="", font=ctk.CTkFont(family="Segoe UI", size=12, weight="bold"), text_color="white")
-        self.srt_lbl_w.grid(row=3, column=0, sticky="w", **pad)
+        self.srt_lbl_w.grid(row=4, column=0, sticky="w", **pad)
 
         srt_frame = ctk.CTkFrame(card, fg_color="transparent")
-        srt_frame.grid(row=3, column=1, columnspan=3, sticky="w", padx=(0, 20), pady=8)
+        srt_frame.grid(row=4, column=1, columnspan=3, sticky="w", padx=(0, 20), pady=8)
         
         self.srt_checkbox = ctk.CTkCheckBox(
             srt_frame, text="", variable=self.srt_var, font=ctk.CTkFont(family="Segoe UI", size=12),
@@ -256,10 +290,10 @@ class SnipSyncApp(_Base):
         # 5. Output dir
         self.outdir_lbl_w = ctk.CTkLabel(
             card, text="", font=ctk.CTkFont(family="Segoe UI", size=12, weight="bold"), text_color="white")
-        self.outdir_lbl_w.grid(row=4, column=0, sticky="w", **pad)
+        self.outdir_lbl_w.grid(row=5, column=0, sticky="w", **pad)
 
         of = ctk.CTkFrame(card, fg_color="transparent")
-        of.grid(row=4, column=1, columnspan=3, sticky="ew", padx=(0, 20), pady=8)
+        of.grid(row=5, column=1, columnspan=3, sticky="ew", padx=(0, 20), pady=8)
         of.columnconfigure(0, weight=1)
 
         self.outdir_val_lbl = ctk.CTkLabel(
@@ -331,6 +365,28 @@ class SnipSyncApp(_Base):
         self.lang_lbl_hdr.configure(text=self.t("lang_label"))
         self.drop_label.configure(
             text=self.t("drop_hint") if not self.input_file else self.drop_label.cget("text"))
+        
+        # Update preset labels & buttons
+        self.preset_lbl_w.configure(text=self.t("preset_label"))
+        self.preset_save_btn.configure(text=self.t("preset_save"))
+        self.preset_delete_btn.configure(text=self.t("preset_delete"))
+        
+        # Update preset OptionMenu values dynamically based on language
+        old_val = self.preset_menu_var.get()
+        none_ja = I18N["ja"]["preset_none"]
+        none_en = I18N["en"]["preset_none"]
+        
+        store = load_store()
+        presets = store.get("presets", {})
+        none_text = self.t("preset_none")
+        values = [none_text] + list(presets.keys())
+        self.preset_menu.configure(values=values)
+        
+        if old_val in (none_ja, none_en) or old_val not in presets:
+            self.preset_menu_var.set(none_text)
+        else:
+            self.preset_menu_var.set(old_val)
+
         self.margin_lbl_w.configure(text=self.t("margin_label"))
         self.threshold_lbl_w.configure(text=self.t("threshold_label"))
         self.export_lbl_w.configure(text=self.t("export_label"))
@@ -359,6 +415,123 @@ class SnipSyncApp(_Base):
         
         self._update_margin_label()
         self._update_threshold_label()
+
+    def _collect_settings(self) -> dict:
+        export_disp = self.export_var.get()
+        export_val = "resolve"
+        for name, (key, ext) in EXPORT_MODES.items():
+            if name == export_disp:
+                export_val = key
+                break
+        return {
+            "margin": self.margin_var.get(),
+            "threshold": self.threshold_var.get(),
+            "export": export_val,
+            "srt": self.srt_var.get(),
+            "model": self.model_key_var.get(),
+            "output_dir": self.output_dir,
+            "gpu": self.gpu_var.get()
+        }
+
+    def _apply_settings(self, s: dict):
+        if "margin" in s:
+            self.margin_var.set(s["margin"])
+        if "threshold" in s:
+            self.threshold_var.set(s["threshold"])
+        if "export" in s:
+            export_val = s["export"]
+            for name, (key, ext) in EXPORT_MODES.items():
+                if key == export_val:
+                    self.export_var.set(name)
+                    break
+        if "srt" in s:
+            self.srt_var.set(s["srt"])
+        if "model" in s:
+            self.model_key_var.set(s["model"])
+            opts_dict = self.t("model_options")
+            if s["model"] in opts_dict:
+                self.model_display_var.set(opts_dict[s["model"]])
+        if "output_dir" in s:
+            self.output_dir = s["output_dir"]
+            if self.output_dir:
+                self.outdir_val_lbl.configure(text=self.output_dir, text_color="white")
+            else:
+                self.outdir_val_lbl.configure(text=self.t("outdir_default"), text_color=TEXT_MUTED)
+        if "gpu" in s:
+            if cuda_available():
+                self.gpu_var.set(s["gpu"])
+            else:
+                self.gpu_var.set(False)
+
+        self._update_margin_label()
+        self._update_threshold_label()
+        self._on_srt_toggle()
+
+    def _update_preset_menu(self):
+        store = load_store()
+        presets = store.get("presets", {})
+        none_text = self.t("preset_none")
+        values = [none_text] + list(presets.keys())
+        self.preset_menu.configure(values=values)
+        
+        current = self.preset_menu_var.get()
+        if current not in presets:
+            self.preset_menu_var.set(none_text)
+
+    def _on_preset_select(self, choice):
+        none_text = self.t("preset_none")
+        if choice == none_text:
+            return
+        store = load_store()
+        presets = store.get("presets", {})
+        if choice in presets:
+            self._apply_settings(presets[choice])
+
+    def _on_preset_save(self):
+        dialog = ctk.CTkInputDialog(
+            text=self.t("preset_name_prompt"),
+            title=self.t("preset_save")
+        )
+        name = dialog.get_input()
+        if not name:
+            return
+        name = name.strip()
+        if not name:
+            return
+        
+        settings = self._collect_settings()
+        store = load_store()
+        upsert_preset(store, name, settings)
+        save_store(store)
+        
+        self._log(self.t("log_preset_saved", name), "success")
+        self.preset_menu_var.set(name)
+        self._update_preset_menu()
+
+    def _on_preset_delete(self):
+        choice = self.preset_menu_var.get()
+        none_text = self.t("preset_none")
+        if choice == none_text:
+            return
+        
+        store = load_store()
+        presets = store.get("presets", {})
+        if choice in presets:
+            delete_preset(store, choice)
+            save_store(store)
+            self._log(self.t("log_preset_deleted", choice), "info")
+            
+        self.preset_menu_var.set(none_text)
+        self._update_preset_menu()
+
+    def _on_close(self):
+        try:
+            store = load_store()
+            set_last_used(store, self._collect_settings())
+            save_store(store)
+        except Exception as e:
+            print(f"Error saving presets on close: {e}", file=sys.stderr)
+        self.destroy()
 
     def _on_model_select(self, display_val):
         opts_dict = self.t("model_options")
