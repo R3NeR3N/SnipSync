@@ -135,7 +135,7 @@ def run_pipeline(
                 result.ok = True
                 result.timeline_path = output_ae
             else:
-                on_log(tr("log_error", rc, ""), "error")
+                on_log(tr("log_error", rc), "error")
         except FileNotFoundError as e:
             on_log(tr("log_ae_missing", e), "error")
         except Exception as e:
@@ -161,7 +161,7 @@ def run_pipeline(
                     else:
                         on_log(tr("log_wav_missing"), "error")
                 else:
-                    on_log(tr("log_error", rc_temp, ""), "error")
+                    on_log(tr("log_error", rc_temp), "error")
             except Exception as e:
                 on_log(tr("log_unexpected", traceback.format_exc()), "error")
                 
