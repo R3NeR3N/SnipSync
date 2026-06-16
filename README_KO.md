@@ -112,7 +112,7 @@ pip install auto-editor faster-whisper customtkinter tkinterdnd2
 #### 4단계 — 애플리케이션 실행
 
 ```bash
-python app.py
+python src/app.py
 ```
 
 ---
@@ -125,18 +125,10 @@ python app.py
 pip install pyinstaller
 ```
 
-#### 2단계 — `app.spec` 편집
-
-`app.spec`을 열고 로컬 프로젝트 디렉터리와 일치하도록 `WORK_DIR` 경로를 업데이트합니다:
-
-```python
-WORK_DIR = Path(r'C:\path\to\your\SnipSync')
-```
-
-#### 3단계 — 빌드 실행
+#### 2단계 — 빌드 실행
 
 ```bash
-pyinstaller app.spec
+pyinstaller build/app.spec
 ```
 
 빌드가 완료되면 단일 실행 파일이 `dist\SnipSync.exe`에 생성됩니다.
