@@ -17,7 +17,7 @@
 
 - [x] **単体テスト導入** — `tests/test_unit.py`: `format_timestamp` + `build_cut_cmd`/`build_extract_wav_cmd`（純関数なので subprocess モック不要）。P-2同期も検証。
 - [x] **モノリス分割（段階1）** — `version.py` / `i18n.py` / `theme.py` を `src/app.py` から切り出し（flat配置・pathex=src で読込）。
-- [~] **モノリス分割（段階2）** — `autoeditor.py`(コマンド組立) / `subtitles.py`(`format_timestamp`) を分離済み。**残**: `_worker` の pipeline オーケストレーション抽出（UI/ログ結合のため要コールバック設計、別途）。
+- [x] **モノリス分割（段階2）** — `autoeditor.py`(コマンド組立) / `subtitles.py`(`format_timestamp`) / `pipeline.py`(処理フロー) を分離。単体テスト(mock)で検証済み。
 - [x] **依存管理整理** — `pyproject.toml` に直接依存を切り出し。`requirements.txt` はロックとして据え置き（全行書換は §4.2 で禁止）。
 
 ## P2（機能・UX）
