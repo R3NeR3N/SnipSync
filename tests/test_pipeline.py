@@ -694,3 +694,80 @@ def test_pipeline_gpu_fallback(temp_dirs, monkeypatch):
     assert ("log_gpu_fallback", "warn") in logs
     assert ("log_device:cpu", "muted") in logs
 
+
+def test_pipeline_gpu_fallback_lazy_generator(temp_dirs, monkeypatch):
+    inp, out_dir = temp_dirs
+    
+    def mock_write(cmd):
+        output_path = None
+        if "--output" in cmd:
+            idx = cmd.index("--output")
+            output_path = Path(cmd[idx + 1])
+        if output_path:
+            output_path.write_bytes(b"dummy")
+
+    monkeypatch.setattr(subprocess, "Popen", make_mock_popen(
+        stdout_lines=["progress line"], write_output=mock_write
+    ))
+    
+    monkeypatch.setattr("subtitles.cuda_available", lambda: True)
+    
+    segments = [
+        DummySegment(0.5, 2.3, "Fallback lazy generator test"),
+    ]
+    
+    class DummyInfo:
+        language = "en"
+        language_probability = 0.99
+        
+    call_history = []
+    
+    def mock_transcribe_lazy(wav_path, model_size):
+        call_history.append("called")
+        if len(call_history) == 1:
+            def failing_gen():
+                raise RuntimeError("CUDA execution failed during iteration")
+                yield # makes it a generator
+            return failing_gen(), DummyInfo()
+        
+        def success_gen():
+            yield from segments
+        return success_gen(), DummyInfo()
+        
+    params = PipelineParams(
+        margin=0.2,
+        threshold=4.0,
+        export_key="premiere",
+        do_srt=True,
+        model_size="small",
+        use_gpu=True
+    )
+    
+    logs = []
+    def on_log(msg, level=""):
+        logs.append((msg, level))
+        
+    res = run_pipeline(
+        ae_path="dummy-ae",
+        inp=inp,
+        out_dir=out_dir,
+        params=params,
+        on_log=on_log,
+        should_stop=lambda: False,
+        tr=stub_tr,
+        transcribe=mock_transcribe_lazy
+    )
+    
+    assert res.ok is True
+    assert res.stopped is False
+    assert res.srt_path == out_dir / "input.srt"
+    assert len(call_history) == 2
+    
+    assert ("log_gpu_fallback", "warn") in logs
+    assert ("log_device:cpu", "muted") in logs
+    
+    assert res.srt_path.exists()
+    content = res.srt_path.read_text(encoding="utf-8")
+    assert "Fallback lazy generator test" in content
+
+
