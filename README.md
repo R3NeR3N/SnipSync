@@ -112,7 +112,7 @@ pip install auto-editor faster-whisper customtkinter tkinterdnd2
 #### Step 4 — Run the application
 
 ```bash
-python app.py
+python src/app.py
 ```
 
 ---
@@ -125,18 +125,10 @@ python app.py
 pip install pyinstaller
 ```
 
-#### Step 2 — Edit `app.spec`
-
-Open `app.spec` and update the `WORK_DIR` path to match your local project directory:
-
-```python
-WORK_DIR = Path(r'C:\path\to\your\SnipSync')
-```
-
-#### Step 3 — Build
+#### Step 2 — Build
 
 ```bash
-pyinstaller app.spec
+pyinstaller build/app.spec
 ```
 
 The standalone executable will be output to `dist\SnipSync.exe`.
