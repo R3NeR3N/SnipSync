@@ -14,6 +14,15 @@
 
 ---
 
+## 2026-06-17 — P2 課題C: 即時停止の設計（頭脳: Opus 4.8）
+- 決定: P1 完了を受け P2 先頭「即時停止対応」を設計。設計書 `docs/handoff/P2-immediate-stop.md` を作成（実装は 🔧Gemini へハンドオフ）。
+- 設計判断1: `pipeline.run_pipeline` の auto-editor 呼出を `subprocess.run`→`Popen` ストリーミング化し、`should_stop()` 監視で実行中プロセスを kill。`run_pipeline` の公開シグネチャは不変（内部ヘルパ `_run_streaming`/`_kill_tree` 追加）。kill は pipeline 内に閉じ、UI `_stop_process` は従来どおりフラグ立てのみ＝UI 非依存維持。
+- 設計判断2: auto-editor は ffmpeg を子に持つため `terminate()` では孤児化。Windows は `CREATE_NEW_PROCESS_GROUP` + `taskkill /F /T /PID`（ツリー kill）で対応。**psutil 等の新規依存は足さない**（配布 EXE 肥大回避／要承認）。
+- 設計判断3: 着手時に発見した i18n 違反3箇所（`app.py:458` SRT生成ログ, `app.py:501` 停止ログ, `pipeline.py:138` 音声検出ログ＝Gemini の P1 実装の取りこぼし）を、触る範囲なので本タスクで同時修正。i18n キー `log_stop_requested`/`log_srt_enabled`/`log_lang_detected` を ja/en 追加。
+- 影響/トレードオフ: 停止が即時化。ただし `for line in proc.stdout` のブロッキング上、auto-editor 無出力ハング時のみ次行まで遅延（実用上ほぼ即時。完全即時=別スレッドポンプは非対象）。課題C は実装完了時に「解消」へ更新する。
+- 協業: 設計=Opus（本コミット）、実装=Gemini（AGENTS §6.1 作者一致）。
+- 関連: `docs/handoff/P2-immediate-stop.md`, `src/pipeline.py`, `src/app.py`, `src/i18n.py`, `tests/test_pipeline.py`, ROADMAP P2
+
 ## 2026-06-17 — P1 stage2: pipeline 抽出（コールバックI/F化）完了（作業: Gemini 3.5）
 - 決定: `src/app.py` の `_worker` に同居していた処理オーケストレーションを UI 非依存の `src/pipeline.py` に `run_pipeline` として切り出した。
 - 理由: モノリスを分割し、UI 非依存とすることで subprocess や transcribe をモックした単体テストを可能にするため。
