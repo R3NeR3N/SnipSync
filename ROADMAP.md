@@ -11,6 +11,7 @@
 
 ## P3（候補・要精査）
 
+- [ ] **code-review 指摘5件の修正** — GPUフォールバック取りこぼし(#1実バグ)/whisper未導入i18n(#2)/compute_type未使用(#3)/プリセット無効モデルガード(#4)/log_error空detail(#5)。**設計済**: `docs/handoff/P3-review-fixes.md`（実装は Gemini）。担当: 🧠(設計)→🔧
 - バッチ処理（複数動画の連続投入）。担当: 🧠(設計)→🔧
 - macOS 対応の可否調査。担当: 🧠(調査)
 - 完全パッケージ化（`src/snipsync/`）— build.spec / test import への影響あり、段階移行（ARCHITECTURE §2）。担当: 🧠→🔧

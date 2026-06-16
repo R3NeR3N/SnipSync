@@ -15,6 +15,16 @@
 
 ---
 
+## 2026-06-17 05:45 — code-review 指摘5件の修正設計（頭脳: Opus 4.8）
+- 経緯: `feat/p1-refactor`（P1/P2全実装・8コミット）へ /code-review high。確定5件。設計書 `docs/handoff/P3-review-fixes.md` を作成（実装は🔧Gemini）。
+- 確定した実バグ #1: faster-whisper `transcribe()` は**遅延ジェネレータ**。実デコードは `segments` 反復時（SRT書込ループ）に起きるため、GPUフォールバックの try が model構築/呼出までしか覆っておらず、**デコード途中のCUDA実行時エラー（OOM等）がフォールバックを素通り**→ `log_unexpected` で握りつぶし＝CPU再試行されない。DIモックが即時例外で落ちるためテストでは露見しなかった。修正方針=`list(seg_iter)` で try 内にデコードを完走させ、フォールバック時 device/compute_type を同時にCPUへ。トレードオフ: デコード中のライブ字幕ログが一括化（正確性優先、GPUはopt-in/稀）。
+- #2: `app.py:702` whisper未導入メッセージが日本語ハードコード（i18nキー無し）→ `log_whisper_unavailable` を ja/en 追加。P-1違反、P1/今回の取りこぼし。
+- #3: `resolve_device` の `compute_type` が実パスで未使用（ハードコード）→ WhisperModel に渡す。#1と同ブロックで同時修正。
+- #4: プリセット無効モデルキーのガード（将来のモデル改名/削除用）。#5: `log_error` 空detail（stderrはstdoutマージで既にライブ表示）→テンプレ単一化。
+- 偽陽性として棄却2件（証拠付）: gpu_checkbox AttributeError（`_build_ui` がL95でL98チェック前に生成）/ `info` NameError（失敗transcribeはL190 re-raise→外側exceptでL209到達せず）。
+- 協業: 設計=Opus（本コミット）、実装=Gemini。
+- 関連: `docs/handoff/P3-review-fixes.md`, `src/pipeline.py`, `src/app.py`, `src/i18n.py`, `tests/test_pipeline.py`
+
 ## 2026-06-17 05:30 — バージョニング規則の策定（頭脳: Opus 4.8）
 - 決定: SemVer 2.0 を正式採用し AGENTS.md §5 を「既知の不整合」記述から正式な規則へ書き換え。
 - 桁の SnipSync 固有定義: MAJOR=ユーザー互換性破壊（出力XML構造変更でNLE取込不可 / エクスポート形式削除 / presets.jsonスキーマ破壊 / 対応NLE廃止 / 最低要件引上げ）、MINOR=後方互換の機能追加、PATCH=機能追加なしのバグ修正のみ。内部リファクタは単独では桁を動かさず相乗り。

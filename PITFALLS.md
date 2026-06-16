@@ -16,6 +16,12 @@
 
 ---
 
+## 2026-06-17 — faster-whisper transcribe() は遅延ジェネレータ。例外はデコード（反復）時に出る
+- やりがちなこと: `model.transcribe()` 呼び出しを try で囲み「これで GPU 失敗を捕捉できる」と考える。
+- 何が起きるか: `transcribe()` は (segments_generator, info) を即返すだけで**実デコードは segments を反復したとき**に走る。CUDA OOM 等の実行時エラーは反復ループ（SRT書込）で送出され、transcribe() を囲んだ try/except を**素通り**する → GPUフォールバックが効かない。DIモックが即時例外で落ちる設計だとテストでも露見しない。
+- 正しい手順: フォールバック判定をしたい範囲内で `list(seg_iter)` 等により**デコードを完走させてから**SRT書込へ進む。フォールバック時は device と compute_type を同時に CPU 用へ切り替える。
+- 関連: `src/pipeline.py` 2bブロック, `docs/handoff/P3-review-fixes.md`, `tests/test_pipeline.py`
+
 ## 2026-06-17 — テスト内で subprocess.Popen をモックすると taskkill 等の subprocess.run も巻き込まれる
 - やったこと: `tests/test_pipeline.py` で `subprocess.Popen` をモックした。また、`_kill_tree` の Windows 用処理で `subprocess.run(["taskkill", ...])` を呼び出した。
 - 何が起きたか: `subprocess.run` は内部で `Popen` を呼び出すため、モックされた `Popen` が返された。モッククラスがコンテキストマネージャプロトコル (`__enter__`/`__exit__`) や `communicate` / `args` などの属性を実装していなかったため、`TypeError` や `AttributeError` が発生した。
