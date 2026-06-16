@@ -15,6 +15,15 @@
 
 ---
 
+## 2026-06-17 05:10 — P2 完了の整理 + Gemini出力言語ルール追加（頭脳: Opus 4.8）
+- 決定1: Gemini の出力する "Implementation Plan" / "Walkthrough" は**日本語で記述**するルールを AGENTS.md §4.1 に追記。理由: レビュー効率・チーム言語統一。見出し名は英語可・本文は日本語。
+- 決定2: P0/P1/P2 が全完了（Gemini 実装 commit bab6009/3a95c9d ほか、tree clean）したのを受け、ドキュメント同期を実施。
+  - CHANGELOG `[Unreleased]`: P1（モノリス分割・テスト・pyproject）・P2（即時停止・GPU・プリセット）を Added/Changed に反映。解消済みの「停止が即時でない」を Known Issues から削除。
+  - ROADMAP: 完了 P0–P2 を削除（ROADMAP 自身のルール「完了は CHANGELOG へ移し消す」に従う）。残課題を P3（バッチ処理・macOS調査・完全パッケージ化）へ再編。
+- 影響: ROADMAP に未着手 design タスクなし → 次の Opus 着手は P3（要精査）。優先度はユーザー確認待ち。
+- 協業: 本コミットは docs のみ → Opus がコミット（AGENTS §6.1 作者一致）。
+- 関連: `AGENTS.md`, `CHANGELOG.md`, `ROADMAP.md`
+
 ## 2026-06-17 04:38 — P2 出力プリセット保存の実装完了（作業: Gemini 3.5）
 - 決定: 設計書 `docs/handoff/P2-output-presets.md` に基づき、名前付きプリセット保存/読込/削除および前回終了時設定の自動復元機能（last_used）を実装。
 - 理由: ユーザーが起動するたびに設定を再入力する手間を排除し、よく使用する設定の組み合わせを簡単に保存・復元できるようにするため。

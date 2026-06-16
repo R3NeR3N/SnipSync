@@ -67,6 +67,7 @@ pyinstaller build/app.spec   # → dist/SnipSync.exe
 - 外部プロセス呼び出しは `subprocess.run(..., encoding="utf-8", errors="replace")` を踏襲。
 - 変更の理由・トレードオフを **MEMORY.md に追記**してから完了とする。
 - 試して**失敗した手順は PITFALLS.md に追記**する（成功しなくても記録は残す）。
+- 🔧 作業(Gemini) が出力する **"Implementation Plan" / "Walkthrough" は日本語で記述する**（レビュー効率・チーム言語統一のため）。見出し名は英語のままでも本文は日本語。
 
 ### 4.2 やらないこと
 - ❌ ハードコードした日本語/英語文字列を UI に直接埋め込む。

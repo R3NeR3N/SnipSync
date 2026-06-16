@@ -7,31 +7,13 @@
 
 ---
 
-## P0（整合性・既知バグ。早めに潰す）
+> P0 / P1 / P2 はすべて完了。履歴は CHANGELOG.md `[Unreleased]` 参照。
 
-- [x] **バージョン一元化** — `src/snipsync/__init__.py` に `__version__="1.3.1"` を作り、UI タイトルと README/CHANGELOG を同期。担当: 🧠→🔧（設計1点・実装単純）
-- [x] **Whisper 言語ハードコード解除** — `language="ja"` を自動判定 or UI 言語セレクタ化. 担当: 🧠→🔧（設計は頭脳、実装は作業）
-- [x] **README バージョンバッジ修正** — 4言語の `v1.0.0` を実バージョンへ。担当: 🔧
+## P3（候補・要精査）
 
-## P1（品質・保守性）
-
-- [x] **単体テスト導入** — `tests/test_unit.py`: `format_timestamp` + `build_cut_cmd`/`build_extract_wav_cmd`（純関数なので subprocess モック不要）。P-2同期も検証。
-- [x] **モノリス分割（段階1）** — `version.py` / `i18n.py` / `theme.py` を `src/app.py` から切り出し（flat配置・pathex=src で読込）。
-- [x] **モノリス分割（段階2）** — `autoeditor.py`(コマンド組立) / `subtitles.py`(`format_timestamp`) / `pipeline.py`(処理フロー) を分離。単体テスト(mock)で検証済み。
-- [x] **依存管理整理** — `pyproject.toml` に直接依存を切り出し。`requirements.txt` はロックとして据え置き（全行書換は §4.2 で禁止）。
-
-## P2（機能・UX）
-
-- [x] **即時停止対応** — `subprocess.Popen` + プロセスツリー kill（`taskkill /F /T`）化、ログのストリーミング。担当: 🧠(設計)→🔧(実装)。**設計済**: `docs/handoff/P2-immediate-stop.md`（実装は Gemini）
-- [x] **GPU 対応の検討** — CUDA 環境で `compute_type` 切替（配布サイズとのトレードオフ）。担当: 🧠(判断)→🔧。**設計済**: `docs/handoff/P2-gpu-support.md`（非同梱・オプトイン・CPUフォールバック。実装は Gemini）
-- [x] **出力プリセット保存** — よく使う設定の記憶。担当: 🧠→🔧。**設計済**: `docs/handoff/P2-output-presets.md`（名前付きプリセット+last-used自動復元。実装は Gemini）
-
-> ⚠ 上記2件は**どちらも `app.py` 設定UI と `i18n.py` を編集**するため実装は**直列**（後発はリベース）。
-
-## アイデア（未精査・優先度未定）
-
-- バッチ処理（複数動画の連続投入）。
-- macOS 対応の可否調査。
+- バッチ処理（複数動画の連続投入）。担当: 🧠(設計)→🔧
+- macOS 対応の可否調査。担当: 🧠(調査)
+- 完全パッケージ化（`src/snipsync/`）— build.spec / test import への影響あり、段階移行（ARCHITECTURE §2）。担当: 🧠→🔧
 
 ---
 
