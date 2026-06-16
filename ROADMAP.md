@@ -23,8 +23,10 @@
 ## P2（機能・UX）
 
 - [x] **即時停止対応** — `subprocess.Popen` + プロセスツリー kill（`taskkill /F /T`）化、ログのストリーミング。担当: 🧠(設計)→🔧(実装)。**設計済**: `docs/handoff/P2-immediate-stop.md`（実装は Gemini）
-- [ ] **GPU 対応の検討** — CUDA 環境で `compute_type` 切替（配布サイズとのトレードオフ）。担当: 🧠(判断)→🔧
-- [ ] **出力プリセット保存** — よく使う設定の記憶。担当: 🧠→🔧
+- [ ] **GPU 対応の検討** — CUDA 環境で `compute_type` 切替（配布サイズとのトレードオフ）。担当: 🧠(判断)→🔧。**設計済**: `docs/handoff/P2-gpu-support.md`（非同梱・オプトイン・CPUフォールバック。実装は Gemini）
+- [ ] **出力プリセット保存** — よく使う設定の記憶。担当: 🧠→🔧。**設計済**: `docs/handoff/P2-output-presets.md`（名前付きプリセット+last-used自動復元。実装は Gemini）
+
+> ⚠ 上記2件は**どちらも `app.py` 設定UI と `i18n.py` を編集**するため実装は**直列**（後発はリベース）。
 
 ## アイデア（未精査・優先度未定）
 

@@ -14,6 +14,15 @@
 
 ---
 
+## 2026-06-17 — P2 残2件（GPU対応 / 出力プリセット）の設計（頭脳: Opus 4.8）
+- 決定: 即時停止(課題C)の実装完了(commit 0dbe9e9)を受け、P2 残りの2件を設計。設計書を2本作成（実装は🔧Gemini へハンドオフ）: `docs/handoff/P2-gpu-support.md`, `docs/handoff/P2-output-presets.md`。
+- GPU判断: CUDA/cuDNN は **EXE 非同梱**（CONTEXT §7 / 配布肥大回避）。**オプトイン（既定OFF）+ `ctranslate2.get_cuda_device_count()` 自動検出 + GPU失敗時CPUフォールバック**。compute_type は GPU時 `int8_float16` / CPU時 `int8`。`PipelineParams.use_gpu`（末尾・既定False＝後方互換）で意図のみ渡し、`subtitles.resolve_device()` で解決（UI非依存維持）。新規依存なし（torch等足さない）。
+- プリセット設計: 新規 `src/presets.py`（Tk非依存・JSON I/O のみ）に store 操作を閉じ、UI が Tk変数⇄dict 変換を担当。永続先 `%APPDATA%/SnipSync/presets.json`（utf-8/ensure_ascii=False）。名前付きプリセット 保存/読込/削除 + 前回設定の自動復元(last_used, WM_DELETE_WINDOW)。壊れ/不在JSONでも落ちず既定構造。
+- 並列性: 2件とも `app.py` 設定UI + `i18n.py` を編集 → **実装は直列**（後発リベース）。設計(本タスク)は衝突なしで両方先行。GPUの `gpu` キーはプリセットの「存在キーだけ読む」設計で順序非依存。
+- 発見(未修正・Geminiへ申し送り): `pipeline.py:211` の `"Temp file cleanup failed: {e}"` は**ハードコードEN文字列**（AGENTS §4.1 / P-1 違反）。即時停止実装の取りこぼし。次の実装タスクで i18n キー化推奨。
+- 協業: 設計=Opus（本コミット）、実装=Gemini（AGENTS §6.1 作者一致）。
+- 関連: `docs/handoff/P2-gpu-support.md`, `docs/handoff/P2-output-presets.md`, ROADMAP P2, `src/pipeline.py`, `src/subtitles.py`, `src/app.py`, `src/i18n.py`
+
 ## 2026-06-17 — P2 課題C: 即時停止の実装（作業: Gemini 3.5）
 - 決定: 設計書 `docs/handoff/P2-immediate-stop.md` に従い、`src/pipeline.py` に `_run_streaming` と `_kill_tree` を実装し、`run_pipeline` の外部プロセス呼び出し（メインカットおよび一時WAV抽出）を `subprocess.Popen` によるストリーミングに移行。
 - 理由: ユーザーが停止ボタンを押した際に、実行中の外部プロセス（auto-editor/ffmpeg）を即座に強制終了し、無駄な処理を防止するため。
