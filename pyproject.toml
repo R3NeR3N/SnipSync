@@ -19,6 +19,15 @@ dependencies = [
 [project.optional-dependencies]
 build = ["pyinstaller>=6,<7"]
 dev = ["pytest>=7", "ruff>=0.6"]
+# Opt-in GPU (CUDA 12) acceleration for faster-whisper on Windows. These wheels
+# ship cuBLAS/cuDNN/cudart DLLs *inside* the venv (site-packages/nvidia/*/bin) so
+# the host stays clean. subtitles.add_cuda_dll_dirs() registers them at runtime.
+# NOT bundled in the distributed EXE (CONTEXT §7); install with: pip install -e ".[gpu]"
+gpu = [
+    "nvidia-cublas-cu12",
+    "nvidia-cudnn-cu12",
+    "nvidia-cuda-runtime-cu12",
+]
 
 [project.scripts]
 snipsync = "app:main"

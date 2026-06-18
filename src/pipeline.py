@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from autoeditor import build_cut_cmd, build_extract_wav_cmd
-from subtitles import format_timestamp, resolve_device
+from subtitles import add_cuda_dll_dirs, format_timestamp, resolve_device
 
 CREATE_NEW_PROCESS_GROUP = 0x00000200 if sys.platform == "win32" else 0
 
@@ -189,6 +189,8 @@ def run_pipeline(
                             seg_iter, inf = transcribe(temp_wav, params.model_size)
                         else:
                             from faster_whisper import WhisperModel
+                            if dev == "cuda":
+                                add_cuda_dll_dirs()   # venv内CUDA DLLをロード可能に（Win）
                             model = WhisperModel(params.model_size, device=dev, compute_type=ctype)
                             seg_iter, inf = model.transcribe(str(temp_wav), beam_size=5, language=None)
                         return list(seg_iter), inf   # ← list() でデコード完走（例外はここで出る）

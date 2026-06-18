@@ -15,6 +15,15 @@
 
 ---
 
+## 2026-06-19 — GPU(CUDA)字幕生成を Windows で実際に動作させる（venv内CUDAライブラリ）（頭脳兼作業: Opus 4.8）
+- 経緯: 実機(NVIDIA GPU)で「GPU使用」チェック→ログ「GPU初期化に失敗。CPUにフォールバック」。診断で実例外 `RuntimeError: Library cublas64_12.dll is not found or cannot be loaded` を捕捉。原因: GPUドライバは在るが CUDA ランタイム(cuBLAS/cuDNN/cudart)が不在。`faster-whisper`/`ctranslate2` pip導入では同梱されない（CONTEXT §7 / README既述）。フォールバックは設計通りの正常動作だった。
+- 決定: ホストにCUDA Toolkitを入れず、**nvidia-* wheel を venv 内に導入**してホスト非汚染のままGPU有効化。`pip install nvidia-cublas-cu12 nvidia-cudnn-cu12 nvidia-cuda-runtime-cu12`（DLLは `.venv/site-packages/nvidia/*/bin`）。pyproject に opt-in extra `[gpu]` を追加し再現可能化（`pip install -e ".[gpu]"`）。
+- 実装の肝（実測で確定）: 導入しただけでは ctranslate2 がDLLを発見できず同エラー継続。**インポート/モデル構築前に nvidia の各 `bin` を `os.add_dll_directory` ＋ `PATH` 前置**すると cuda デコード成功。`add_dll_directory` 単独では不足で **PATH 前置が必須**だった（Windows の LoadLibrary 探索のため）。→ `subtitles.add_cuda_dll_dirs()`（win限定・nvidia不在/非win/再実行はno-op・1回限り）を新設し、`pipeline._decode` の cuda モデル構築直前(`dev=="cuda"`)で呼ぶ。
+- 検証: 実 `run_pipeline(use_gpu=True, do_srt=True, model=medium)` で `device=cuda` ログ・フォールバック無し・srt生成・`_tracks`掃除を同時確認。全31テスト緑（DIモック経路は `add_cuda_dll_dirs` 不通過のため無影響）/ruffクリーン。
+- トレードオフ: `[gpu]` extra は約1.3GB(cublas553MB/cudnn690MB/cudart/nvrtc)。既定 deps には入れない(opt-in)。配布EXEは引き続きGPU非同梱（利用者システムにCUDA要）。README(4言語)はEXE向け記述のまま正(venv [gpu] 経路は pyproject コメント＋本ログに記録)。
+- 協業逸脱: アプリ実装(subtitles/pipeline)につき本来Gemini領域だがユーザー直接指示＋当セッションOpus一貫で実施。記録のみ。[[role-boundary-opus-design-only]]
+- 関連: `src/subtitles.py`(add_cuda_dll_dirs), `src/pipeline.py`(_decode), `pyproject.toml`([gpu]), README動作要件
+
 ## 2026-06-19 — auto-editor の `{stem}_tracks` 残骸を処理後に自動掃除（頭脳兼作業: Opus 4.8）
 - 経緯: 実動画（VRChat収録・音声3トラック）を初めて実パイプラインに通したところ、出力先とは別に**元動画の隣に `{stem}_tracks` フォルダ**（`_1.wav`/`_2.wav`/`_3.wav`＝トラック別展開）が残ると報告。ユーザーは「auto-editor に `--temp-dir` を渡す改修」を要望。
 - 検証で要望案を棄却: 多トラック動画＋`--temp-dir <空dir>` で実測 → **`_tracks` は依然として入力の隣に出現し、指定 temp-dir は空のまま**。`--help` にもトラック出力先の制御/抑制フラグ無し。つまり `--temp-dir` ではこのクラッタを消せない（PITFALLS 追記）。
