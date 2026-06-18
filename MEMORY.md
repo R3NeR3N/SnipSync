@@ -15,6 +15,16 @@
 
 ---
 
+## 2026-06-19 — auto-editor の `{stem}_tracks` 残骸を処理後に自動掃除（頭脳兼作業: Opus 4.8）
+- 経緯: 実動画（VRChat収録・音声3トラック）を初めて実パイプラインに通したところ、出力先とは別に**元動画の隣に `{stem}_tracks` フォルダ**（`_1.wav`/`_2.wav`/`_3.wav`＝トラック別展開）が残ると報告。ユーザーは「auto-editor に `--temp-dir` を渡す改修」を要望。
+- 検証で要望案を棄却: 多トラック動画＋`--temp-dir <空dir>` で実測 → **`_tracks` は依然として入力の隣に出現し、指定 temp-dir は空のまま**。`--help` にもトラック出力先の制御/抑制フラグ無し。つまり `--temp-dir` ではこのクラッタを消せない（PITFALLS 追記）。
+- 決定: auto-editor 側で抑止できないため、**SnipSync 側で処理後に掃除**する方式を採用（既存の一時WAV削除と同じ思想）。`run_pipeline` 冒頭で `tracks_dir = inp.parent/f"{inp.stem}_tracks"` の**事前存在を記録**し、`finally` で「本実行中に出現した場合のみ」`shutil.rmtree`。停止/失敗時も必ず後始末されるよう finally に配置。既存ユーザーデータ保護のため事前存在分は温存。
+- i18n: `log_tracks_cleaned` を ja/en 追加（AGENTS §4.1）。ログは muted。
+- テスト: `test_pipeline_tracks_cleanup`（新規出現分を削除＋ログ確認）/ `test_pipeline_tracks_preexisting_preserved`（事前存在は保護）を追加。全 31 passed（既存29＋2）。ruff クリーン。
+- 検証: 実 auto-editor で多トラックmp4を `run_pipeline`（do_srt=False）に通し、処理後 src 隣に `_tracks` が残らない（src=動画のみ / out=fcpxml）ことをE2E確認。※検証harnessのconsole(cp932)が auto-editor の絵文字 `⏳`/`❌` で UnicodeEncodeError を起こしたが、これは print harness 固有で実アプリ（Tkログ欄）は無関係。
+- 協業逸脱: 本変更は `src/pipeline.py`/`src/i18n.py`/tests の**アプリ実装**で本来 Gemini 領域（[[role-boundary-opus-design-only]]）。ユーザー直接指示＋当セッションが Opus 実装で一貫のため Opus が実施。次の機能実装は通常分担へ戻す。なお要望(`--temp-dir`)を鵜呑みにせず実測で否定し代替実装した点は AGENTS「矛盾は勝手に直さず確認」に沿い、根拠を本ログに残す。
+- 関連: `src/pipeline.py`(tracks掃除), `src/i18n.py`(log_tracks_cleaned), `tests/test_pipeline.py`, `PITFALLS.md`
+
 ## 2026-06-19 — venv をホスト汚染境界に据える（依存 pyproject 単一ソース化）＋ホスト/コンテナ役割明文化（頭脳兼作業: Opus 4.8）
 - 経緯: Dev Container 導入（2026-06-18）後、ユーザーが「ガイドの目的＝ローカル環境を汚さないが達成できているか」を診断要求。診断結論: コンテナは test/lint/agent は隔離できるが、SnipSync は GUIデスクトップ → headless で描画不可 → DoD#1 目視確認はホスト直実行 → **ホストに重依存フル導入が残り、汚染防止は半達成**。改善案として「ホスト venv を汚染境界の主役に、依存は pyproject 単一ソース、コンテナは lean のまま割り切り」を提案・採用。
 - 決定1: 開発は `.venv` に隔離（`.gitignore` 済を確認）。依存導入を `pip install auto-editor faster-whisper customtkinter tkinterdnd2`（手書きリスト）から **`pip install -e ".[dev]"`** へ。pyproject の `dependencies` / `optional-dependencies` を単一ソース化し、3箇所（pyproject/requirements/postCreate）手書きのドリフトを解消。新規依存は pyproject だけに足す運用。

@@ -16,6 +16,13 @@
 
 ---
 
+## 2026-06-19 — auto-editor の `--temp-dir` は `{stem}_tracks`（多トラック分解）を移動しない
+- やったこと: 多トラック音声の動画で、元動画の隣に出る `{stem}_tracks` フォルダ（`_1.wav`/`_2.wav`...）を消そうとして auto-editor に `--temp-dir <空dir>` を渡した。
+- 何が起きたか: `_tracks` は**依然として入力ファイルの隣に生成**され、指定した temp-dir は空のままだった。`--help` を見てもトラック分解の出力先変更/抑制フラグは無い。
+- 原因: `--temp-dir` が制御するのは auto-editor の内部一時ファイルであって、多トラック入力を分解した音声フォルダ（`_tracks`）の置き場所ではない。`_tracks` は入力パス基準で作られる。
+- 回避策 / 正しい手順: auto-editor 側では抑止できない。**呼び出し側（SnipSync）が処理後に掃除する**。`run_pipeline` 開始前に `{stem}_tracks` の存在を記録し、`finally` で「本実行中に出現した場合のみ」`shutil.rmtree`（既存フォルダは温存）。単トラック動画では `_tracks` は出ない（再現には多トラック入力が必要）。
+- 関連: `src/pipeline.py` run_pipeline(tracks掃除), `tests/test_pipeline.py`, MEMORY 2026-06-19
+
 ## 2026-06-18 — GitHub Actions の job-level `environment:` は `steps.*` 出力を読めない
 - やったこと: release.yml で 1ジョブ内の step でチャネル（staging/prod）を判定し、同ジョブの `environment: ${{ steps.channel.outputs.env }}` に渡そうとした。
 - 何が起きるか: `environment` はジョブ開始時（step実行前）に評価されるため `steps.*` は空。環境が解決されず無効。

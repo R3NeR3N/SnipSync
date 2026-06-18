@@ -1,3 +1,4 @@
+import shutil
 import subprocess
 import sys
 import traceback
@@ -113,6 +114,13 @@ def run_pipeline(
 
     output_ae = out_dir / f"{inp.stem}_snipsynced{ext}"
     output_srt = out_dir / f"{inp.stem}.srt"
+
+    # auto-editor は多トラック音声入力を分解し、入力ファイルの隣に {stem}_tracks
+    # フォルダ（_1.wav/_2.wav...）を残す。--temp-dir では移動できず抑制フラグも無い
+    # （実測で確認）ため、本実行で出現した場合のみ後始末する。既存フォルダは触らない
+    # よう、開始前に存在有無を記録しておく。
+    tracks_dir = inp.parent / f"{inp.stem}_tracks"
+    tracks_pre_existed = tracks_dir.exists()
 
     try:
         # 1. Auto-Editor Processing
@@ -235,5 +243,14 @@ def run_pipeline(
     except Exception:
         # Catch any unexpected top-level worker thread crashes
         on_log(tr("log_unexpected", traceback.format_exc()), "error")
+    finally:
+        # auto-editor が入力の隣に残す {stem}_tracks を掃除（本実行で出現した分のみ）。
+        # 停止/失敗時も必ず後始末されるよう finally に置く。
+        try:
+            if tracks_dir.is_dir() and not tracks_pre_existed:
+                shutil.rmtree(tracks_dir, ignore_errors=True)
+                on_log(tr("log_tracks_cleaned", tracks_dir.name), "muted")
+        except Exception:
+            pass
 
     return result

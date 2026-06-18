@@ -486,6 +486,70 @@ def test_pipeline_temp_wav_cleanup(temp_dirs, monkeypatch):
     assert not temp_wav_path.exists()
 
 
+def test_pipeline_tracks_cleanup(temp_dirs, monkeypatch):
+    """auto-editor が入力の隣に作る {stem}_tracks フォルダを後始末する。"""
+    inp, out_dir = temp_dirs
+    tracks_dir = inp.parent / "input_tracks"
+
+    def mock_write(cmd):
+        # auto-editor の多トラック分解挙動を模倣: 入力の隣に _tracks を作る
+        tracks_dir.mkdir(exist_ok=True)
+        (tracks_dir / "input_1.wav").write_bytes(b"audio")
+        if "--output" in cmd:
+            Path(cmd[cmd.index("--output") + 1]).write_bytes(b"dummy")
+
+    monkeypatch.setattr(subprocess, "Popen", make_mock_popen(
+        stdout_lines=["progress"], write_output=mock_write
+    ))
+
+    params = PipelineParams(
+        margin=0.2, threshold=4.0, export_key="resolve", do_srt=False, model_size="small"
+    )
+
+    logs = []
+    res = run_pipeline(
+        ae_path="dummy-ae",
+        inp=inp,
+        out_dir=out_dir,
+        params=params,
+        on_log=lambda m, lvl="": logs.append((m, lvl)),
+        should_stop=lambda: False,
+        tr=stub_tr
+    )
+
+    assert res.ok is True
+    assert not tracks_dir.exists()
+    assert any("log_tracks_cleaned" in m for m, _ in logs)
+
+
+def test_pipeline_tracks_preexisting_preserved(temp_dirs, monkeypatch):
+    """実行前から存在する {stem}_tracks は削除しない（ユーザーデータ保護）。"""
+    inp, out_dir = temp_dirs
+    tracks_dir = inp.parent / "input_tracks"
+    tracks_dir.mkdir()
+    (tracks_dir / "preexisting.wav").write_bytes(b"keep me")
+
+    def mock_write(cmd):
+        if "--output" in cmd:
+            Path(cmd[cmd.index("--output") + 1]).write_bytes(b"dummy")
+
+    monkeypatch.setattr(subprocess, "Popen", make_mock_popen(
+        stdout_lines=["progress"], write_output=mock_write
+    ))
+
+    params = PipelineParams(
+        margin=0.2, threshold=4.0, export_key="resolve", do_srt=False, model_size="small"
+    )
+
+    run_pipeline(
+        ae_path="dummy-ae", inp=inp, out_dir=out_dir, params=params,
+        on_log=lambda m, lvl="": None, should_stop=lambda: False, tr=stub_tr
+    )
+
+    assert tracks_dir.exists()
+    assert (tracks_dir / "preexisting.wav").exists()
+
+
 def test_pipeline_ae_not_found(temp_dirs, monkeypatch):
     inp, out_dir = temp_dirs
 
