@@ -4,7 +4,6 @@ Pure functions -> unit-testable without spawning processes. The main cut and
 the subtitle WAV extraction MUST share margin/threshold or subtitle timecodes
 drift from the timeline (PITFALLS P-2 / CONTEXT.md §1).
 """
-from pathlib import Path
 
 
 def build_cut_cmd(ae_path, inp, margin, threshold, export_key, output):

@@ -16,6 +16,18 @@
 
 ---
 
+## 2026-06-18 — GitHub Actions の job-level `environment:` は `steps.*` 出力を読めない
+- やったこと: release.yml で 1ジョブ内の step でチャネル（staging/prod）を判定し、同ジョブの `environment: ${{ steps.channel.outputs.env }}` に渡そうとした。
+- 何が起きるか: `environment` はジョブ開始時（step実行前）に評価されるため `steps.*` は空。環境が解決されず無効。
+- 正しい手順: 判定を別ジョブ（classify）に切り出し outputs に出す → build ジョブで `needs: classify` + `environment: ${{ needs.classify.outputs.env }}`。job-level environment は `needs`/`github`/`vars`/`inputs` は読めるが `steps` は不可。
+- 関連: `.github/workflows/release.yml`
+
+## 2026-06-18 — ruff の F401 自動修正が「再エクスポート / 可用性プローブ import」を消す
+- やりがちなこと: `ruff check --fix` を丸ごと走らせ F401（未使用 import）を一括削除。
+- 何が起きるか: app.py の `APP_VERSION`/`format_timestamp` は test_p0 が `from app import ...` する**再エクスポート**、`from faster_whisper import WhisperModel` は try 内の**可用性判定専用**で本体未使用。一括削除すると test破壊・WHISPER_AVAILABLE 判定破壊。
+- 正しい手順: 自動修正は安全規則のみに限定（`--select W293,I001,E401 --fix`）。再エクスポート/プローブ import は `# noqa: F401` で残す（または `__all__`）。真の不要 import だけ手で削除。
+- 関連: `src/app.py`, `tests/test_p0.py`, `pyproject.toml [tool.ruff]`
+
 ## 2026-06-17 — faster-whisper transcribe() は遅延ジェネレータ。例外はデコード（反復）時に出る
 - やりがちなこと: `model.transcribe()` 呼び出しを try で囲み「これで GPU 失敗を捕捉できる」と考える。
 - 何が起きるか: `transcribe()` は (segments_generator, info) を即返すだけで**実デコードは segments を反復したとき**に走る。CUDA OOM 等の実行時エラーは反復ループ（SRT書込）で送出され、transcribe() を囲んだ try/except を**素通り**する → GPUフォールバックが効かない。DIモックが即時例外で落ちる設計だとテストでも露見しない。

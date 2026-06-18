@@ -1,12 +1,11 @@
+import subprocess
+import sys
 import traceback
 from dataclasses import dataclass
 from pathlib import Path
-import subprocess
-import sys
 
 from autoeditor import build_cut_cmd, build_extract_wav_cmd
 from subtitles import format_timestamp, resolve_device
-
 
 CREATE_NEW_PROCESS_GROUP = 0x00000200 if sys.platform == "win32" else 0
 
@@ -37,20 +36,20 @@ def _run_streaming(cmd, *, on_log, should_stop) -> tuple[int, bool]:
         errors="replace",
         creationflags=CREATE_NEW_PROCESS_GROUP
     )
-    
+
     stopped = False
-    
+
     try:
         for line in proc.stdout:
             if should_stop():
                 _kill_tree(proc)
                 stopped = True
                 break
-            
+
             line = line.rstrip()
             if not line:
                 continue
-                
+
             # Log classification
             if any(k in line.lower() for k in ("error", "failed", "exception")):
                 on_log(line, "error")
@@ -61,16 +60,16 @@ def _run_streaming(cmd, *, on_log, should_stop) -> tuple[int, bool]:
     except Exception as e:
         _kill_tree(proc)
         raise e
-        
+
     if stopped:
         return -1, True
-        
+
     rc = proc.wait()
-    
+
     if should_stop():
         _kill_tree(proc)
         return -1, True
-        
+
     return rc, False
 
 
@@ -104,17 +103,17 @@ def run_pipeline(
     transcribe=None,         # DI用フック（既定 None→内部で faster_whisper を使用）
 ) -> PipelineResult:
     result = PipelineResult(ok=False, stopped=False, timeline_path=None, srt_path=None)
-    
+
     # Resolve output paths based on export_key
     ext = {
         "resolve": ".fcpxml",
         "premiere": ".xml",
         "final-cut-pro": ".fcpxml",
     }.get(params.export_key, ".xml")
-    
+
     output_ae = out_dir / f"{inp.stem}_snipsynced{ext}"
     output_srt = out_dir / f"{inp.stem}.srt"
-    
+
     try:
         # 1. Auto-Editor Processing
         if should_stop():
@@ -123,7 +122,7 @@ def run_pipeline(
             return result
 
         cmd = build_cut_cmd(ae_path, inp, params.margin, params.threshold, params.export_key, output_ae)
-        
+
         try:
             rc, stopped = _run_streaming(cmd, on_log=on_log, should_stop=should_stop)
             if stopped:
@@ -138,20 +137,20 @@ def run_pipeline(
                 on_log(tr("log_error", rc), "error")
         except FileNotFoundError as e:
             on_log(tr("log_ae_missing", e), "error")
-        except Exception as e:
+        except Exception:
             on_log(tr("log_unexpected", traceback.format_exc()), "error")
 
         # 2. Faster-Whisper Processing via Temp WAV
         if result.ok and params.do_srt and not result.stopped:
             temp_wav = output_ae.parent / f"{inp.stem}_temp_audio.wav"
             temp_success = False
-            
+
             # 2a. Generate Temp WAV
             on_log(tr("log_srt_temp_start"), "info")
             temp_cmd = build_extract_wav_cmd(ae_path, inp, params.margin, params.threshold, temp_wav)
             try:
                 rc_temp, stopped_temp = _run_streaming(temp_cmd, on_log=on_log, should_stop=should_stop)
-                
+
                 if stopped_temp:
                     result.stopped = True
                     on_log(tr("log_stopped"), "warn")
@@ -162,9 +161,9 @@ def run_pipeline(
                         on_log(tr("log_wav_missing"), "error")
                 else:
                     on_log(tr("log_error", rc_temp), "error")
-            except Exception as e:
+            except Exception:
                 on_log(tr("log_unexpected", traceback.format_exc()), "error")
-                
+
             if should_stop() and not result.stopped:
                 result.stopped = True
                 on_log(tr("log_stopped"), "warn")
@@ -225,16 +224,16 @@ def run_pipeline(
                         result.srt_path = output_srt
                 except Exception:
                     on_log(tr("log_unexpected", traceback.format_exc()), "error")
-            
+
             # 2c. Cleanup Temp WAV
             try:
                 if temp_wav.exists():
                     temp_wav.unlink()
             except Exception as e:
                 on_log(tr("log_cleanup_failed", str(e)), "warn")
-                
-    except Exception as e:
+
+    except Exception:
         # Catch any unexpected top-level worker thread crashes
         on_log(tr("log_unexpected", traceback.format_exc()), "error")
-        
+
     return result

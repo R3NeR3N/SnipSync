@@ -1,0 +1,70 @@
+name: Release
+
+# Stage gate for a standalone desktop app (dev workflow guide §5 / §10-2).
+# There is no server, so the dev -> staging -> prod split maps to release channels:
+#   dev      = local `python src/app.py`
+#   staging  = pre-release tag (vX.Y.Z-rc.N / -beta.N)  -> GitHub *pre-release*,  environment: staging
+#   prod     = stable tag      (vX.Y.Z)                 -> GitHub *release*,      environment: production
+# Tag format and -rc/-beta suffixes follow AGENTS.md §5. Add required-reviewer
+# protection on the `production` environment in repo Settings to gate prod.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  classify:
+    name: Classify channel
+    runs-on: ubuntu-latest
+    outputs:
+      prerelease: ${{ steps.c.outputs.prerelease }}
+      env: ${{ steps.c.outputs.env }}
+    steps:
+      - id: c
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          if [[ "$tag" == *-rc* || "$tag" == *-beta* || "$tag" == *-alpha* ]]; then
+            echo "prerelease=true"  >> "$GITHUB_OUTPUT"
+            echo "env=staging"      >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+            echo "env=production"   >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    name: Build & publish ${{ github.ref_name }}
+    needs: classify
+    runs-on: windows-latest
+    # production can carry required-reviewer protection -> human gate before prod ships.
+    environment: ${{ needs.classify.outputs.env }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install runtime + build deps
+        run: python -m pip install --upgrade pip ".[build]" auto-editor faster-whisper customtkinter tkinterdnd2
+
+      - name: Verify version tag matches APP_VERSION
+        shell: bash
+        run: |
+          ver=$(python -c "import sys; sys.path.insert(0,'src'); from version import APP_VERSION; print(APP_VERSION)")
+          tag="${GITHUB_REF_NAME#v}"
+          if [[ "$tag" != "$ver" ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match APP_VERSION $ver (AGENTS.md §5)"; exit 1
+          fi
+
+      - name: Build EXE
+        run: pyinstaller build/app.spec
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          prerelease: ${{ needs.classify.outputs.prerelease }}
+          generate_release_notes: true
+          files: dist/SnipSync.exe

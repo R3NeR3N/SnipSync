@@ -1,21 +1,22 @@
-import sys
-import os
 import json
+import sys
 from pathlib import Path
+
 import pytest
 
 # Add src to sys.path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from presets import (
+    SCHEMA_VERSION,
     _store_path,
+    delete_preset,
     load_store,
     save_store,
-    upsert_preset,
-    delete_preset,
     set_last_used,
-    SCHEMA_VERSION,
+    upsert_preset,
 )
+
 
 @pytest.fixture
 def isolate_presets(tmp_path, monkeypatch):
@@ -32,7 +33,7 @@ def test_load_store_broken_json(isolate_presets):
     p = _store_path()
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text("invalid json {", encoding="utf-8")
-    
+
     store = load_store()
     assert store == {"version": SCHEMA_VERSION, "last_used": {}, "presets": {}}
 
@@ -40,7 +41,7 @@ def test_load_store_not_dict(isolate_presets):
     p = _store_path()
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text("[]", encoding="utf-8")
-    
+
     store = load_store()
     assert store == {"version": SCHEMA_VERSION, "last_used": {}, "presets": {}}
 
@@ -56,19 +57,19 @@ def test_upsert_and_save_roundtrip(isolate_presets):
         "gpu": True,
         "ignored_key": "some_value" # should be filtered out
     }
-    
+
     upsert_preset(store, "テストプリセット", settings)
     save_store(store)
-    
+
     # Check that file exists and encoding is correct (no escape sequences)
     p = _store_path()
     assert p.exists()
     content = p.read_text(encoding="utf-8")
     assert "テストプリセット" in content
-    
+
     data = json.loads(content)
     assert "テストプリセット" in data["presets"]
-    
+
     loaded = load_store()
     assert "テストプリセット" in loaded["presets"]
     loaded_preset = loaded["presets"]["テストプリセット"]
@@ -92,18 +93,18 @@ def test_delete_preset(isolate_presets):
         "output_dir": "",
         "gpu": False
     }
-    
+
     upsert_preset(store, "to_delete", settings)
     upsert_preset(store, "keep_me", settings)
     save_store(store)
-    
+
     # delete non-existent name (no-op)
     delete_preset(store, "non_existent")
-    
+
     # delete existent name
     delete_preset(store, "to_delete")
     save_store(store)
-    
+
     loaded = load_store()
     assert "to_delete" not in loaded["presets"]
     assert "keep_me" in loaded["presets"]
@@ -121,6 +122,6 @@ def test_set_last_used(isolate_presets):
     }
     set_last_used(store, settings)
     save_store(store)
-    
+
     loaded = load_store()
     assert loaded["last_used"] == settings

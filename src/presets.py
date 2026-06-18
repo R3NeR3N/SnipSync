@@ -1,7 +1,7 @@
 # src/presets.py
-from pathlib import Path
 import json
 import os
+from pathlib import Path
 
 SCHEMA_VERSION = 1
 SETTING_KEYS = ("margin", "threshold", "export", "srt", "model", "output_dir", "gpu")

@@ -1,12 +1,13 @@
-import sys
 import subprocess
+import sys
 from pathlib import Path
+
 import pytest
 
 # Add src to sys.path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from pipeline import run_pipeline, PipelineParams, PipelineResult, _kill_tree
+from pipeline import PipelineParams, _kill_tree, run_pipeline
 from subtitles import cuda_available, resolve_device
 
 
@@ -36,7 +37,7 @@ class MockPopen:
         self.killed = False
         self.wait_called = False
         self.poll_count = 0
-        
+
         if self.write_output:
             self.write_output(cmd)
 
@@ -92,7 +93,7 @@ def temp_dirs(tmp_path):
 
 def test_pipeline_no_srt(temp_dirs, monkeypatch):
     inp, out_dir = temp_dirs
-    
+
     def mock_write(cmd):
         output_path = None
         if "--output" in cmd:
@@ -104,7 +105,7 @@ def test_pipeline_no_srt(temp_dirs, monkeypatch):
     monkeypatch.setattr(subprocess, "Popen", make_mock_popen(
         stdout_lines=["line1", "line2"], write_output=mock_write
     ))
-    
+
     params = PipelineParams(
         margin=0.2,
         threshold=4.0,
@@ -112,11 +113,11 @@ def test_pipeline_no_srt(temp_dirs, monkeypatch):
         do_srt=False,
         model_size="small"
     )
-    
+
     logs = []
     def on_log(msg, level=""):
         logs.append((msg, level))
-        
+
     res = run_pipeline(
         ae_path="dummy-ae",
         inp=inp,
@@ -126,7 +127,7 @@ def test_pipeline_no_srt(temp_dirs, monkeypatch):
         should_stop=lambda: False,
         tr=stub_tr
     )
-    
+
     assert res.ok is True
     assert res.stopped is False
     assert res.timeline_path == out_dir / "input_snipsynced.fcpxml"
@@ -138,7 +139,7 @@ def test_pipeline_no_srt(temp_dirs, monkeypatch):
 
 def test_pipeline_with_srt_success(temp_dirs, monkeypatch):
     inp, out_dir = temp_dirs
-    
+
     def mock_write(cmd):
         output_path = None
         if "--output" in cmd:
@@ -150,20 +151,20 @@ def test_pipeline_with_srt_success(temp_dirs, monkeypatch):
     monkeypatch.setattr(subprocess, "Popen", make_mock_popen(
         stdout_lines=["progress line"], write_output=mock_write
     ))
-    
+
     segments = [
         DummySegment(0.5, 2.3, "Hello world"),
         DummySegment(3.1, 5.0, "This is SnipSync"),
     ]
-    
+
     class DummyInfo:
         language = "en"
         language_probability = 0.99
-        
+
     def mock_transcribe(wav_path, model_size):
         assert wav_path.exists()
         return segments, DummyInfo()
-        
+
     params = PipelineParams(
         margin=0.2,
         threshold=4.0,
@@ -171,11 +172,11 @@ def test_pipeline_with_srt_success(temp_dirs, monkeypatch):
         do_srt=True,
         model_size="small"
     )
-    
+
     logs = []
     def on_log(msg, level=""):
         logs.append((msg, level))
-        
+
     res = run_pipeline(
         ae_path="dummy-ae",
         inp=inp,
@@ -186,12 +187,12 @@ def test_pipeline_with_srt_success(temp_dirs, monkeypatch):
         tr=stub_tr,
         transcribe=mock_transcribe
     )
-    
+
     assert res.ok is True
     assert res.stopped is False
     assert res.timeline_path == out_dir / "input_snipsynced.xml"
     assert res.srt_path == out_dir / "input.srt"
-    
+
     assert res.srt_path.exists()
     content = res.srt_path.read_text(encoding="utf-8")
     expected = (
@@ -204,7 +205,7 @@ def test_pipeline_with_srt_success(temp_dirs, monkeypatch):
 
 def test_pipeline_should_stop(temp_dirs, monkeypatch):
     inp, out_dir = temp_dirs
-    
+
     def mock_write(cmd):
         output_path = None
         if "--output" in cmd:
@@ -216,22 +217,22 @@ def test_pipeline_should_stop(temp_dirs, monkeypatch):
     monkeypatch.setattr(subprocess, "Popen", make_mock_popen(
         stdout_lines=["progress"], write_output=mock_write
     ))
-    
+
     # 3a. Stopped at the very beginning
     params = PipelineParams(
         margin=0.2, threshold=4.0, export_key="resolve", do_srt=True, model_size="small"
     )
-    
+
     res = run_pipeline(
         ae_path="dummy-ae",
         inp=inp,
         out_dir=out_dir,
         params=params,
-        on_log=lambda m, l="": None,
+        on_log=lambda m, lvl="": None,
         should_stop=lambda: True,
         tr=stub_tr
     )
-    
+
     assert res.ok is False
     assert res.stopped is True
     assert res.timeline_path is None
@@ -239,7 +240,7 @@ def test_pipeline_should_stop(temp_dirs, monkeypatch):
 
     # 3b. Stopped right after auto-editor success (conditional stop)
     stop_flag = False
-    
+
     def conditional_stop():
         return stop_flag
 
@@ -256,7 +257,7 @@ def test_pipeline_should_stop(temp_dirs, monkeypatch):
     monkeypatch.setattr(subprocess, "Popen", make_mock_popen(
         stdout_lines=["progress"], write_output=mock_write_conditional
     ))
-    
+
     logs_cond = []
     def on_log_cond(msg, level=""):
         logs_cond.append((msg, level))
@@ -271,7 +272,7 @@ def test_pipeline_should_stop(temp_dirs, monkeypatch):
         should_stop=conditional_stop,
         tr=stub_tr
     )
-    
+
     assert res.ok is False
     assert res.stopped is True
     assert res.timeline_path is None
@@ -284,16 +285,16 @@ def test_pipeline_should_stop(temp_dirs, monkeypatch):
         nonlocal call_count
         call_count += 1
         return call_count >= 8
-        
+
     segments = [
         DummySegment(0.5, 2.3, "Hello world"),
         DummySegment(3.1, 5.0, "This is SnipSync"),
     ]
-    
+
     class DummyInfo:
         language = "en"
         language_probability = 0.99
-        
+
     def mock_transcribe_stop(wav_path, model_size):
         return segments, DummyInfo()
 
@@ -306,12 +307,12 @@ def test_pipeline_should_stop(temp_dirs, monkeypatch):
         inp=inp,
         out_dir=out_dir,
         params=params,
-        on_log=lambda m, l="": None,
+        on_log=lambda m, lvl="": None,
         should_stop=stateful_should_stop,
         tr=stub_tr,
         transcribe=mock_transcribe_stop
     )
-    
+
     assert res.ok is True
     assert res.stopped is True
     assert res.srt_path is None
@@ -323,9 +324,9 @@ def test_pipeline_should_stop(temp_dirs, monkeypatch):
 
 def test_pipeline_should_stop_mid_stream(temp_dirs, monkeypatch):
     inp, out_dir = temp_dirs
-    
+
     stop_requested = False
-    
+
     def conditional_should_stop():
         return stop_requested
 
@@ -372,19 +373,19 @@ def test_pipeline_should_stop_mid_stream(temp_dirs, monkeypatch):
 
 def test_pipeline_ae_failed(temp_dirs, monkeypatch):
     inp, out_dir = temp_dirs
-    
+
     monkeypatch.setattr(subprocess, "Popen", make_mock_popen(
         stdout_lines=["auto-editor failed with error log"], returncode=127
     ))
-    
+
     params = PipelineParams(
         margin=0.2, threshold=4.0, export_key="resolve", do_srt=True, model_size="small"
     )
-    
+
     logs = []
     def on_log(msg, level=""):
         logs.append((msg, level))
-        
+
     res = run_pipeline(
         ae_path="dummy-ae",
         inp=inp,
@@ -394,19 +395,19 @@ def test_pipeline_ae_failed(temp_dirs, monkeypatch):
         should_stop=lambda: False,
         tr=stub_tr
     )
-    
+
     assert res.ok is False
     assert res.stopped is False
     assert res.timeline_path is None
     assert res.srt_path is None
-    
+
     assert any("log_error:127" in log[0] for log in logs)
     assert not (out_dir / "input_temp_audio.wav").exists()
 
 
 def test_pipeline_temp_wav_missing(temp_dirs, monkeypatch):
     inp, out_dir = temp_dirs
-    
+
     run_count = 0
     def mock_write(cmd):
         nonlocal run_count
@@ -422,15 +423,15 @@ def test_pipeline_temp_wav_missing(temp_dirs, monkeypatch):
     monkeypatch.setattr(subprocess, "Popen", make_mock_popen(
         stdout_lines=["progress"], write_output=mock_write
     ))
-    
+
     params = PipelineParams(
         margin=0.2, threshold=4.0, export_key="resolve", do_srt=True, model_size="small"
     )
-    
+
     logs = []
     def on_log(msg, level=""):
         logs.append((msg, level))
-        
+
     res = run_pipeline(
         ae_path="dummy-ae",
         inp=inp,
@@ -440,7 +441,7 @@ def test_pipeline_temp_wav_missing(temp_dirs, monkeypatch):
         should_stop=lambda: False,
         tr=stub_tr
     )
-    
+
     assert res.ok is True
     assert res.stopped is False
     assert res.srt_path is None
@@ -449,7 +450,7 @@ def test_pipeline_temp_wav_missing(temp_dirs, monkeypatch):
 
 def test_pipeline_temp_wav_cleanup(temp_dirs, monkeypatch):
     inp, out_dir = temp_dirs
-    
+
     temp_wav_path = out_dir / "input_temp_audio.wav"
     def mock_write(cmd):
         output_path = None
@@ -462,47 +463,47 @@ def test_pipeline_temp_wav_cleanup(temp_dirs, monkeypatch):
     monkeypatch.setattr(subprocess, "Popen", make_mock_popen(
         stdout_lines=["progress"], write_output=mock_write
     ))
-    
+
     def mock_transcribe_error(wav_path, model_size):
         assert temp_wav_path.exists()
         raise RuntimeError("Transcription crash simulation")
-        
+
     params = PipelineParams(
         margin=0.2, threshold=4.0, export_key="resolve", do_srt=True, model_size="small"
     )
-    
-    res = run_pipeline(
+
+    run_pipeline(
         ae_path="dummy-ae",
         inp=inp,
         out_dir=out_dir,
         params=params,
-        on_log=lambda m, l="": None,
+        on_log=lambda m, lvl="": None,
         should_stop=lambda: False,
         tr=stub_tr,
         transcribe=mock_transcribe_error
     )
-    
+
     assert not temp_wav_path.exists()
 
 
 def test_pipeline_ae_not_found(temp_dirs, monkeypatch):
     inp, out_dir = temp_dirs
-    
+
     def mock_popen_fnf(cmd, **kwargs):
         if cmd and cmd[0] == "taskkill":
             return MockPopen(cmd, returncode=0)
         raise FileNotFoundError("[WinError 2] The system cannot find the file specified")
-        
+
     monkeypatch.setattr(subprocess, "Popen", mock_popen_fnf)
-    
+
     params = PipelineParams(
         margin=0.2, threshold=4.0, export_key="resolve", do_srt=False, model_size="small"
     )
-    
+
     logs = []
     def on_log(msg, level=""):
         logs.append((msg, level))
-        
+
     res = run_pipeline(
         ae_path="non-existent-ae",
         inp=inp,
@@ -512,7 +513,7 @@ def test_pipeline_ae_not_found(temp_dirs, monkeypatch):
         should_stop=lambda: False,
         tr=stub_tr
     )
-    
+
     assert res.ok is False
     assert res.stopped is False
     assert any("log_ae_missing:[WinError 2]" in log[0] for log in logs)
@@ -520,7 +521,7 @@ def test_pipeline_ae_not_found(temp_dirs, monkeypatch):
 
 def test_kill_tree_windows(monkeypatch):
     proc = MockPopen(["cmd"])
-    
+
     taskkill_called = []
     def mock_run(cmd, **kwargs):
         taskkill_called.append(cmd)
@@ -540,7 +541,7 @@ def test_kill_tree_windows(monkeypatch):
 
 def test_kill_tree_non_windows(monkeypatch):
     proc = MockPopen(["cmd"])
-    
+
     monkeypatch.setattr(sys, "platform", "darwin")
 
     _kill_tree(proc)
@@ -551,7 +552,7 @@ def test_kill_tree_non_windows(monkeypatch):
 
 def test_kill_tree_already_finished():
     proc = MockPopen(["cmd"])
-    
+
     def mock_poll():
         return 0
     proc.poll = mock_poll
@@ -564,16 +565,16 @@ def test_kill_tree_already_finished():
 
 def test_kill_tree_timeout(monkeypatch):
     proc = MockPopen(["cmd"])
-    
+
     def mock_wait(timeout=None):
         proc.wait_called = True
         raise subprocess.TimeoutExpired(proc.cmd, timeout)
-        
+
     proc.wait = mock_wait
     monkeypatch.setattr(sys, "platform", "darwin")
-    
+
     _kill_tree(proc)
-    
+
     assert proc.terminated is True
     assert proc.killed is True
     assert proc.wait_called is True
@@ -581,13 +582,13 @@ def test_kill_tree_timeout(monkeypatch):
 
 def test_cuda_available(monkeypatch):
     import sys
-    
+
     # 1. Success case
     class MockCtranslate2:
         @staticmethod
         def get_cuda_device_count():
             return 1
-            
+
     monkeypatch.setitem(sys.modules, "ctranslate2", MockCtranslate2)
     assert cuda_available() is True
 
@@ -596,7 +597,7 @@ def test_cuda_available(monkeypatch):
         @staticmethod
         def get_cuda_device_count():
             return 0
-            
+
     monkeypatch.setitem(sys.modules, "ctranslate2", MockCtranslate2Zero)
     assert cuda_available() is False
 
@@ -609,7 +610,7 @@ def test_cuda_available(monkeypatch):
         @staticmethod
         def get_cuda_device_count():
             raise RuntimeError("CUDA driver error")
-            
+
     monkeypatch.setitem(sys.modules, "ctranslate2", MockCtranslate2Exception)
     assert cuda_available() is False
 
@@ -628,7 +629,7 @@ def test_resolve_device(monkeypatch):
 
 def test_pipeline_gpu_fallback(temp_dirs, monkeypatch):
     inp, out_dir = temp_dirs
-    
+
     def mock_write(cmd):
         output_path = None
         if "--output" in cmd:
@@ -640,27 +641,27 @@ def test_pipeline_gpu_fallback(temp_dirs, monkeypatch):
     monkeypatch.setattr(subprocess, "Popen", make_mock_popen(
         stdout_lines=["progress line"], write_output=mock_write
     ))
-    
+
     # Mock cuda_available to return True
     monkeypatch.setattr("subtitles.cuda_available", lambda: True)
-    
+
     segments = [
         DummySegment(0.5, 2.3, "Fallback transcription test"),
     ]
-    
+
     class DummyInfo:
         language = "en"
         language_probability = 0.99
-        
+
     call_history = []
-    
+
     def mock_transcribe_with_fallback(wav_path, model_size):
         # We simulate a fallback scenario: the first call (GPU) fails, the second (CPU retry) succeeds.
         call_history.append("called")
         if len(call_history) == 1:
             raise RuntimeError("GPU Out of Memory or CUDA driver error")
         return segments, DummyInfo()
-        
+
     params = PipelineParams(
         margin=0.2,
         threshold=4.0,
@@ -669,11 +670,11 @@ def test_pipeline_gpu_fallback(temp_dirs, monkeypatch):
         model_size="small",
         use_gpu=True  # Opt-in GPU
     )
-    
+
     logs = []
     def on_log(msg, level=""):
         logs.append((msg, level))
-        
+
     res = run_pipeline(
         ae_path="dummy-ae",
         inp=inp,
@@ -684,12 +685,12 @@ def test_pipeline_gpu_fallback(temp_dirs, monkeypatch):
         tr=stub_tr,
         transcribe=mock_transcribe_with_fallback
     )
-    
+
     assert res.ok is True
     assert res.stopped is False
     assert res.srt_path == out_dir / "input.srt"
     assert len(call_history) == 2  # First call on GPU failed, second call on CPU succeeded
-    
+
     # Verify warning and device logging
     assert ("log_gpu_fallback", "warn") in logs
     assert ("log_device:cpu", "muted") in logs
@@ -697,7 +698,7 @@ def test_pipeline_gpu_fallback(temp_dirs, monkeypatch):
 
 def test_pipeline_gpu_fallback_lazy_generator(temp_dirs, monkeypatch):
     inp, out_dir = temp_dirs
-    
+
     def mock_write(cmd):
         output_path = None
         if "--output" in cmd:
@@ -709,19 +710,19 @@ def test_pipeline_gpu_fallback_lazy_generator(temp_dirs, monkeypatch):
     monkeypatch.setattr(subprocess, "Popen", make_mock_popen(
         stdout_lines=["progress line"], write_output=mock_write
     ))
-    
+
     monkeypatch.setattr("subtitles.cuda_available", lambda: True)
-    
+
     segments = [
         DummySegment(0.5, 2.3, "Fallback lazy generator test"),
     ]
-    
+
     class DummyInfo:
         language = "en"
         language_probability = 0.99
-        
+
     call_history = []
-    
+
     def mock_transcribe_lazy(wav_path, model_size):
         call_history.append("called")
         if len(call_history) == 1:
@@ -729,11 +730,11 @@ def test_pipeline_gpu_fallback_lazy_generator(temp_dirs, monkeypatch):
                 raise RuntimeError("CUDA execution failed during iteration")
                 yield # makes it a generator
             return failing_gen(), DummyInfo()
-        
+
         def success_gen():
             yield from segments
         return success_gen(), DummyInfo()
-        
+
     params = PipelineParams(
         margin=0.2,
         threshold=4.0,
@@ -742,11 +743,11 @@ def test_pipeline_gpu_fallback_lazy_generator(temp_dirs, monkeypatch):
         model_size="small",
         use_gpu=True
     )
-    
+
     logs = []
     def on_log(msg, level=""):
         logs.append((msg, level))
-        
+
     res = run_pipeline(
         ae_path="dummy-ae",
         inp=inp,
@@ -757,15 +758,15 @@ def test_pipeline_gpu_fallback_lazy_generator(temp_dirs, monkeypatch):
         tr=stub_tr,
         transcribe=mock_transcribe_lazy
     )
-    
+
     assert res.ok is True
     assert res.stopped is False
     assert res.srt_path == out_dir / "input.srt"
     assert len(call_history) == 2
-    
+
     assert ("log_gpu_fallback", "warn") in logs
     assert ("log_device:cpu", "muted") in logs
-    
+
     assert res.srt_path.exists()
     content = res.srt_path.read_text(encoding="utf-8")
     assert "Fallback lazy generator test" in content

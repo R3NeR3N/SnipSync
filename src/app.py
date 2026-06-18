@@ -2,10 +2,14 @@
 SnipSync - Silent Video Cutter & Subtitle Generator
 Cuts silent portions from video, exports XML for NLEs, and generates .srt subtitles.
 """
-import os, sys, re, subprocess, threading, time, traceback
+import os
+import re
+import sys
+import threading
 from pathlib import Path
-import customtkinter as ctk
 from tkinter import filedialog, messagebox
+
+import customtkinter as ctk
 
 try:
     from tkinterdnd2 import DND_FILES, TkinterDnD
@@ -14,18 +18,31 @@ except ImportError:
     DND_AVAILABLE = False
 
 try:
-    from faster_whisper import WhisperModel
+    from faster_whisper import WhisperModel  # noqa: F401  (imported only to probe availability)
     WHISPER_AVAILABLE = True
 except ImportError:
     WHISPER_AVAILABLE = False
 
-from version import APP_VERSION
 from i18n import I18N
-from theme import (ACCENT, ACCENT_HOVER, SUCCESS, ERROR_COL, WARN_COL,
-                   BG_DARK, BG_CARD, BG_CONSOLE, TEXT_MUTED)
-from subtitles import format_timestamp, cuda_available
-from pipeline import run_pipeline, PipelineParams
-from presets import load_store, save_store, upsert_preset, delete_preset, set_last_used
+from pipeline import PipelineParams, run_pipeline
+from presets import delete_preset, load_store, save_store, set_last_used, upsert_preset
+from subtitles import (  # noqa: F401  (format_timestamp re-exported for tests)
+    cuda_available,
+    format_timestamp,
+)
+from theme import (
+    ACCENT,
+    ACCENT_HOVER,
+    BG_CARD,
+    BG_CONSOLE,
+    BG_DARK,
+    ERROR_COL,
+    SUCCESS,
+    TEXT_MUTED,
+    WARN_COL,
+)
+from version import APP_VERSION  # noqa: F401  (re-exported for tests)
+
 
 # ── PyInstaller resource path ──────────────────────────────────────────────────
 def resource_path(rel):
@@ -71,7 +88,7 @@ class SnipSyncApp(_Base):
         self.lang = "ja"
         self.input_file  = ""
         self.output_dir  = ""
-        
+
         self.margin_var  = ctk.DoubleVar(value=0.2)
         self.threshold_var = ctk.DoubleVar(value=4.0)
         self.export_var  = ctk.StringVar(value=list(EXPORT_MODES.keys())[0])
@@ -81,9 +98,9 @@ class SnipSyncApp(_Base):
         self.model_key_var = ctk.StringVar(value="small")
         # Store the translated display string for OptionMenu
         self.model_display_var = ctk.StringVar()
-        
+
         self.lang_var    = ctk.StringVar(value="日本語")
-        
+
         self.process     = None
         self.running     = False
         self.stop_requested = False
@@ -91,19 +108,19 @@ class SnipSyncApp(_Base):
         self.configure(fg_color=BG_DARK)
         self.minsize(740, 720)
         self.geometry("860x780")
-        
+
         self._build_ui()
         self._update_margin_label()
         self._update_threshold_label()
         if not cuda_available():
             self.gpu_checkbox.configure(state="disabled")
             self._log(self.t("log_gpu_unavailable"), "muted")
-        
+
         # Load preset store and apply last used settings
         store = load_store()
         if store.get("last_used"):
             self._apply_settings(store["last_used"])
-            
+
         self._apply_lang()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
@@ -259,7 +276,7 @@ class SnipSyncApp(_Base):
 
         srt_frame = ctk.CTkFrame(card, fg_color="transparent")
         srt_frame.grid(row=4, column=1, columnspan=3, sticky="w", padx=(0, 20), pady=8)
-        
+
         self.srt_checkbox = ctk.CTkCheckBox(
             srt_frame, text="", variable=self.srt_var, font=ctk.CTkFont(family="Segoe UI", size=12),
             fg_color=ACCENT, hover_color=ACCENT_HOVER, command=self._on_srt_toggle)
@@ -347,7 +364,7 @@ class SnipSyncApp(_Base):
             card, font=ctk.CTkFont(family="Consolas", size=11),
             fg_color=BG_CONSOLE, text_color="#c9d1d9", wrap="word", state="disabled", scrollbar_button_color=ACCENT)
         self.console.pack(fill="both", expand=True, padx=2, pady=2)
-        
+
         self.console._textbox.tag_config("info",    foreground="#58a6ff")
         self.console._textbox.tag_config("success", foreground=SUCCESS)
         self.console._textbox.tag_config("error",   foreground=ERROR_COL)
@@ -365,23 +382,23 @@ class SnipSyncApp(_Base):
         self.lang_lbl_hdr.configure(text=self.t("lang_label"))
         self.drop_label.configure(
             text=self.t("drop_hint") if not self.input_file else self.drop_label.cget("text"))
-        
+
         # Update preset labels & buttons
         self.preset_lbl_w.configure(text=self.t("preset_label"))
         self.preset_save_btn.configure(text=self.t("preset_save"))
         self.preset_delete_btn.configure(text=self.t("preset_delete"))
-        
+
         # Update preset OptionMenu values dynamically based on language
         old_val = self.preset_menu_var.get()
         none_ja = I18N["ja"]["preset_none"]
         none_en = I18N["en"]["preset_none"]
-        
+
         store = load_store()
         presets = store.get("presets", {})
         none_text = self.t("preset_none")
         values = [none_text] + list(presets.keys())
         self.preset_menu.configure(values=values)
-        
+
         if old_val in (none_ja, none_en) or old_val not in presets:
             self.preset_menu_var.set(none_text)
         else:
@@ -394,7 +411,7 @@ class SnipSyncApp(_Base):
         self.srt_checkbox.configure(text=self.t("srt_check"))
         self.gpu_checkbox.configure(text=self.t("gpu_label"))
         self.model_lbl_w.configure(text=self.t("model_label"))
-        
+
         # Update Model OptionMenu
         opts_dict = self.t("model_options")
         model_values = list(opts_dict.values())
@@ -412,7 +429,7 @@ class SnipSyncApp(_Base):
         self.stop_btn.configure(text=self.t("stop_btn"))
         self.log_hdr_lbl.configure(text=self.t("log_header"))
         self.clear_btn.configure(text=self.t("log_clear"))
-        
+
         self._update_margin_label()
         self._update_threshold_label()
 
@@ -473,7 +490,7 @@ class SnipSyncApp(_Base):
         none_text = self.t("preset_none")
         values = [none_text] + list(presets.keys())
         self.preset_menu.configure(values=values)
-        
+
         current = self.preset_menu_var.get()
         if current not in presets:
             self.preset_menu_var.set(none_text)
@@ -498,12 +515,12 @@ class SnipSyncApp(_Base):
         name = name.strip()
         if not name:
             return
-        
+
         settings = self._collect_settings()
         store = load_store()
         upsert_preset(store, name, settings)
         save_store(store)
-        
+
         self._log(self.t("log_preset_saved", name), "success")
         self.preset_menu_var.set(name)
         self._update_preset_menu()
@@ -513,14 +530,14 @@ class SnipSyncApp(_Base):
         none_text = self.t("preset_none")
         if choice == none_text:
             return
-        
+
         store = load_store()
         presets = store.get("presets", {})
         if choice in presets:
             delete_preset(store, choice)
             save_store(store)
             self._log(self.t("log_preset_deleted", choice), "info")
-            
+
         self.preset_menu_var.set(none_text)
         self._update_preset_menu()
 
@@ -588,7 +605,7 @@ class SnipSyncApp(_Base):
         self._update_margin_label()
     def _update_margin_label(self):
         self.margin_val_lbl.configure(text=f"{self.margin_var.get():.2f} {self.t('margin_unit')}")
-            
+
     def _on_slider_threshold(self, _): self._update_threshold_label()
     def _on_entry_threshold_commit(self, _=None):
         try:
@@ -627,11 +644,11 @@ class SnipSyncApp(_Base):
         threshold   = self.threshold_var.get()
         label       = self.export_var.get()
         ae_key, ext = EXPORT_MODES[label]
-        
+
         # USE ABSOLUTE PATHS TO PREVENT PATH ERRORS
         inp         = Path(self.input_file).resolve()
         out_dir     = Path(self.output_dir).resolve() if self.output_dir else inp.parent
-        
+
         do_srt = self.srt_var.get()
         model_size = self.model_key_var.get()
 

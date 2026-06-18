@@ -1,11 +1,11 @@
 import sys
 from pathlib import Path
-import pytest
 
 # Add src to sys.path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from app import format_timestamp, APP_VERSION, I18N
+from app import APP_VERSION, I18N, format_timestamp
+
 
 def test_format_timestamp():
     test_cases = [
@@ -20,16 +20,16 @@ def test_format_timestamp():
 def test_version_consistency():
     # Verify APP_VERSION is "1.0.0"
     assert APP_VERSION == "1.0.0"
-    
+
     # Verify I18N titles contain APP_VERSION
     assert f"v{APP_VERSION}" in I18N["ja"]["title"]
     assert f"v{APP_VERSION}" in I18N["en"]["title"]
-    
+
     # Verify 4 README files contain badge with version
     project_root = Path(__file__).parent.parent
     readme_files = ["README.md", "README_JA.md", "README_ZH.md", "README_KO.md"]
     expected_badge = f"Version-v{APP_VERSION}-"
-    
+
     for readme in readme_files:
         readme_path = project_root / readme
         assert readme_path.exists(), f"{readme} does not exist"
@@ -39,9 +39,9 @@ def test_version_consistency():
 def test_no_hardcoded_transcribe_language():
     project_root = Path(__file__).parent.parent
     pipeline_py_path = project_root / "src" / "pipeline.py"
-    
+
     assert pipeline_py_path.exists()
     content = pipeline_py_path.read_text(encoding="utf-8")
-    
+
     assert 'language="ja"' not in content, "Should not contain language=\"ja\""
     assert 'language=None' in content, "Should contain language=None"

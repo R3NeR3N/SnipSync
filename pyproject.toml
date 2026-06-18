@@ -18,10 +18,22 @@ dependencies = [
 
 [project.optional-dependencies]
 build = ["pyinstaller>=6,<7"]
-dev = ["pytest>=7"]
+dev = ["pytest>=7", "ruff>=0.6"]
 
 [project.scripts]
 snipsync = "app:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+# Baseline ignores: stylistic rules deferred so the first green CI does not
+# require reflowing the legacy app.py monolith. Tighten as the split lands
+# (ARCHITECTURE §2). E501=line length, E701=compound stmt, B007=unused loop var.
+ignore = ["E501", "E701", "B007"]
