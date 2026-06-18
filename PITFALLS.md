@@ -16,6 +16,13 @@
 
 ---
 
+## 2026-06-19 — faster-whisper GPU: nvidia-* wheel 導入だけ／add_dll_directory だけでは cuBLAS を読めない
+- やったこと: GPU を使うため `.venv` に `nvidia-cublas-cu12`/`nvidia-cudnn-cu12` を入れ、cuda で `WhisperModel` を構築。
+- 何が起きたか: `RuntimeError: Library cublas64_12.dll is not found or cannot be loaded`。(1) wheel 導入だけ → DLL 未発見。(2) `os.add_dll_directory(.../nvidia/cublas/bin)` を足すだけでも依然「cannot be loaded」。(3) `nvidia-cuda-runtime-cu12`(cudart) 欠落も一因。
+- 原因: ctranslate2 は `site-packages/nvidia/*/bin` を自動探索しない。さらに Windows の LoadLibrary 探索順の都合で `add_dll_directory` 単独では不足。`cublas64_12.dll` は `cudart64_12.dll` に依存。
+- 正しい手順: cublas + cudnn + **cuda-runtime** を入れ、**インポート/モデル構築前に各 `bin` を `os.add_dll_directory` ＋ `PATH` 前置**する（PATH 前置が決め手）。SnipSync は `subtitles.add_cuda_dll_dirs()` で自動化し `pipeline._decode` の cuda 構築直前で呼ぶ。CUDA ライブラリは `.venv` 内に閉じ込めホスト非汚染。
+- 関連: `src/subtitles.py`, `src/pipeline.py`, `pyproject.toml [gpu]`, MEMORY 2026-06-19
+
 ## 2026-06-19 — auto-editor の `--temp-dir` は `{stem}_tracks`（多トラック分解）を移動しない
 - やったこと: 多トラック音声の動画で、元動画の隣に出る `{stem}_tracks` フォルダ（`_1.wav`/`_2.wav`...）を消そうとして auto-editor に `--temp-dir <空dir>` を渡した。
 - 何が起きたか: `_tracks` は**依然として入力ファイルの隣に生成**され、指定した temp-dir は空のままだった。`--help` を見てもトラック分解の出力先変更/抑制フラグは無い。

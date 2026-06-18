@@ -41,7 +41,7 @@
 - 決定2: ホスト venv とコンテナの役割を明文化。**ホスト `.venv`＝重依存フル（GUI目視確認・実パイプライン）/ Dev Container＝lean（test/lint/agent、subprocess・transcribe をモックするため auto-editor/faster-whisper を入れない）**。コンテナ postCreate はあえて `-e .[dev]` にせず lean 維持（ビルド高速・テスト利得ゼロのため）。理由を devcontainer.json コメントに明記。
 - 決定3: ドキュメント反映先。AGENTS §3（正典・venv＋単一ソース）、CONTRIBUTING §4.0（新設・汚染境界とホスト/コンテナ分担）、devcontainer.json（分担コメント）。README Option B（4言語・エンドユーザ向け run-from-source）は今回未変更＝開発フローとは別レイヤ。同期は任意のフォローアップ（ユーザー判断待ち）。
 - 協業逸脱: 本来 実装=Gemini だが、CI/lint/container と同じ**非UIインフラ設定＋ドキュメント**かつユーザー直接指示のため Opus が実装（2026-06-18 と同じ前例運用）。次の機能実装は通常分担へ戻す。[[role-boundary-opus-design-only]]
-- 未実施: 実 `.venv` 作成＋依存DLはユーザー手元で実行（ホスト固有・大容量DLのため `!` で手動）。i18n: UI 文字列変更なし → ja/en 追記 N/A。
+- 実施済み(2026-06-19 同日): 実 `.venv` を作成し `pip install -e ".[dev]"` 完了。venv内で pytest 29 passed / ruff クリーン / GUI 起動・目視確認OK。後続で GPU extra も導入（同日の別ログ参照）。i18n: UI 文字列変更なし → ja/en 追記 N/A。
 - 関連: `AGENTS.md` §3, `CONTRIBUTING.md` §4.0, `.devcontainer/devcontainer.json`, `pyproject.toml`, `.gitignore`
 
 ## 2026-06-18 — CI/CD・リリース段階切り分け・Dev Container 導入 + ruff 整備（頭脳兼作業: Opus 4.8）
