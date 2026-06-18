@@ -15,6 +15,28 @@
 
 ---
 
+## 2026-06-19 — venv をホスト汚染境界に据える（依存 pyproject 単一ソース化）＋ホスト/コンテナ役割明文化（頭脳兼作業: Opus 4.8）
+- 経緯: Dev Container 導入（2026-06-18）後、ユーザーが「ガイドの目的＝ローカル環境を汚さないが達成できているか」を診断要求。診断結論: コンテナは test/lint/agent は隔離できるが、SnipSync は GUIデスクトップ → headless で描画不可 → DoD#1 目視確認はホスト直実行 → **ホストに重依存フル導入が残り、汚染防止は半達成**。改善案として「ホスト venv を汚染境界の主役に、依存は pyproject 単一ソース、コンテナは lean のまま割り切り」を提案・採用。
+- 決定1: 開発は `.venv` に隔離（`.gitignore` 済を確認）。依存導入を `pip install auto-editor faster-whisper customtkinter tkinterdnd2`（手書きリスト）から **`pip install -e ".[dev]"`** へ。pyproject の `dependencies` / `optional-dependencies` を単一ソース化し、3箇所（pyproject/requirements/postCreate）手書きのドリフトを解消。新規依存は pyproject だけに足す運用。
+- 決定1の検証（仮定で文書化しない）: `src/` はフラット配置（正式パッケージ化前・ARCHITECTURE §2）のため `pip install -e .` がパッケージ認識できるか懸念 → 使い捨て venv で `pip install -e . --no-deps` を実行し成功、`find_spec` で `app`/`pipeline`/`presets` が `src/*.py` として解決されることを確認（setuptools が src-layout 自動認識）。重依存DLなしの高速検証。`[build-system]`/`[tool.setuptools]` の追記は不要だった。
+- 決定2: ホスト venv とコンテナの役割を明文化。**ホスト `.venv`＝重依存フル（GUI目視確認・実パイプライン）/ Dev Container＝lean（test/lint/agent、subprocess・transcribe をモックするため auto-editor/faster-whisper を入れない）**。コンテナ postCreate はあえて `-e .[dev]` にせず lean 維持（ビルド高速・テスト利得ゼロのため）。理由を devcontainer.json コメントに明記。
+- 決定3: ドキュメント反映先。AGENTS §3（正典・venv＋単一ソース）、CONTRIBUTING §4.0（新設・汚染境界とホスト/コンテナ分担）、devcontainer.json（分担コメント）。README Option B（4言語・エンドユーザ向け run-from-source）は今回未変更＝開発フローとは別レイヤ。同期は任意のフォローアップ（ユーザー判断待ち）。
+- 協業逸脱: 本来 実装=Gemini だが、CI/lint/container と同じ**非UIインフラ設定＋ドキュメント**かつユーザー直接指示のため Opus が実装（2026-06-18 と同じ前例運用）。次の機能実装は通常分担へ戻す。[[role-boundary-opus-design-only]]
+- 未実施: 実 `.venv` 作成＋依存DLはユーザー手元で実行（ホスト固有・大容量DLのため `!` で手動）。i18n: UI 文字列変更なし → ja/en 追記 N/A。
+- 関連: `AGENTS.md` §3, `CONTRIBUTING.md` §4.0, `.devcontainer/devcontainer.json`, `pyproject.toml`, `.gitignore`
+
+## 2026-06-18 — CI/CD・リリース段階切り分け・Dev Container 導入 + ruff 整備（頭脳兼作業: Opus 4.8）
+- 経緯: ワークフロー標準ガイド（Obsidian `App-Dev-Workflow-2026-Standard-Guide.md`）への準拠度を診断 → 芯（SDD/Git/Pitfalls）は良好だが **CI欠落・lint無し・段階切り分け無し** が判明。ユーザー指示で3点を実装。
+- 決定1 (lint): `ruff` を採用し pyproject `[tool.ruff]` に集約。`select=E,F,W,I,B,UP` / `line-length=100` / `target-version=py310`。既存モノリス app.py を大量リフローしないため `ignore=E501,E701,B007`（スタイル系のみ。ARCHITECTURE §2 の分割時に締める）。209件の指摘は安全自動修正（W293空白141/I001/E401）+ 実バグ手修正（F401×10, F841×4, E741×3）で解消。
+- 決定1の要注意: app.py の `APP_VERSION`/`format_timestamp` は **test_p0 用の再エクスポート**、`WhisperModel` は **可用性プローブ用 import** → 削除すると test破壊/機能破壊。`# noqa: F401` で保持（PITFALLS追記）。`subprocess/time/traceback`(app)・`Path`(autoeditor) は真の不要 import で削除。pipeline の `except ... as e:` で e未使用（format_exc 使用）の3箇所を bare `except` 化。
+- 決定2 (CI): `.github/workflows/ci.yml`。lint=ubuntu / test=windows-latest × py3.10/3.11/3.12。**重依存（auto-editor/faster-whisper）は入れない** — テストは subprocess/transcribe をモックするため `customtkinter+pytest` のみで 29件グリーン。高速・安定。
+- 決定3 (段階切り分け): スタンドアロン .exe にサーバ無 → guide §5/§10-2 の dev→staging→prod を **リリースチャネル**に写像。`.github/workflows/release.yml`（tag `v*` 起動）: `-rc/-beta/-alpha` 接尾辞（AGENTS §5.1）を検出し **prerelease=staging / stable=production**。GitHub Environments を job に紐付け、`production` に required-reviewer 保護を掛ければ **prod公開前の人間ゲート**になる。tag と `APP_VERSION` の不一致を CI で fail（§5 整合の機械強制）。`environment:` は steps出力を読めないため classify/build の2ジョブ分割（needs経由）。
+- 決定4 (Dev Container): `.devcontainer/devcontainer.json`（image=python:3.12-bookworm, Codespaces互換）。postCreate で ffmpeg+python3-tk+ruff/pytest/customtkinter。**GUIは headless で描画不可** → 最終目視確認(DoD#1)は Windows ホスト維持、コンテナはテスト/lint/AIエージェント用と明記。
+- i18n: 本変更は UI 文字列追加なし → ja/en 追記 N/A。
+- 協業逸脱: 本来 実装=Gemini だが、ユーザー直接指示「作って」かつインフラ設定（CI/lint/container＝非UIコード）のため Opus が実装。P1 と同じ前例運用。次の機能実装は通常分担へ戻す。
+- 検証: `ruff check .`=All passed / `pytest`=29 passed / app import スモーク OK。**GUI目視確認は未（ホスト人手要）**。CI/release は YAML/JSON 構文検証のみ（実 push 未）。
+- 関連: `.github/workflows/{ci,release}.yml`, `.devcontainer/devcontainer.json`, `pyproject.toml`, `src/{app,autoeditor,pipeline}.py`, `tests/{test_p0,test_pipeline,test_presets}.py`
+
 ## 2026-06-17 05:28 — code-review 指摘5件の実装完了とテスト追加（作業: Gemini 3.5）
 - 決定: 設計書 `docs/handoff/P3-review-fixes.md` に従い、GPUフォールバックバグ修正、多言語化（log_whisper_unavailable）、log_errorプレースホルダ修正、プリセット適用時モデルガードの5件を実装。
 - 理由: CUDA OOM 等の実行時エラーが遅延ジェネレータの遅延評価（イテレーション）時に発生するため、確実に try-except 内で捕捉して CPU 再試行にフォールバックできるようにするため。また、既存コードの i18n 違反や不整合を解消するため。

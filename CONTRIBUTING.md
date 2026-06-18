@@ -70,6 +70,23 @@
 
 ## 4. SnipSync 固有の開発ルール（AGENTS.md からの要約）
 
+### 4.0 開発環境セットアップ（venv = 汚染境界）
+
+ランタイムをホスト PC へ直入れせず、`.venv`（仮想環境）に閉じ込める。コマンドは AGENTS.md §3 が正典。要点のみ:
+
+```bash
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1     # PowerShell
+pip install -e ".[dev]"          # 依存は pyproject.toml が単一ソース
+python src/app.py                # GUI 目視確認はホストの venv 内で
+```
+
+- **`.venv` がホスト汚染を止める隔離境界**。不要になれば `.venv` を消すだけで本体は元通り（`.gitignore` 済）。
+- **新規依存は `pyproject.toml` だけに追記** → `pip install -e ".[dev]"` で反映。3箇所手書きのドリフトを防ぐ。
+- **ホスト venv とコンテナの分担**: GUI 目視確認・実パイプラインは **ホスト `.venv`**（重依存フル）。Dev Container は test/lint/AI エージェント用で **意図的に lean**（モック前提・重依存を入れない）。GUI は headless コンテナで描画不可（→ 目視確認は必ずホスト）。
+
+### 4.1 その他
+
 - 変更ごとに `python src/app.py` を起動し**目視確認**するまで完了としない（GUI アプリ）。
 - 文字列は必ず `I18N` 経由、`ja`/`en` 両方追加。
 - パスは `Path(...).resolve()`。subprocess は `encoding="utf-8", errors="replace"`。

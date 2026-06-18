@@ -44,17 +44,24 @@ SnipSync = 動画の無音区間を自動カットし、NLE 用タイムライ�
 ## 3. ビルド・実行コマンド
 
 ```bash
-# 開発実行
+# 仮想環境（venv）作成 — ホストを汚さない隔離境界。初回のみ
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1     # PowerShell（cmd は .venv\Scripts\activate.bat）
+
+# 依存導入 — pyproject.toml を単一ソースに（直接依存＋開発ツール pytest/ruff）
+pip install -e ".[dev]"
+
+# 開発実行（GUI 目視確認はホストの venv 内で行う）
 python src/app.py
 
-# 依存導入（最小）
-pip install auto-editor faster-whisper customtkinter tkinterdnd2
-
 # EXE ビルド
-pyinstaller build/app.spec   # → dist/SnipSync.exe
+pip install -e ".[build]"
+pyinstaller build/app.spec       # → dist/SnipSync.exe
 ```
 
-> ⚠ `requirements.txt` は現状フルフリーズ。新規依存を足したら **直接依存のみ**を別管理する方針（ARCHITECTURE.md 参照）。
+> ⚠ 依存は `pyproject.toml` の `dependencies` / `optional-dependencies` が**単一ソース**。`pip install -e ".[dev]"` で直接依存（auto-editor / faster-whisper / customtkinter / tkinterdnd2）＋開発ツール（pytest / ruff）が入る。新規依存は **`pyproject.toml` だけ**に足せばよい（3箇所手書きのドリフトを防ぐ）。`requirements.txt` は再現用フルフリーズ（生成ロック扱い）。
+> ⚠ **venv はホスト汚染を止める隔離境界**。ランタイムを PC 本体へ直入れせず `.venv` 内に閉じ込める（`.gitignore` 済）。不要になれば `.venv` を消すだけで本体は元通り。
+> ⚠ **ホスト venv とコンテナの役割分担**: GUI 目視確認（§8 DoD #1）と実パイプライン実行は **ホストの `.venv`**（重依存フル導入）で行う。Dev Container は test/lint/AI エージェント用で **意図的に lean**（subprocess/transcribe をモックするため重依存を入れない）。詳細は `.devcontainer/devcontainer.json` のコメント参照。
 
 ---
 
