@@ -16,6 +16,13 @@
 
 ---
 
+## 2026-06-20 — FCPXML で lane ネストによる connected clip を作ると映像消失・音声分裂する
+- やったこと: DaVinci Resolve で音声トラック順が狂う問題を解消するため、`asset-clip` の下に `lane="-1"` 等で他の WAV `asset-clip` をネストする connected clip 構造を作成した。
+- 何が起きたか: 実機 DaVinci Resolve でインポートした際、映像（V1トラック）が完全に消失し、音声トラックが過剰（A1〜A15等）に細切れに分裂して配置されてしまうバグが発生した。
+- 原因: DaVinci Resolve の FCPXML インポーターが複雑なネスト構造を正しく処理できないバグ（仕様制限）によるもの。
+- 回避策 / 正しい手順: `lane` 属性やネスト構造を使用せず、auto-editor 本来の「spine 直下にすべてのクリップをフラットに並べる」構造を完全に維持する。その上で、同じ offset を持つ各セグメント内の物理的な出現順序（映像アセットを先頭、続いて各 WAV アセットをストリーム順）のみを元のストリーム順に整列する。これにより、構造を破壊せずに Resolve へのトラック割当を正しく整列させることができる。
+- 関連: `src/pipeline.py` `_reorder_fcpxml_tracks`, `tests/test_pipeline.py`, MEMORY 2026-06-20
+
 ## 2026-06-19 — fcpxml の音声トラック並べ替えで spine の全カットセグメントを潰した
 - やったこと: 多トラック fcpxml のトラック順を直すため `_reorder_fcpxml_tracks` を試作。`spine.findall("asset-clip")` で得たクリップの **`clips[0]` だけをテンプレ化→全 remove→1個だけ再生成**し lane ネストを付けた。
 - 何が起きたか: 実機 DaVinci でタイムラインが **2.2秒・1クリップ**に崩壊。31セグメント中30消滅。wav と mp4 が別オフセットにズレて表示。

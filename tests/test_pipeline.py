@@ -942,62 +942,48 @@ def test_reorder_fcpxml_tracks_comprehensive(tmp_path):
     spine = ET.parse(path).getroot().find(".//sequence/spine")
     children = list(spine)
 
-    # 1. セグメント数および他の要素の維持の確認
-    # 出力構造は: [primary_seg1, gap, primary_seg2] の 3 つの要素になるはず
-    assert len(children) == 3
-    assert children[0].tag == "asset-clip"
-    assert children[1].tag == "gap"
-    assert children[2].tag == "asset-clip"
+    # 1. 要素数および他の要素の維持の確認
+    # 出力構造は: 2セグメント×4クリップ + 1gap = 9つの要素になるはず
+    # [v_seg1, w1_seg1, w2_seg1, w3_seg1, gap, v_seg2, w1_seg2, w2_seg2, w3_seg2]
+    assert len(children) == 9
+    assert [c.tag for c in children] == [
+        "asset-clip", "asset-clip", "asset-clip", "asset-clip",
+        "gap",
+        "asset-clip", "asset-clip", "asset-clip", "asset-clip"
+    ]
 
     # gap が非破壊で属性も維持されていること
-    assert children[1].get("offset") == "10s"
-    assert children[1].get("duration") == "5s"
+    assert children[4].get("offset") == "10s"
+    assert children[4].get("duration") == "5s"
 
     # 2. セグメント 1 の検証
-    seg1 = children[0]
-    assert seg1.get("ref") == "r2"  # video_id
-    assert seg1.get("name") == "vid_A1"
-    assert seg1.get("offset") == "0s"
-    assert seg1.get("duration") == "10s"
-    assert seg1.get("start") == "3s"  # r2 が持っていた start は 3s
+    # v_seg1 (children[0])
+    assert children[0].get("ref") == "r2"  # video_id
+    assert children[0].get("name") == "vid_A1"
+    assert children[0].get("offset") == "0s"
+    assert children[0].get("duration") == "10s"
+    assert children[0].get("start") == "3s"  # r2 が持っていた start は 3s
 
-    # ネストされたオーディオトラックの検証
-    seg1_children = seg1.findall("asset-clip")
-    assert len(seg1_children) == 3
-    # lane順 = ストリーム順 (_1=r6, _2=r8, _3=r4) で、lane は -1, -2, -3
-    assert [(c.get("ref"), c.get("lane"), c.get("name")) for c in seg1_children] == [
-        ("r6", "-1", "vid_A2"),
-        ("r8", "-2", "vid_A3"),
-        ("r4", "-3", "vid_A4"),
+    # wav順 = ストリーム順 (_1=r6, _2=r8, _3=r4) で、名前は A2, A3, A4
+    assert [(c.get("ref"), c.get("name"), c.get("offset"), c.get("start")) for c in children[1:4]] == [
+        ("r6", "vid_A2", "0s", "1s"),
+        ("r8", "vid_A3", "0s", "0s"),
+        ("r4", "vid_A4", "0s", "2s"),
     ]
-    # 各ネストクリップ自身の start/duration が維持されているか（流用されていないか）
-    # r6 (vid_A2) の start=1s, r8 (vid_A3) の start=0s, r4 (vid_A4) の start=2s
-    assert seg1_children[0].get("start") == "1s"
-    assert seg1_children[1].get("start") == "0s"
-    assert seg1_children[2].get("start") == "2s"
-    assert all(c.get("offset") == "0s" for c in seg1_children)
 
     # 3. セグメント 2 の検証
-    seg2 = children[2]
-    assert seg2.get("ref") == "r2"  # video_id
-    assert seg2.get("name") == "vid_A1"
-    assert seg2.get("offset") == "15s"
-    assert seg2.get("duration") == "5s"
-    assert seg2.get("start") == "11s"  # r2 が持っていた start は 11s
+    # v_seg2 (children[5])
+    assert children[5].get("ref") == "r2"  # video_id
+    assert children[5].get("name") == "vid_A1"
+    assert children[5].get("offset") == "15s"
+    assert children[5].get("duration") == "5s"
+    assert children[5].get("start") == "11s"  # r2 が持っていた start は 11s
 
-    seg2_children = seg2.findall("asset-clip")
-    assert len(seg2_children) == 3
-    assert [(c.get("ref"), c.get("lane"), c.get("name")) for c in seg2_children] == [
-        ("r6", "-1", "vid_A2"),
-        ("r8", "-2", "vid_A3"),
-        ("r4", "-3", "vid_A4"),
+    assert [(c.get("ref"), c.get("name"), c.get("offset"), c.get("start")) for c in children[6:9]] == [
+        ("r6", "vid_A2", "15s", "13s"),
+        ("r8", "vid_A3", "15s", "12s"),
+        ("r4", "vid_A4", "15s", "10s"),
     ]
-    # 各ネストクリップ自身の start/duration が維持されているか
-    # r6 (vid_A2) の start=13s, r8 (vid_A3) の start=12s, r4 (vid_A4) の start=10s
-    assert seg2_children[0].get("start") == "13s"
-    assert seg2_children[1].get("start") == "12s"
-    assert seg2_children[2].get("start") == "10s"
-    assert all(c.get("offset") == "0s" for c in seg2_children)
 
 
 def test_reorder_fcpxml_tracks_single_track_noop(tmp_path):

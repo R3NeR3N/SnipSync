@@ -94,13 +94,15 @@ def _rewrite_fcpxml_track_paths(timeline_path: Path, old_dir: Path, new_dir: Pat
 
 
 def _reorder_fcpxml_tracks(timeline_path: Path, stem: str) -> bool:
-    """多トラック fcpxml の spine を元のストリーム順へ並べ替え、lane を明示する。
+    """多トラック fcpxml の spine を元のストリーム順へ並べ替える（フラット構造の維持）。
 
-    auto-editor は4本の asset-clip を全て offset=0・lane 無し・同名で spine に
+    auto-editor は複数の asset-clip を全て offset=0・lane 無し・同名で spine に
     並べるため、Resolve 等が取込時にトラック順を独自割当してしまう。元順は確定
     （hasVideo の asset = stream0/ミックス、name="{stem}_N" の wav = stream N）
-    なので、ミックスを primary（lane 0 = V1+A1）、wav を lane=-1,-2,-3 の
-    connected clip として元順で積み直す。clip 名は用途非依存の番号 {stem}_A{n}。
+    なので、spine 直下にフラットに並べる元の構造を完全に維持したまま、
+    出現順（物理的な並び順）のみを元ストリーム順に整列する。
+    これにより、Resolve 側での解釈エラー（映像消失、トラック過剰分裂）を回避し、
+    かつ各トラックを元の順序通り（A1..A4）に展開させる。
 
     戻り値: 並べ替えた=True / 対象外（単トラック等）=False。
     """
@@ -176,10 +178,10 @@ def _reorder_fcpxml_tracks(timeline_path: Path, stem: str) -> bool:
             key = (offset, duration)
             if key not in created_segments:
                 seg_clips = segments[key]
+                
+                # 1. 映像クリップ（A1）を追加
                 video_clip = next(c for c in seg_clips if c.get("ref") == video_id)
-
-                # 新しい primary clip（映像付き = A1）
-                primary = ET.Element("asset-clip", {
+                v_elem = ET.Element("asset-clip", {
                     "offset": video_clip.get("offset", "0s"),
                     "duration": video_clip.get("duration", "0s"),
                     "tcFormat": video_clip.get("tcFormat", "NDF"),
@@ -187,27 +189,25 @@ def _reorder_fcpxml_tracks(timeline_path: Path, stem: str) -> bool:
                     "name": f"{stem}_A1",
                     "ref": video_id,
                 })
+                new_children.append(v_elem)
 
-                # wavをstream番号の昇順で lane=-1,-2... にネスト
-                lane = -1
+                # 2. 各 wav クリップ（A2, A3...）をストリーム順にフラット追加
                 track_no = 2
                 for stream_idx in sorted(wavs):
                     ref_id = wavs[stream_idx]
                     wav_clip = next((c for c in seg_clips if c.get("ref") == ref_id), None)
                     if wav_clip is not None:
-                        ET.SubElement(primary, "asset-clip", {
-                            "lane": str(lane),
-                            "offset": "0s",
+                        w_elem = ET.Element("asset-clip", {
+                            "offset": wav_clip.get("offset", "0s"),
                             "duration": wav_clip.get("duration", "0s"),
                             "tcFormat": wav_clip.get("tcFormat", "NDF"),
                             "start": wav_clip.get("start", "0s"),
                             "name": f"{stem}_A{track_no}",
                             "ref": ref_id,
                         })
-                        lane -= 1
+                        new_children.append(w_elem)
                         track_no += 1
                 
-                new_children.append(primary)
                 created_segments.add(key)
 
     # spine をクリアして差し替え
@@ -217,6 +217,7 @@ def _reorder_fcpxml_tracks(timeline_path: Path, stem: str) -> bool:
 
     tree.write(timeline_path, encoding="utf-8", xml_declaration=True)
     return True
+
 
 
 @dataclass
