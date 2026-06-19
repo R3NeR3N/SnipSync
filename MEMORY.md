@@ -15,6 +15,12 @@
 
 ---
 
+## 2026-06-20 02:30 — fcpxml トラック順: 本番録画素材で実機検証パス＝P3 クローズ（報告: ユーザー / 記録: Opus 4.8）
+- 決定: Gemini 実装 #4（`sorted(wavs, reverse=True)`＋映像ブロック最後 / commit `c35bb01`）を本番の実録画データで実機検証し、**出力トラックの並びが元データと一致**することをユーザーが確認。P3「fcpxml 音声トラック順 reorder」を**クローズ**。
+- 意味: MEMORY 01:50 の残 DoD「実機の本番素材（OBS/VRChat 等の実多トラック動画）での最終目視＝ユーザー側で1回」を充足。合成 E2E（証拠E）＋本番素材の二重確認で機構と実運用の両方が証明された。
+- 補足: 設計書 `docs/handoff/P3-fcpxml-track-reorder.md`（Opus 作成）を docs としてコミット（§6.1 作者一致＝docs は Opus）。
+- 関連: `src/pipeline.py` (_reorder_fcpxml_tracks), `tests/test_pipeline.py`, [[resolve-fcpxml-reverse-track-order]], PITFALLS 2026-06-20（逆順規則）
+
 ## 2026-06-20 01:50 — fcpxml 音声トラック順の真因＝Resolve は「文書の逆順」で割当（実測確定・診断: Opus 4.8）
 - 経緯: Gemini が #4（wav降順→映像最後・未コミット）を実装後も「解消しない」とユーザー報告。systematic-debugging で Phase 4.5（4回失敗＝アーキ疑え）と判断し、推測を止めて**実機で割当規則を直接実測**した。
 - 採取した証拠（合成4トラックmp4 + ホスト .venv の実 auto-editor + 実機 DaVinci Resolve 21）:
