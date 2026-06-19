@@ -148,13 +148,8 @@ def _reorder_fcpxml_tracks(timeline_path: Path, stem: str) -> bool:
         else:
             ref = child.get("ref")
             if ref == video_id:
-                child.set("name", f"{stem}_A1")
                 track_lists[video_id].append(child)
             elif ref in track_lists:
-                # wavs から対応する stream index を見つけ、トラック番号（A2, A3...）を決定
-                stream_idx = next(idx for idx, aid in wavs.items() if aid == ref)
-                track_no = stream_idx + 1  # stream 1 -> A2, stream 2 -> A3...
-                child.set("name", f"{stem}_A{track_no}")
                 track_lists[ref].append(child)
 
     # 堅牢性チェック：各トラックのクリップ数が一致しているか（gap は除く）

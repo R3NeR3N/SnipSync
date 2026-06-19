@@ -960,36 +960,36 @@ def test_reorder_fcpxml_tracks_comprehensive(tmp_path):
     # 2. 映像トラック (A1) の検証 (children[0], children[2])
     # v_seg1 (children[0])
     assert children[0].get("ref") == "r2"  # video_id
-    assert children[0].get("name") == "vid_A1"
+    assert children[0].get("name") == "vid"
     assert children[0].get("offset") == "0s"
     assert children[0].get("duration") == "10s"
     assert children[0].get("start") == "3s"  # r2 が持っていた start は 3s
 
     # v_seg2 (children[2])
     assert children[2].get("ref") == "r2"  # video_id
-    assert children[2].get("name") == "vid_A1"
+    assert children[2].get("name") == "vid"
     assert children[2].get("offset") == "15s"
     assert children[2].get("duration") == "5s"
     assert children[2].get("start") == "11s"  # r2 が持っていた start は 11s
 
     # 3. 各 WAV トラックの検証
-    # wav順 = ストリーム順 (_1=r6, _2=r8, _3=r4) で、名前は A2, A3, A4
+    # wav順 = ストリーム順 (_1=r6, _2=r8, _3=r4) で、名前は A2, A3, A4 として出力されるかわりに元の名前 vid を維持する
     # WAV1 (children[3:5])
     assert [(c.get("ref"), c.get("name"), c.get("offset"), c.get("start")) for c in children[3:5]] == [
-        ("r6", "vid_A2", "0s", "1s"),
-        ("r6", "vid_A2", "15s", "13s"),
+        ("r6", "vid", "0s", "1s"),
+        ("r6", "vid", "15s", "13s"),
     ]
 
     # WAV2 (children[5:7])
     assert [(c.get("ref"), c.get("name"), c.get("offset"), c.get("start")) for c in children[5:7]] == [
-        ("r8", "vid_A3", "0s", "0s"),
-        ("r8", "vid_A3", "15s", "12s"),
+        ("r8", "vid", "0s", "0s"),
+        ("r8", "vid", "15s", "12s"),
     ]
 
     # WAV3 (children[7:9])
     assert [(c.get("ref"), c.get("name"), c.get("offset"), c.get("start")) for c in children[7:9]] == [
-        ("r4", "vid_A4", "0s", "2s"),
-        ("r4", "vid_A4", "15s", "10s"),
+        ("r4", "vid", "0s", "2s"),
+        ("r4", "vid", "15s", "10s"),
     ]
 
 
