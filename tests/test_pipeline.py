@@ -486,17 +486,27 @@ def test_pipeline_temp_wav_cleanup(temp_dirs, monkeypatch):
     assert not temp_wav_path.exists()
 
 
-def test_pipeline_tracks_cleanup(temp_dirs, monkeypatch):
-    """auto-editor が入力の隣に作る {stem}_tracks フォルダを後始末する。"""
+def test_pipeline_tracks_relocated_fcpxml(temp_dirs, monkeypatch):
+    """fcpxml(resolve) では {stem}_tracks を出力先へ移動し参照パスを書き換える。
+
+    _tracks/*.wav は fcpxml の必須アセット。掃除すると DaVinci 等でトラックが
+    メディア未検出になるため、削除でなく出力先へ relocate するのが正。
+    """
     inp, out_dir = temp_dirs
     tracks_dir = inp.parent / "input_tracks"
+    old_fwd = str(tracks_dir).replace("\\", "/")
 
     def mock_write(cmd):
         # auto-editor の多トラック分解挙動を模倣: 入力の隣に _tracks を作る
         tracks_dir.mkdir(exist_ok=True)
         (tracks_dir / "input_1.wav").write_bytes(b"audio")
         if "--output" in cmd:
-            Path(cmd[cmd.index("--output") + 1]).write_bytes(b"dummy")
+            out_path = Path(cmd[cmd.index("--output") + 1])
+            # fcpxml が _tracks の wav を絶対パスで参照している状況を再現
+            out_path.write_text(
+                f'<media-rep src="file:///{old_fwd}/input_1.wav" />',
+                encoding="utf-8",
+            )
 
     monkeypatch.setattr(subprocess, "Popen", make_mock_popen(
         stdout_lines=["progress"], write_output=mock_write
@@ -517,8 +527,52 @@ def test_pipeline_tracks_cleanup(temp_dirs, monkeypatch):
         tr=stub_tr
     )
 
+    dest = out_dir / "input_tracks"
+    assert res.ok is True
+    # 入力の隣からは消え、出力先へ移っている
+    assert not tracks_dir.exists()
+    assert (dest / "input_1.wav").exists()
+    assert any("log_tracks_relocated" in m for m, _ in logs)
+    # fcpxml の参照パスが移動先へ書き換わっている
+    new_fwd = str(dest).replace("\\", "/")
+    fcpxml_text = res.timeline_path.read_text(encoding="utf-8")
+    assert new_fwd in fcpxml_text
+    assert old_fwd not in fcpxml_text
+
+
+def test_pipeline_tracks_cleanup_premiere(temp_dirs, monkeypatch):
+    """premiere(.xml) は元動画を直接参照し _tracks は不要 → 従来どおり掃除する。"""
+    inp, out_dir = temp_dirs
+    tracks_dir = inp.parent / "input_tracks"
+
+    def mock_write(cmd):
+        tracks_dir.mkdir(exist_ok=True)
+        (tracks_dir / "input_1.wav").write_bytes(b"audio")
+        if "--output" in cmd:
+            Path(cmd[cmd.index("--output") + 1]).write_bytes(b"dummy")
+
+    monkeypatch.setattr(subprocess, "Popen", make_mock_popen(
+        stdout_lines=["progress"], write_output=mock_write
+    ))
+
+    params = PipelineParams(
+        margin=0.2, threshold=4.0, export_key="premiere", do_srt=False, model_size="small"
+    )
+
+    logs = []
+    res = run_pipeline(
+        ae_path="dummy-ae",
+        inp=inp,
+        out_dir=out_dir,
+        params=params,
+        on_log=lambda m, lvl="": logs.append((m, lvl)),
+        should_stop=lambda: False,
+        tr=stub_tr
+    )
+
     assert res.ok is True
     assert not tracks_dir.exists()
+    assert not (out_dir / "input_tracks").exists()
     assert any("log_tracks_cleaned" in m for m, _ in logs)
 
 

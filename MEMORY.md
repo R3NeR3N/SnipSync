@@ -15,6 +15,16 @@
 
 ---
 
+## 2026-06-19 16:50 — 多トラック音声 fcpxml の `_tracks` を掃除でなく出力先へ relocate（B案）（頭脳兼作業: Opus 4.8）
+- 経緯: ユーザーが OBS 4トラック収録動画を resolve 出力→DaVinci 取込で「T1(全音声ミックス)だけ残り他3トラック未検出」と報告。
+- 診断（実測で仮説訂正）: 初期仮説「auto-editor が fcpxml に音声1本しか宣言しない」を、合成4トラックmp4で resolve/premiere 両出力を生成し XML を実検査して**否定**。真因は **SnipSync 自身の `_tracks` 掃除（2026-06-19 初版）**。fcpxml は4トラックを宣言するが各分解トラックを `{stem}_tracks/*.wav` の絶対 file:// 参照で持つ→そのWAVを rmtree した3本が参照切れ。元mp4参照(映像+T1)だけ残存し報告と一致。premiere(.xml) は元mp4直参照だが DaVinci が分離4ストリームを trackindex 展開できず 8トラック/6無音（別問題・回避不可）→ resolve fcpxml + WAV温存が唯一クリーンと判断。
+- 決定（B案採用・ユーザー選択）: fcpxml(resolve/final-cut-pro) のとき `_tracks` を**削除せず `out_dir` へ移動し、fcpxml 内の参照パスを書き換える**。premiere(.xml) は不要アセットゆえ従来どおり掃除。
+- 実装の肝: `pipeline._rewrite_fcpxml_track_paths`（forward-slash優先・backslash保険でパス文字列置換）＋ step1直後・step2(字幕WAV抽出)**前**に relocate（2a が `_tracks` を再生成し得るため）。`out_dir==inp.parent` は移動不要で温存(`tracks_keep_in_place`)。移動失敗時も参照保護で温存にフォールバック。pre-existing フォルダは従来どおり不可侵。finally は「温存判定でない」場合のみ掃除（relocate後に2aが残したクラッタを削除）。
+- i18n: `log_tracks_relocated` を ja/en 追加。
+- 検証: 全32テスト緑（relocate(fcpxml)/cleanup(premiere) 2本に再編・+1）/ruff クリーン。実 auto-editor + 合成4トラックmp4で `run_pipeline(resolve)` E2E → 入力dirクリーン・出力dirに `_tracks` 移動・fcpxml の3 WAV参照が出力先へ書換、を確認。**DaVinci 実機での最終目視はユーザー側で実施予定（未）**。
+- 協業逸脱: app実装(pipeline/i18n/tests)につき本来 Gemini 領域。ユーザー直接指示「Bで修正して」＋当セッション Opus 一貫のため Opus 実施。要望を鵜呑みにせず実測で初期仮説を訂正した点は AGENTS「矛盾は確認」に沿う。次の機能実装は通常分担へ。[[role-boundary-opus-design-only]]
+- 関連: `src/pipeline.py`, `src/i18n.py`, `tests/test_pipeline.py`, `PITFALLS.md`（2026-06-19 fcpxml _tracks）
+
 ## 2026-06-19 — GPU(CUDA)字幕生成を Windows で実際に動作させる（venv内CUDAライブラリ）（頭脳兼作業: Opus 4.8）
 - 経緯: 実機(NVIDIA GPU)で「GPU使用」チェック→ログ「GPU初期化に失敗。CPUにフォールバック」。診断で実例外 `RuntimeError: Library cublas64_12.dll is not found or cannot be loaded` を捕捉。原因: GPUドライバは在るが CUDA ランタイム(cuBLAS/cuDNN/cudart)が不在。`faster-whisper`/`ctranslate2` pip導入では同梱されない（CONTEXT §7 / README既述）。フォールバックは設計通りの正常動作だった。
 - 決定: ホストにCUDA Toolkitを入れず、**nvidia-* wheel を venv 内に導入**してホスト非汚染のままGPU有効化。`pip install nvidia-cublas-cu12 nvidia-cudnn-cu12 nvidia-cuda-runtime-cu12`（DLLは `.venv/site-packages/nvidia/*/bin`）。pyproject に opt-in extra `[gpu]` を追加し再現可能化（`pip install -e ".[gpu]"`）。

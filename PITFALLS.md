@@ -16,6 +16,13 @@
 
 ---
 
+## 2026-06-19 — fcpxml(resolve) の `_tracks/*.wav` を掃除するとDaVinciで多トラックが「メディア未検出」
+- やったこと: 多トラック音声(OBS 4トラック収録)の動画を resolve 出力→ DaVinci 取込。事前に「auto-editor の `_tracks` はゴミ」と判断し処理後 `rmtree`（2026-06-19 初版実装）。
+- 何が起きたか: DaVinci でトラック1(全音声ミックス=元mp4由来)だけ残り、他3トラックが「見つからない」。
+- 原因: 当初の仮説「auto-editor は fcpxml に音声1本しか宣言しない」は**誤り**（実測で否定）。fcpxml は4トラックを正しく宣言するが、各分解トラックを**入力隣 `{stem}_tracks/*.wav` の絶対パス file:// 参照**で持つ。元mp4参照(=映像+T1)だけは残り、`_tracks` を消した3本が参照切れ→未検出。掃除が必須アセットを削除していた自爆。なお premiere(.xml) は元mp4直参照(`<sourcetrack> trackindex`)なので `_tracks` は本当に不要だが、DaVinti はmp4内の分離4ストリームを trackindex 通りに展開できず 8トラック化&6無音(別問題)。
+- 回避策 / 正しい手順: fcpxml(resolve/final-cut-pro) では `_tracks` を**削除せず出力先へ移動し fcpxml 内の参照パスを書き換える**（B案）。premiere(.xml) のみ従来どおり掃除。実装は `pipeline._rewrite_fcpxml_track_paths` ＋ relocate ブロック（字幕用WAV抽出が再生成し得るので 2a の前に移動）。検証は実 auto-editor + 合成4トラックmp4でE2E（入力dirクリーン/出力dirに `_tracks` 移動/fcpxml書換）。
+- 関連: `src/pipeline.py`(relocate/_rewrite_fcpxml_track_paths), `src/i18n.py`(log_tracks_relocated), `tests/test_pipeline.py`, MEMORY 2026-06-19
+
 ## 2026-06-19 — faster-whisper GPU: nvidia-* wheel 導入だけ／add_dll_directory だけでは cuBLAS を読めない
 - やったこと: GPU を使うため `.venv` に `nvidia-cublas-cu12`/`nvidia-cudnn-cu12` を入れ、cuda で `WhisperModel` を構築。
 - 何が起きたか: `RuntimeError: Library cublas64_12.dll is not found or cannot be loaded`。(1) wheel 導入だけ → DLL 未発見。(2) `os.add_dll_directory(.../nvidia/cublas/bin)` を足すだけでも依然「cannot be loaded」。(3) `nvidia-cuda-runtime-cu12`(cudart) 欠落も一因。

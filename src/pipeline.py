@@ -74,6 +74,24 @@ def _run_streaming(cmd, *, on_log, should_stop) -> tuple[int, bool]:
     return rc, False
 
 
+def _rewrite_fcpxml_track_paths(timeline_path: Path, old_dir: Path, new_dir: Path) -> None:
+    """relocate 後、fcpxml 内の {stem}_tracks 参照パスを移動先へ書き換える。
+    auto-editor は forward-slash の絶対パスで file:// 参照を書く（実測）ため、
+    まず forward-slash 形で置換し、不一致なら backslash 形を保険で試す。
+    """
+    try:
+        text = timeline_path.read_text(encoding="utf-8")
+    except Exception:
+        return
+    old_fwd = str(old_dir).replace("\\", "/")
+    new_fwd = str(new_dir).replace("\\", "/")
+    new_text = text.replace(old_fwd, new_fwd)
+    if new_text == text:
+        new_text = text.replace(str(old_dir), str(new_dir))
+    if new_text != text:
+        timeline_path.write_text(new_text, encoding="utf-8")
+
+
 @dataclass
 class PipelineParams:
     margin: float
@@ -121,6 +139,9 @@ def run_pipeline(
     # よう、開始前に存在有無を記録しておく。
     tracks_dir = inp.parent / f"{inp.stem}_tracks"
     tracks_pre_existed = tracks_dir.exists()
+    is_fcpxml = ext == ".fcpxml"
+    # fcpxml の参照アセットを入力隣に温存する必要があるとき True（finally で消さない）。
+    tracks_keep_in_place = False
 
     try:
         # 1. Auto-Editor Processing
@@ -147,6 +168,30 @@ def run_pipeline(
             on_log(tr("log_ae_missing", e), "error")
         except Exception:
             on_log(tr("log_unexpected", traceback.format_exc()), "error")
+
+        # 1b. 多トラック音声の _tracks 後処理（B 案）。
+        # fcpxml(resolve / final-cut-pro) は _tracks/*.wav を必須アセットとして
+        # 参照するため、掃除すると DaVinci 等で当該トラックが「メディア未検出」に
+        # なる（実測・PITFALLS 参照）。出力先へ移動し fcpxml 内の参照パスを書き換える。
+        # premiere(.xml) は元動画を直接参照するため _tracks は不要 → finally で掃除。
+        # 字幕用 WAV 抽出(2a)が _tracks を再生成し得るので、その前にここで移動する。
+        if (result.ok and is_fcpxml and result.timeline_path
+                and tracks_dir.is_dir() and not tracks_pre_existed):
+            if tracks_dir.parent == out_dir:
+                # 既に .fcpxml と同じ場所にある → 参照アセットとしてそのまま残す
+                tracks_keep_in_place = True
+            else:
+                dest = out_dir / tracks_dir.name
+                try:
+                    if dest.exists():
+                        shutil.rmtree(dest, ignore_errors=True)
+                    shutil.move(str(tracks_dir), str(dest))
+                    _rewrite_fcpxml_track_paths(result.timeline_path, tracks_dir, dest)
+                    on_log(tr("log_tracks_relocated", dest.name), "muted")
+                except Exception:
+                    # 移動失敗時は参照を壊さぬよう元の場所に温存（タイムライン保護優先）
+                    tracks_keep_in_place = True
+                    on_log(tr("log_unexpected", traceback.format_exc()), "error")
 
         # 2. Faster-Whisper Processing via Temp WAV
         if result.ok and params.do_srt and not result.stopped:
@@ -246,10 +291,14 @@ def run_pipeline(
         # Catch any unexpected top-level worker thread crashes
         on_log(tr("log_unexpected", traceback.format_exc()), "error")
     finally:
-        # auto-editor が入力の隣に残す {stem}_tracks を掃除（本実行で出現した分のみ）。
+        # 入力の隣に残る {stem}_tracks を掃除（本実行で出現した分のみ）。
+        # fcpxml で出力先へ移動済み(relocate)なら、ここに残るのは字幕用 WAV 抽出が
+        # 再生成したクラッタ → 削除してよい。fcpxml で温存判定(tracks_keep_in_place)の
+        # ときだけは参照アセットなので消さない。premiere(.xml) は常に掃除対象。
         # 停止/失敗時も必ず後始末されるよう finally に置く。
         try:
-            if tracks_dir.is_dir() and not tracks_pre_existed:
+            if (tracks_dir.is_dir() and not tracks_pre_existed
+                    and not tracks_keep_in_place):
                 shutil.rmtree(tracks_dir, ignore_errors=True)
                 on_log(tr("log_tracks_cleaned", tracks_dir.name), "muted")
         except Exception:
