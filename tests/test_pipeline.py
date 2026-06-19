@@ -943,54 +943,54 @@ def test_reorder_fcpxml_tracks_comprehensive(tmp_path):
     children = list(spine)
 
     # 1. 要素数および他の要素の維持の確認
-    # 出力構造は: 映像トラックブロック (v_seg1, gap, v_seg2) + 各WAVトラックブロック
-    # [v_seg1, gap, v_seg2, w1_seg1, w1_seg2, w2_seg1, w2_seg2, w3_seg1, w3_seg2]
+    # 出力構造は: 各WAVトラックブロックの降順 (WAV3 -> WAV2 -> WAV1) + 映像トラックブロック (v_seg1, gap, v_seg2)
+    # [w3_seg1, w3_seg2, w2_seg1, w2_seg2, w1_seg1, w1_seg2, v_seg1, gap, v_seg2]
     assert len(children) == 9
     assert [c.tag for c in children] == [
-        "asset-clip", "gap", "asset-clip",
         "asset-clip", "asset-clip",
         "asset-clip", "asset-clip",
-        "asset-clip", "asset-clip"
+        "asset-clip", "asset-clip",
+        "asset-clip", "gap", "asset-clip"
     ]
 
     # gap が非破壊で属性も維持されていること
-    assert children[1].get("offset") == "10s"
-    assert children[1].get("duration") == "5s"
+    assert children[7].get("offset") == "10s"
+    assert children[7].get("duration") == "5s"
 
-    # 2. 映像トラック (A1) の検証 (children[0], children[2])
-    # v_seg1 (children[0])
-    assert children[0].get("ref") == "r2"  # video_id
-    assert children[0].get("name") == "vid"
-    assert children[0].get("offset") == "0s"
-    assert children[0].get("duration") == "10s"
-    assert children[0].get("start") == "3s"  # r2 が持っていた start は 3s
-
-    # v_seg2 (children[2])
-    assert children[2].get("ref") == "r2"  # video_id
-    assert children[2].get("name") == "vid"
-    assert children[2].get("offset") == "15s"
-    assert children[2].get("duration") == "5s"
-    assert children[2].get("start") == "11s"  # r2 が持っていた start は 11s
-
-    # 3. 各 WAV トラックの検証
-    # wav順 = ストリーム順 (_1=r6, _2=r8, _3=r4) で、名前は A2, A3, A4 として出力されるかわりに元の名前 vid を維持する
-    # WAV1 (children[3:5])
-    assert [(c.get("ref"), c.get("name"), c.get("offset"), c.get("start")) for c in children[3:5]] == [
-        ("r6", "vid", "0s", "1s"),
-        ("r6", "vid", "15s", "13s"),
+    # 2. 各 WAV トラックの検証 (WAV3, WAV2, WAV1 の順)
+    # wav順 = ストリーム降順 (_3=r4, _2=r8, _1=r6) で、名前は元の名前 vid を維持する
+    # WAV3 (children[0:2])
+    assert [(c.get("ref"), c.get("name"), c.get("offset"), c.get("start")) for c in children[0:2]] == [
+        ("r4", "vid", "0s", "2s"),
+        ("r4", "vid", "15s", "10s"),
     ]
 
-    # WAV2 (children[5:7])
-    assert [(c.get("ref"), c.get("name"), c.get("offset"), c.get("start")) for c in children[5:7]] == [
+    # WAV2 (children[2:4])
+    assert [(c.get("ref"), c.get("name"), c.get("offset"), c.get("start")) for c in children[2:4]] == [
         ("r8", "vid", "0s", "0s"),
         ("r8", "vid", "15s", "12s"),
     ]
 
-    # WAV3 (children[7:9])
-    assert [(c.get("ref"), c.get("name"), c.get("offset"), c.get("start")) for c in children[7:9]] == [
-        ("r4", "vid", "0s", "2s"),
-        ("r4", "vid", "15s", "10s"),
+    # WAV1 (children[4:6])
+    assert [(c.get("ref"), c.get("name"), c.get("offset"), c.get("start")) for c in children[4:6]] == [
+        ("r6", "vid", "0s", "1s"),
+        ("r6", "vid", "15s", "13s"),
     ]
+
+    # 3. 映像トラック (A1) の検証 (children[6], children[8])
+    # v_seg1 (children[6])
+    assert children[6].get("ref") == "r2"  # video_id
+    assert children[6].get("name") == "vid"
+    assert children[6].get("offset") == "0s"
+    assert children[6].get("duration") == "10s"
+    assert children[6].get("start") == "3s"  # r2 が持っていた start は 3s
+
+    # v_seg2 (children[8])
+    assert children[8].get("ref") == "r2"  # video_id
+    assert children[8].get("name") == "vid"
+    assert children[8].get("offset") == "15s"
+    assert children[8].get("duration") == "5s"
+    assert children[8].get("start") == "11s"  # r2 が持っていた start は 11s
 
 
 def test_reorder_fcpxml_tracks_single_track_noop(tmp_path):

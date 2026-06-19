@@ -161,18 +161,18 @@ def _reorder_fcpxml_tracks(timeline_path: Path, stem: str) -> bool:
         if clip_count != expected_len:
             return False
 
-    # spine をクリアして、正しいトラック of 順番で要素を再配置
+    # spine をクリアして、正しいトラック of 順番で要素を再配置 (Resolveの逆順展開を考慮して逆順に並べる)
     spine.clear()
     
-    # 1. 映像トラックのブロック
-    for child in track_lists[video_id]:
-        spine.append(child)
-        
-    # 2. 各 WAV トラックのブロック（WAV1, WAV2, WAV3... の順）
-    for stream_idx in sorted(wavs):
+    # 1. 各 WAV トラックのブロック（WAV_N...WAV1 の降順）
+    for stream_idx in sorted(wavs, reverse=True):
         ref_id = wavs[stream_idx]
         for child in track_lists[ref_id]:
             spine.append(child)
+
+    # 2. 映像トラックのブロックを最後に追加
+    for child in track_lists[video_id]:
+        spine.append(child)
 
     tree.write(timeline_path, encoding="utf-8", xml_declaration=True)
     return True
