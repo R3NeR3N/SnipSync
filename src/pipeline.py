@@ -94,15 +94,15 @@ def _rewrite_fcpxml_track_paths(timeline_path: Path, old_dir: Path, new_dir: Pat
 
 
 def _reorder_fcpxml_tracks(timeline_path: Path, stem: str) -> bool:
-    """多トラック fcpxml の spine を元のストリーム順へ並べ替える（フラット構造の維持）。
+    """多トラック fcpxml の spine を元のストリーム順へ並べ替える（トラックごとのブロック列挙の維持）。
 
-    auto-editor は複数の asset-clip を全て offset=0・lane 無し・同名で spine に
-    並べるため、Resolve 等が取込時にトラック順を独自割当してしまう。元順は確定
-    （hasVideo の asset = stream0/ミックス、name="{stem}_N" の wav = stream N）
-    なので、spine 直下にフラットに並べる元の構造を完全に維持したまま、
-    出現順（物理的な並び順）のみを元ストリーム順に整列する。
-    これにより、Resolve 側での解釈エラー（映像消失、トラック過剰分裂）を回避し、
-    かつ各トラックを元の順序通り（A1..A4）に展開させる。
+    auto-editor は「各トラックの全カットセグメントを時系列順に並べたブロック」を
+    spine 直下にフラットに順番に列挙する（例: [映像_seg1..N] -> [WAV1_seg1..N]...）。
+    Resolve 等の NLE は、この物理的な出現順（ブロック順）をトラック割当の基準とする。
+    本関数では、元の「トラックごとに全セグメントを並べる」フラットな構造を完全に維持したまま、
+    ブロックの出現順序のみを元のストリーム順（映像A1 -> WAV_1..N）に整列する。
+    これにより、Resolve 側での解釈エラー（映像消失、トラック過剰分裂、一部トラックの消失）を
+    完全に回避し、4つのトラックが正しい順序通り（A1..A4）に展開されるようにする。
 
     戻り値: 並べ替えた=True / 対象外（単トラック等）=False。
     """
@@ -135,88 +135,53 @@ def _reorder_fcpxml_tracks(timeline_path: Path, stem: str) -> bool:
     if not clips:
         return False
 
-    # (offset, duration) でグループ化（セグメント化）
-    segments: dict[tuple[str, str], list[ET.Element]] = {}
-    for clip in clips:
-        offset = clip.get("offset")
-        duration = clip.get("duration")
-        key = (offset, duration)
-        if key not in segments:
-            segments[key] = []
-        segments[key].append(clip)
+    # トラックごとの要素リストを初期化
+    track_lists: dict[str, list[ET.Element]] = {video_id: []}
+    for ref_id in wavs.values():
+        track_lists[ref_id] = []
 
-    # 堅牢性チェック：各セグメントに video_id クリップがちょうど1つあり、
-    # 重複や想定外のアセット（wavs にないもの）がないこと。
-    # 何かあれば False を返して一切変更しない（安全最優先）。
-    for key, seg_clips in segments.items():
-        video_clips = [c for c in seg_clips if c.get("ref") == video_id]
-        if len(video_clips) != 1:
-            return False
-        
-        seen_refs = set()
-        for c in seg_clips:
-            ref = c.get("ref")
-            if ref == video_id:
-                continue
-            if ref not in wavs.values():
-                return False
-            if ref in seen_refs:
-                return False
-            seen_refs.add(ref)
-
-    # spine の全子要素を走査し、再構築したリストを作成する
-    spine_children = list(spine)
-    new_children = []
-    created_segments = set()
-
-    for child in spine_children:
+    # spine の全子要素を走査し、トラックごとに分類（元の要素オブジェクトをそのまま維持）
+    for child in list(spine):
         if child.tag != "asset-clip":
-            new_children.append(child)
+            # gap などの非 asset-clip 要素は、映像トラック（プライマリ）のリストに追加
+            track_lists[video_id].append(child)
         else:
-            offset = child.get("offset")
-            duration = child.get("duration")
-            key = (offset, duration)
-            if key not in created_segments:
-                seg_clips = segments[key]
-                
-                # 1. 映像クリップ（A1）を追加
-                video_clip = next(c for c in seg_clips if c.get("ref") == video_id)
-                v_elem = ET.Element("asset-clip", {
-                    "offset": video_clip.get("offset", "0s"),
-                    "duration": video_clip.get("duration", "0s"),
-                    "tcFormat": video_clip.get("tcFormat", "NDF"),
-                    "start": video_clip.get("start", "0s"),
-                    "name": f"{stem}_A1",
-                    "ref": video_id,
-                })
-                new_children.append(v_elem)
+            ref = child.get("ref")
+            if ref == video_id:
+                child.set("name", f"{stem}_A1")
+                track_lists[video_id].append(child)
+            elif ref in track_lists:
+                # wavs から対応する stream index を見つけ、トラック番号（A2, A3...）を決定
+                stream_idx = next(idx for idx, aid in wavs.items() if aid == ref)
+                track_no = stream_idx + 1  # stream 1 -> A2, stream 2 -> A3...
+                child.set("name", f"{stem}_A{track_no}")
+                track_lists[ref].append(child)
 
-                # 2. 各 wav クリップ（A2, A3...）をストリーム順にフラット追加
-                track_no = 2
-                for stream_idx in sorted(wavs):
-                    ref_id = wavs[stream_idx]
-                    wav_clip = next((c for c in seg_clips if c.get("ref") == ref_id), None)
-                    if wav_clip is not None:
-                        w_elem = ET.Element("asset-clip", {
-                            "offset": wav_clip.get("offset", "0s"),
-                            "duration": wav_clip.get("duration", "0s"),
-                            "tcFormat": wav_clip.get("tcFormat", "NDF"),
-                            "start": wav_clip.get("start", "0s"),
-                            "name": f"{stem}_A{track_no}",
-                            "ref": ref_id,
-                        })
-                        new_children.append(w_elem)
-                        track_no += 1
-                
-                created_segments.add(key)
+    # 堅牢性チェック：各トラックのクリップ数が一致しているか（gap は除く）
+    # 通常、映像と各 WAV は同じカット数を持つため、リストの長さが一致するはず
+    # 一致しない場合、安全のため False を返す
+    expected_len = len([c for c in track_lists[video_id] if c.tag == "asset-clip"])
+    for ref_id, lst in track_lists.items():
+        clip_count = len([c for c in lst if c.tag == "asset-clip"])
+        if clip_count != expected_len:
+            return False
 
-    # spine をクリアして差し替え
+    # spine をクリアして、正しいトラック of 順番で要素を再配置
     spine.clear()
-    for child in new_children:
+    
+    # 1. 映像トラックのブロック
+    for child in track_lists[video_id]:
         spine.append(child)
+        
+    # 2. 各 WAV トラックのブロック（WAV1, WAV2, WAV3... の順）
+    for stream_idx in sorted(wavs):
+        ref_id = wavs[stream_idx]
+        for child in track_lists[ref_id]:
+            spine.append(child)
 
     tree.write(timeline_path, encoding="utf-8", xml_declaration=True)
     return True
+
 
 
 
