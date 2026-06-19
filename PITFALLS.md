@@ -16,6 +16,14 @@
 
 ---
 
+## 2026-06-20 — Resolve は fcpxml の音声 clip を「文書の逆順」でトラック割当する（推測でなく実測せよ）
+- やったこと: 多トラック fcpxml のトラック順ズレを、spine の clip 文書順を変えて直そうと**4回**試行（lane ネスト / 映像先頭+wav昇順 / clip改名 / wav降順+映像最後）。毎回「次はこの順では」と**推測**で当て、実機で確認するまで規則を知らなかった。3回以上失敗＝アーキ疑え（systematic-debugging Phase 4.5）の典型。
+- 何が起きたか: どの順序でも実機で期待トラック順にならず、テストは実装の吐く順序をそのまま assert するだけで**本バグを検出不能（偽の緑）**。
+- 原因（実測で確定）: **Resolve の fcpxml インポータは spine の音声 asset-clip を「文書の逆順」でオーディオトラックへ割り当てる**。文書の**最後**の clip→**A1（最上段）**、**最初**→最下段。検証: 区別名 NAME01→02→03→04 の順で積層→インポート→ **A1=NAME04 … A4=NAME01**。
+- 併せて判明: **fcpxml インポート時 Resolve はメディアを実プローブしない**（宣言 `audioChannels` と clip 構造をそのまま使う）。よって「多ストリーム mp4 を単一 clip 参照に畳む」案は**1トラックに潰れて不可**。N トラック出すには音声 clip が N 個必要（auto-editor の wav 分割は必然）。
+- 回避策 / 正しい手順: 希望のトラック順（A1=T1/映像音声, A2=_1, A3=_2 …）を得るには文書順を**逆**に並べる＝ wav を**降順**（_N…_1）に置き、映像ブロックを**最後**に append（現 `_reorder_fcpxml_tracks` の `sorted(wavs, reverse=True)`＋映像 last）。実機(DaVinci Resolve 21)で A1=mp4(T1)/A2=_1/A3=_2/A4=_3・全セグメント保持・V1 ありを確認済み。**順序仮説は必ず実機 import で検証**（合成4トラックmp4＋実 auto-editor＋Resolve）。テストは「逆順規則に基づく期待順」を固定値で assert する形にし、実装追従の自己満足 assert にしない。
+- 関連: `src/pipeline.py` `_reorder_fcpxml_tracks`, `tests/test_pipeline.py`, MEMORY 2026-06-20 01:50
+
 ## 2026-06-20 — FCPXML で lane ネストによる connected clip を作ると映像消失・音声分裂する
 - やったこと: DaVinci Resolve で音声トラック順が狂う問題を解消するため、`asset-clip` の下に `lane="-1"` 等で他の WAV `asset-clip` をネストする connected clip 構造を作成した。
 - 何が起きたか: 実機 DaVinci Resolve でインポートした際、映像（V1トラック）が完全に消失し、音声トラックが過剰（A1〜A15等）に細切れに分裂して配置されてしまうバグが発生した。
