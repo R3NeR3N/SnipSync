@@ -2,6 +2,7 @@ import shutil
 import subprocess
 import sys
 import traceback
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -90,6 +91,132 @@ def _rewrite_fcpxml_track_paths(timeline_path: Path, old_dir: Path, new_dir: Pat
         new_text = text.replace(str(old_dir), str(new_dir))
     if new_text != text:
         timeline_path.write_text(new_text, encoding="utf-8")
+
+
+def _reorder_fcpxml_tracks(timeline_path: Path, stem: str) -> bool:
+    """多トラック fcpxml の spine を元のストリーム順へ並べ替え、lane を明示する。
+
+    auto-editor は4本の asset-clip を全て offset=0・lane 無し・同名で spine に
+    並べるため、Resolve 等が取込時にトラック順を独自割当してしまう。元順は確定
+    （hasVideo の asset = stream0/ミックス、name="{stem}_N" の wav = stream N）
+    なので、ミックスを primary（lane 0 = V1+A1）、wav を lane=-1,-2,-3 の
+    connected clip として元順で積み直す。clip 名は用途非依存の番号 {stem}_A{n}。
+
+    戻り値: 並べ替えた=True / 対象外（単トラック等）=False。
+    """
+    try:
+        tree = ET.parse(timeline_path)
+    except Exception:
+        return False
+    root = tree.getroot()
+
+    video_id = None
+    wavs: dict[int, str] = {}          # stream index -> asset id
+    for asset in root.findall(".//resources/asset"):
+        aid = asset.get("id")
+        name = asset.get("name", "")
+        if asset.get("hasVideo") == "1" and video_id is None:
+            video_id = aid
+        elif name.startswith(stem + "_"):
+            suffix = name[len(stem) + 1:]
+            if suffix.isdigit():
+                wavs[int(suffix)] = aid
+
+    # 単トラック（wav 無し）や構造不明なら何もしない
+    if video_id is None or not wavs:
+        return False
+
+    spine = root.find(".//sequence/spine")
+    if spine is None:
+        return False
+    clips = spine.findall("asset-clip")
+    if not clips:
+        return False
+
+    # (offset, duration) でグループ化（セグメント化）
+    segments: dict[tuple[str, str], list[ET.Element]] = {}
+    for clip in clips:
+        offset = clip.get("offset")
+        duration = clip.get("duration")
+        key = (offset, duration)
+        if key not in segments:
+            segments[key] = []
+        segments[key].append(clip)
+
+    # 堅牢性チェック：各セグメントに video_id クリップがちょうど1つあり、
+    # 重複や想定外のアセット（wavs にないもの）がないこと。
+    # 何かあれば False を返して一切変更しない（安全最優先）。
+    for key, seg_clips in segments.items():
+        video_clips = [c for c in seg_clips if c.get("ref") == video_id]
+        if len(video_clips) != 1:
+            return False
+        
+        seen_refs = set()
+        for c in seg_clips:
+            ref = c.get("ref")
+            if ref == video_id:
+                continue
+            if ref not in wavs.values():
+                return False
+            if ref in seen_refs:
+                return False
+            seen_refs.add(ref)
+
+    # spine の全子要素を走査し、再構築したリストを作成する
+    spine_children = list(spine)
+    new_children = []
+    created_segments = set()
+
+    for child in spine_children:
+        if child.tag != "asset-clip":
+            new_children.append(child)
+        else:
+            offset = child.get("offset")
+            duration = child.get("duration")
+            key = (offset, duration)
+            if key not in created_segments:
+                seg_clips = segments[key]
+                video_clip = next(c for c in seg_clips if c.get("ref") == video_id)
+
+                # 新しい primary clip（映像付き = A1）
+                primary = ET.Element("asset-clip", {
+                    "offset": video_clip.get("offset", "0s"),
+                    "duration": video_clip.get("duration", "0s"),
+                    "tcFormat": video_clip.get("tcFormat", "NDF"),
+                    "start": video_clip.get("start", "0s"),
+                    "name": f"{stem}_A1",
+                    "ref": video_id,
+                })
+
+                # wavをstream番号の昇順で lane=-1,-2... にネスト
+                lane = -1
+                track_no = 2
+                for stream_idx in sorted(wavs):
+                    ref_id = wavs[stream_idx]
+                    wav_clip = next((c for c in seg_clips if c.get("ref") == ref_id), None)
+                    if wav_clip is not None:
+                        ET.SubElement(primary, "asset-clip", {
+                            "lane": str(lane),
+                            "offset": "0s",
+                            "duration": wav_clip.get("duration", "0s"),
+                            "tcFormat": wav_clip.get("tcFormat", "NDF"),
+                            "start": wav_clip.get("start", "0s"),
+                            "name": f"{stem}_A{track_no}",
+                            "ref": ref_id,
+                        })
+                        lane -= 1
+                        track_no += 1
+                
+                new_children.append(primary)
+                created_segments.add(key)
+
+    # spine をクリアして差し替え
+    spine.clear()
+    for child in new_children:
+        spine.append(child)
+
+    tree.write(timeline_path, encoding="utf-8", xml_declaration=True)
+    return True
 
 
 @dataclass
@@ -192,6 +319,14 @@ def run_pipeline(
                     # 移動失敗時は参照を壊さぬよう元の場所に温存（タイムライン保護優先）
                     tracks_keep_in_place = True
                     on_log(tr("log_unexpected", traceback.format_exc()), "error")
+
+        # 1c. fcpxml のトラック順を元のストリーム順へ正規化（多トラック時のみ）。
+        if result.ok and is_fcpxml and result.timeline_path and result.timeline_path.exists():
+            try:
+                if _reorder_fcpxml_tracks(result.timeline_path, inp.stem):
+                    on_log(tr("log_tracks_reordered"), "muted")
+            except Exception:
+                on_log(tr("log_unexpected", traceback.format_exc()), "error")
 
         # 2. Faster-Whisper Processing via Temp WAV
         if result.ok and params.do_srt and not result.stopped:

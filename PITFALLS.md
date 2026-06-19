@@ -16,6 +16,13 @@
 
 ---
 
+## 2026-06-19 — fcpxml の音声トラック並べ替えで spine の全カットセグメントを潰した
+- やったこと: 多トラック fcpxml のトラック順を直すため `_reorder_fcpxml_tracks` を試作。`spine.findall("asset-clip")` で得たクリップの **`clips[0]` だけをテンプレ化→全 remove→1個だけ再生成**し lane ネストを付けた。
+- 何が起きたか: 実機 DaVinci でタイムラインが **2.2秒・1クリップ**に崩壊。31セグメント中30消滅。wav と mp4 が別オフセットにズレて表示。
+- 原因: spine 構造の誤解。素の auto-editor resolve fcpxml の spine は **「N_seg × N_track 個の asset-clip をフラット列挙」**（実測 31×4=124、lane 無し、各 `(offset,duration)` グループに各トラック1ref）。「4 asset-clip = 1トラックずつ」と仮定したため、セグメント次元(31)を丸ごと無視して 1 に潰した。さらに asset id は名前順でない（順序は asset `name` suffix で判定要）。
+- 回避策 / 正しい手順: top-level `asset-clip` を `(offset,duration)` で**全グループ化**し、**セグメント数を必ず維持**。各セグメントごとに primary=映像asset(lane0)＋wavを元ストリーム順で lane-1,-2,-3 ネスト。primary の `start` をネストへ流用しない（各クリップ自身の値）。検証は素の auto-editor 出力の spine クリップ数(=セグ数×トラック数)を実測し、reorder 後にセグメント数==入力セグメント数を assert。設計: `docs/handoff/P3-fcpxml-track-reorder.md`。退避: `git stash@{0}`。
+- 関連: `src/pipeline.py` `_reorder_fcpxml_tracks`, `docs/handoff/P3-fcpxml-track-reorder.md`, MEMORY 2026-06-19 23:20
+
 ## 2026-06-19 — fcpxml(resolve) の `_tracks/*.wav` を掃除するとDaVinciで多トラックが「メディア未検出」
 - やったこと: 多トラック音声(OBS 4トラック収録)の動画を resolve 出力→ DaVinci 取込。事前に「auto-editor の `_tracks` はゴミ」と判断し処理後 `rmtree`（2026-06-19 初版実装）。
 - 何が起きたか: DaVinci でトラック1(全音声ミックス=元mp4由来)だけ残り、他3トラックが「見つからない」。

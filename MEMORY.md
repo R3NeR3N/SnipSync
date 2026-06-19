@@ -15,6 +15,30 @@
 
 ---
 
+## 2026-06-19 23:50 — FCPXML 音声トラック順並べ替えの正規化（決定: 作業/Gemini）
+- 決定: FCPXML タイムラインの音声トラック順を元のストリーム順に整列する正しい並び替えロジックを実装。
+- 理由: auto-editor が spine 直下に asset-clip をフラット列挙するため NLE (DaVinci Resolve等) でトラック順が狂うバグを解消するため。以前の試作 (stash) で発生した「全セグメントが1つに潰れる（31セグメント中30個が消滅する）」というバグを完全に回避し、`(offset, duration)` でグループ化（セグメント化）して元のセグメント数を厳密に維持したまま、映像付きアセットを primary (lane 0)、wav アセットを lane=-1, -2, -3... のネスト構造に再構成する。
+- 影響/トレードオフ: 各クリップ自身の start/duration を維持して lane 内にネストさせるため、トラックごとにイン点（start）が異なる場合でもズレが発生しない（堅牢性を向上）。異常な XML（映像アセットがない、または重複があるなど）の場合は、安全のために並べ替えをせず False を返して native を全保持する。
+- 関連: `src/pipeline.py` (_reorder_fcpxml_tracks, run_pipeline), `src/i18n.py`, `tests/test_pipeline.py` (test_reorder_fcpxml_tracks_comprehensive ほか)
+
+## 2026-06-19 23:20 — fcpxml トラック順 reorder 試作は破壊的→退避し設計書化（決定A 初適用）（診断: Opus 4.8）
+- 経緯: 実機(DaVinci)検証で「元/出力のトラック順不一致」を確認するためアプリ起動。ユーザーが出力 fcpxml 自体のバグを指摘。
+- 診断（実測）: 出力 fcpxml の spine は asset-clip **1個(2.2秒)** のみ＝タイムライン崩壊。素の auto-editor 出力を別途生成し XML 実検査→ spine は **124 asset-clip = 31セグメント×4トラック**をフラット列挙（lane 無し・各セグメントに4ref）。asset id は名前順でない（r2=_1, r4=_3, r6=_2, r8=mp4/hasVideo=1）。順序判定は asset `name` suffix で行う必要。
+- 真因: 未コミットの試作 `_reorder_fcpxml_tracks` が構造を誤解。「4 asset-clip=1トラックずつ」と仮定し **clips[0] だけテンプレ化→全削除→1個再生成**。31セグ中30消滅。lane 無し offset 重複（=Resolve のトラック割当推測）が元々の順序ズレ真因で、それを直そうとして自爆。
+- 決定（ユーザー選択: まず破損コードを退避）: 試作 reorder 一式(pipeline/i18n/tests)を `git stash@{0}` へ退避し working tree を **native+relocate（動く版・commit 5908ae4）** へ復帰。MEMORY 22:10 決定エントリ(staged)は退避対象外で維持。アプリ再起動済。
+- 次手: 決定A（22:10）初適用として **設計書 `docs/handoff/P3-fcpxml-track-reorder.md` を Opus が作成→実装は Gemini**。正しい設計＝124を(offset,duration)で31セグへ集約し、各セグメント primary=映像asset(lane0)＋wavを元ストリーム順で lane-1,-2,-3 ネスト。**全セグメント保持／primaryのstartをネストへ流用しない**を厳守事項として明記。
+- 協業: 本ターンは診断＋退避＋設計のみ＝Opus 役割内。実装は Gemini へ。[[role-boundary-opus-design-only]]
+- 関連: `docs/handoff/P3-fcpxml-track-reorder.md`, `git stash@{0}`, `src/pipeline.py`, PITFALLS 2026-06-19(追記予定)
+
+## 2026-06-19 22:10 — 協業分担の是正: 実装は Gemini へ正規ハンドオフへ復帰（決定: Opus 4.8）
+- 経緯: 本セッションで Opus が pipeline/i18n/tests の実装を連続実施（_tracks relocate=B案、トラック順序整列）。ユーザーが「Gemini に渡さない理由」を質問→ Opus が「強い正当化は無い・速度優先の逸脱」と率直回答。是正案A/B/Cを提示しユーザーは **A** を選択。
+- 決定: **今後の実装は設計書(`docs/handoff/`)化して Gemini へハンドオフ。Opus は設計・レビュー・診断に戻る**（[[role-boundary-opus-design-only]] / AGENTS §6.1 の本来運用へ復帰）。密ループだからと Opus 実装を続ける運用(C)は規律形骸化として却下。
+- 在庫(in-flight)の扱い: 既に Opus が書いた「順序整列」コードは未コミット。author-match(§6.1)上は書いた本人=Opus がコミットしてよいが、**実機(Resolve)で lane 解釈の効果を検証してから**判断:
+  - 効けば → Opus が自分の既存実装をコミット（逸脱は本ログで記録済）。
+  - 要修正(lane→role 等の作り直し)→ **設計書を切って Gemini が実装**（A 適用の最初の実例）。
+- 今後の新機能/改修は最初から Gemini 着手（設計=Opus→ハンドオフ→実装=Gemini→作者がコミット）。
+- 関連: AGENTS §6.1, [[role-boundary-opus-design-only]], `docs/handoff/`
+
 ## 2026-06-19 16:50 — 多トラック音声 fcpxml の `_tracks` を掃除でなく出力先へ relocate（B案）（頭脳兼作業: Opus 4.8）
 - 経緯: ユーザーが OBS 4トラック収録動画を resolve 出力→DaVinci 取込で「T1(全音声ミックス)だけ残り他3トラック未検出」と報告。
 - 診断（実測で仮説訂正）: 初期仮説「auto-editor が fcpxml に音声1本しか宣言しない」を、合成4トラックmp4で resolve/premiere 両出力を生成し XML を実検査して**否定**。真因は **SnipSync 自身の `_tracks` 掃除（2026-06-19 初版）**。fcpxml は4トラックを宣言するが各分解トラックを `{stem}_tracks/*.wav` の絶対 file:// 参照で持つ→そのWAVを rmtree した3本が参照切れ。元mp4参照(映像+T1)だけ残存し報告と一致。premiere(.xml) は元mp4直参照だが DaVinci が分離4ストリームを trackindex 展開できず 8トラック/6無音（別問題・回避不可）→ resolve fcpxml + WAV温存が唯一クリーンと判断。

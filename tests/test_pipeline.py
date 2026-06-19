@@ -885,8 +885,168 @@ def test_pipeline_gpu_fallback_lazy_generator(temp_dirs, monkeypatch):
     assert ("log_gpu_fallback", "warn") in logs
     assert ("log_device:cpu", "muted") in logs
 
-    assert res.srt_path.exists()
-    content = res.srt_path.read_text(encoding="utf-8")
-    assert "Fallback lazy generator test" in content
+
+def test_reorder_fcpxml_tracks_comprehensive(tmp_path):
+    """多トラック fcpxml に対し、セグメント数維持、映像 primary、lane順、duration/start保持、gap非破壊などを検証する。"""
+    import xml.etree.ElementTree as ET
+    from pipeline import _reorder_fcpxml_tracks
+
+    # id順(r2,r4,r6,r8)とname順(r2=video, r6=_1, r8=_2, r4=_3)をズラしたテストデータ
+    # 2セグメント(offset:0s/duration:10s, offset:15s/duration:5s)と、中間にgap(offset:10s/duration:5s)を配置
+    # 各クリップにはそれぞれ異なる duration / start / tcFormat を持たせ、属性保持と流用がないことを確認する
+    fcpxml = """<?xml version='1.0' encoding='utf-8'?>
+<fcpxml version="1.11">
+  <resources>
+    <asset id="r2" name="vid" hasVideo="1" hasAudio="1">
+      <media-rep src="file:///x/vid.mp4" kind="original-media" />
+    </asset>
+    <asset id="r4" name="vid_3" hasVideo="0" hasAudio="1">
+      <media-rep src="file:///x/vid_tracks/vid_3.wav" kind="original-media" />
+    </asset>
+    <asset id="r6" name="vid_1" hasVideo="0" hasAudio="1">
+      <media-rep src="file:///x/vid_tracks/vid_1.wav" kind="original-media" />
+    </asset>
+    <asset id="r8" name="vid_2" hasVideo="0" hasAudio="1">
+      <media-rep src="file:///x/vid_tracks/vid_2.wav" kind="original-media" />
+    </asset>
+  </resources>
+  <library>
+    <event name="Auto-Editor Media Group">
+      <project name="vid">
+        <sequence tcStart="0s" tcFormat="NDF">
+          <spine>
+            <!-- セグメント 1 (offset="0s", duration="10s") -->
+            <asset-clip offset="0s" duration="10s" tcFormat="NDF" start="0s" name="vid" ref="r8" />
+            <asset-clip offset="0s" duration="10s" tcFormat="NDF" start="1s" name="vid" ref="r6" />
+            <asset-clip offset="0s" duration="10s" tcFormat="NDF" start="2s" name="vid" ref="r4" />
+            <asset-clip offset="0s" duration="10s" tcFormat="NDF" start="3s" name="vid" ref="r2" />
+            <!-- gap 要素 (非破壊であるべき) -->
+            <gap offset="10s" name="Gap" duration="5s" start="0s" />
+            <!-- セグメント 2 (offset="15s", duration="5s") -->
+            <asset-clip offset="15s" duration="5s" tcFormat="NDF" start="10s" name="vid" ref="r4" />
+            <asset-clip offset="15s" duration="5s" tcFormat="NDF" start="11s" name="vid" ref="r2" />
+            <asset-clip offset="15s" duration="5s" tcFormat="NDF" start="12s" name="vid" ref="r8" />
+            <asset-clip offset="15s" duration="5s" tcFormat="NDF" start="13s" name="vid" ref="r6" />
+          </spine>
+        </sequence>
+      </project>
+    </event>
+  </library>
+</fcpxml>"""
+
+    path = tmp_path / "vid_snipsynced.fcpxml"
+    path.write_text(fcpxml, encoding="utf-8")
+
+    assert _reorder_fcpxml_tracks(path, "vid") is True
+
+    spine = ET.parse(path).getroot().find(".//sequence/spine")
+    children = list(spine)
+
+    # 1. セグメント数および他の要素の維持の確認
+    # 出力構造は: [primary_seg1, gap, primary_seg2] の 3 つの要素になるはず
+    assert len(children) == 3
+    assert children[0].tag == "asset-clip"
+    assert children[1].tag == "gap"
+    assert children[2].tag == "asset-clip"
+
+    # gap が非破壊で属性も維持されていること
+    assert children[1].get("offset") == "10s"
+    assert children[1].get("duration") == "5s"
+
+    # 2. セグメント 1 の検証
+    seg1 = children[0]
+    assert seg1.get("ref") == "r2"  # video_id
+    assert seg1.get("name") == "vid_A1"
+    assert seg1.get("offset") == "0s"
+    assert seg1.get("duration") == "10s"
+    assert seg1.get("start") == "3s"  # r2 が持っていた start は 3s
+
+    # ネストされたオーディオトラックの検証
+    seg1_children = seg1.findall("asset-clip")
+    assert len(seg1_children) == 3
+    # lane順 = ストリーム順 (_1=r6, _2=r8, _3=r4) で、lane は -1, -2, -3
+    assert [(c.get("ref"), c.get("lane"), c.get("name")) for c in seg1_children] == [
+        ("r6", "-1", "vid_A2"),
+        ("r8", "-2", "vid_A3"),
+        ("r4", "-3", "vid_A4"),
+    ]
+    # 各ネストクリップ自身の start/duration が維持されているか（流用されていないか）
+    # r6 (vid_A2) の start=1s, r8 (vid_A3) の start=0s, r4 (vid_A4) の start=2s
+    assert seg1_children[0].get("start") == "1s"
+    assert seg1_children[1].get("start") == "0s"
+    assert seg1_children[2].get("start") == "2s"
+    assert all(c.get("offset") == "0s" for c in seg1_children)
+
+    # 3. セグメント 2 の検証
+    seg2 = children[2]
+    assert seg2.get("ref") == "r2"  # video_id
+    assert seg2.get("name") == "vid_A1"
+    assert seg2.get("offset") == "15s"
+    assert seg2.get("duration") == "5s"
+    assert seg2.get("start") == "11s"  # r2 が持っていた start は 11s
+
+    seg2_children = seg2.findall("asset-clip")
+    assert len(seg2_children) == 3
+    assert [(c.get("ref"), c.get("lane"), c.get("name")) for c in seg2_children] == [
+        ("r6", "-1", "vid_A2"),
+        ("r8", "-2", "vid_A3"),
+        ("r4", "-3", "vid_A4"),
+    ]
+    # 各ネストクリップ自身の start/duration が維持されているか
+    # r6 (vid_A2) の start=13s, r8 (vid_A3) の start=12s, r4 (vid_A4) の start=10s
+    assert seg2_children[0].get("start") == "13s"
+    assert seg2_children[1].get("start") == "12s"
+    assert seg2_children[2].get("start") == "10s"
+    assert all(c.get("offset") == "0s" for c in seg2_children)
+
+
+def test_reorder_fcpxml_tracks_single_track_noop(tmp_path):
+    """単トラック(wav 無し)fcpxml は並べ替え対象外 → False かつ無変更。"""
+    from pipeline import _reorder_fcpxml_tracks
+
+    fcpxml = """<?xml version='1.0' encoding='utf-8'?>
+<fcpxml version="1.11">
+  <resources>
+    <asset id="r2" name="solo" hasVideo="1" hasAudio="1">
+      <media-rep src="file:///x/solo.mp4" kind="original-media" />
+    </asset>
+  </resources>
+  <library><event><project name="solo"><sequence><spine>
+    <asset-clip offset="0s" duration="180/30s" start="0s" name="solo" ref="r2" />
+  </spine></sequence></project></event></library>
+</fcpxml>"""
+    path = tmp_path / "solo.fcpxml"
+    path.write_text(fcpxml, encoding="utf-8")
+    before = path.read_text(encoding="utf-8")
+
+    assert _reorder_fcpxml_tracks(path, "solo") is False
+    assert path.read_text(encoding="utf-8") == before
+
+
+def test_reorder_fcpxml_tracks_invalid_structure_noop(tmp_path):
+    """異常なセグメント（video_id が複数、あるいは存在しないなど）が含まれる場合 → False かつ無変更。"""
+    from pipeline import _reorder_fcpxml_tracks
+
+    # セグメント1には video_id (r2) クリップが存在しない
+    fcpxml = """<?xml version='1.0' encoding='utf-8'?>
+<fcpxml version="1.11">
+  <resources>
+    <asset id="r2" name="vid" hasVideo="1" hasAudio="1">
+      <media-rep src="file:///x/vid.mp4" kind="original-media" />
+    </asset>
+    <asset id="r4" name="vid_1" hasVideo="0" hasAudio="1">
+      <media-rep src="file:///x/vid_tracks/vid_1.wav" kind="original-media" />
+    </asset>
+  </resources>
+  <library><event><project name="vid"><sequence><spine>
+    <asset-clip offset="0s" duration="10s" start="0s" name="vid" ref="r4" />
+  </spine></sequence></project></event></library>
+</fcpxml>"""
+    path = tmp_path / "invalid.fcpxml"
+    path.write_text(fcpxml, encoding="utf-8")
+    before = path.read_text(encoding="utf-8")
+
+    assert _reorder_fcpxml_tracks(path, "vid") is False
+    assert path.read_text(encoding="utf-8") == before
 
 

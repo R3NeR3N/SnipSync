@@ -20,6 +20,7 @@
 - モノリス分割: `src/app.py` から `version.py` / `i18n.py` / `theme.py` / `autoeditor.py` / `subtitles.py` / `pipeline.py` を分離（flat 配置）。
 
 ### Fixed
+- FCPXML の音声トラック整列（多トラック音声のトラック順が元動画のストリーム順と一致しないバグを、lane明示のネスト構造として再構成することで修正。セグメント数は維持）。
 - バージョン番号の一元化 (APP_VERSION = "1.0.0" としてコード側の表示を README と統一)
 - Whisper 音声認識の言語を自動判定化 (language=None に変更)
 
