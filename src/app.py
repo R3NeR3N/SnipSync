@@ -572,9 +572,6 @@ class SnipSyncApp(_Base):
 
     def _on_srt_toggle(self):
         is_srt = self.srt_var.get()
-        export_disp = self.export_var.get()
-        ae_key = EXPORT_MODES.get(export_disp, ("resolve", ""))[0]
-        is_fcpxml = ae_key in ("resolve", "final-cut-pro")
 
         if is_srt:
             self.model_menu.configure(state="normal")
@@ -583,10 +580,7 @@ class SnipSyncApp(_Base):
             else:
                 self.gpu_checkbox.configure(state="disabled")
 
-            if is_fcpxml:
-                self.snap_srt_checkbox.configure(state="normal")
-            else:
-                self.snap_srt_checkbox.configure(state="disabled")
+            self.snap_srt_checkbox.configure(state="normal")
         else:
             self.model_menu.configure(state="disabled")
             self.gpu_checkbox.configure(state="disabled")
