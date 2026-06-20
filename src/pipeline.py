@@ -7,7 +7,14 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from autoeditor import build_cut_cmd, build_extract_wav_cmd
-from subtitles import add_cuda_dll_dirs, format_timestamp, resolve_device
+from subtitles import (
+    add_cuda_dll_dirs,
+    format_timestamp,
+    resolve_device,
+    parse_fcpxml_cut_boundaries,
+    snap_srt_to_boundaries,
+    SRT_SNAP_TOLERANCE_EXTRA,
+)
 
 CREATE_NEW_PROCESS_GROUP = 0x00000200 if sys.platform == "win32" else 0
 
@@ -188,6 +195,7 @@ class PipelineParams:
     do_srt: bool
     model_size: str          # "tiny" | "base" | "small" | "medium"
     use_gpu: bool = False
+    snap_srt: bool = True
 
 
 @dataclass
@@ -382,6 +390,22 @@ def run_pipeline(
                     temp_wav.unlink()
             except Exception as e:
                 on_log(tr("log_cleanup_failed", str(e)), "warn")
+
+            # 2d. 字幕境界をカット境界へスナップ（fcpxml かつ字幕生成成功時のみ）
+            if (params.snap_srt and is_fcpxml and result.srt_path
+                    and result.timeline_path and result.timeline_path.exists()
+                    and not result.stopped):
+                try:
+                    boundaries = parse_fcpxml_cut_boundaries(result.timeline_path, inp.stem)
+                    if boundaries:
+                        tolerance = params.margin + SRT_SNAP_TOLERANCE_EXTRA  # 既定 0.15
+                        text = result.srt_path.read_text(encoding="utf-8")
+                        snapped = snap_srt_to_boundaries(text, boundaries, tolerance)
+                        if snapped != text:
+                            result.srt_path.write_text(snapped, encoding="utf-8")
+                            on_log(tr("log_srt_snapped"), "muted")
+                except Exception:
+                    on_log(tr("log_unexpected", traceback.format_exc()), "error")
 
     except Exception:
         # Catch any unexpected top-level worker thread crashes

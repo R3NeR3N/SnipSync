@@ -94,6 +94,7 @@ class SnipSyncApp(_Base):
         self.export_var  = ctk.StringVar(value=list(EXPORT_MODES.keys())[0])
         self.srt_var     = ctk.BooleanVar(value=True)
         self.gpu_var     = ctk.BooleanVar(value=False)
+        self.snap_srt_var = ctk.BooleanVar(value=True)
         # Store the internal model key (tiny, base, small, medium)
         self.model_key_var = ctk.StringVar(value="small")
         # Store the translated display string for OptionMenu
@@ -266,7 +267,8 @@ class SnipSyncApp(_Base):
         self.export_menu = ctk.CTkOptionMenu(
             card, values=list(EXPORT_MODES.keys()), variable=self.export_var,
             font=ctk.CTkFont(family="Segoe UI", size=12), fg_color=BG_DARK, button_color=ACCENT,
-            button_hover_color=ACCENT_HOVER, dropdown_fg_color=BG_DARK, width=240)
+            button_hover_color=ACCENT_HOVER, dropdown_fg_color=BG_DARK, width=240,
+            command=self._on_export_change)
         self.export_menu.grid(row=3, column=1, columnspan=3, sticky="w", padx=(0, 20), pady=8)
 
         # 4. SRT Generation settings
@@ -298,11 +300,17 @@ class SnipSyncApp(_Base):
             fg_color=ACCENT, hover_color=ACCENT_HOVER)
         self.gpu_checkbox.pack(side="left", padx=(20, 0))
 
+        self.snap_srt_checkbox = ctk.CTkCheckBox(
+            srt_frame, text="", variable=self.snap_srt_var, font=ctk.CTkFont(family="Segoe UI", size=11),
+            fg_color=ACCENT, hover_color=ACCENT_HOVER)
+        self.snap_srt_checkbox.pack(side="left", padx=(20, 0))
+
         if not WHISPER_AVAILABLE:
             self.srt_var.set(False)
             self.srt_checkbox.configure(state="disabled")
             self.model_menu.configure(state="disabled")
             self.gpu_checkbox.configure(state="disabled")
+            self.snap_srt_checkbox.configure(state="disabled")
 
         # 5. Output dir
         self.outdir_lbl_w = ctk.CTkLabel(
@@ -410,6 +418,7 @@ class SnipSyncApp(_Base):
         self.srt_lbl_w.configure(text=self.t("srt_label"))
         self.srt_checkbox.configure(text=self.t("srt_check"))
         self.gpu_checkbox.configure(text=self.t("gpu_label"))
+        self.snap_srt_checkbox.configure(text=self.t("snap_srt_label"))
         self.model_lbl_w.configure(text=self.t("model_label"))
 
         # Update Model OptionMenu
@@ -447,7 +456,8 @@ class SnipSyncApp(_Base):
             "srt": self.srt_var.get(),
             "model": self.model_key_var.get(),
             "output_dir": self.output_dir,
-            "gpu": self.gpu_var.get()
+            "gpu": self.gpu_var.get(),
+            "snap_srt": self.snap_srt_var.get()
         }
 
     def _apply_settings(self, s: dict):
@@ -479,6 +489,8 @@ class SnipSyncApp(_Base):
                 self.gpu_var.set(s["gpu"])
             else:
                 self.gpu_var.set(False)
+        if "snap_srt" in s:
+            self.snap_srt_var.set(s["snap_srt"])
 
         self._update_margin_label()
         self._update_threshold_label()
@@ -559,15 +571,29 @@ class SnipSyncApp(_Base):
                 break
 
     def _on_srt_toggle(self):
-        if self.srt_var.get():
+        is_srt = self.srt_var.get()
+        export_disp = self.export_var.get()
+        ae_key = EXPORT_MODES.get(export_disp, ("resolve", ""))[0]
+        is_fcpxml = ae_key in ("resolve", "final-cut-pro")
+
+        if is_srt:
             self.model_menu.configure(state="normal")
             if cuda_available():
                 self.gpu_checkbox.configure(state="normal")
             else:
                 self.gpu_checkbox.configure(state="disabled")
+
+            if is_fcpxml:
+                self.snap_srt_checkbox.configure(state="normal")
+            else:
+                self.snap_srt_checkbox.configure(state="disabled")
         else:
             self.model_menu.configure(state="disabled")
             self.gpu_checkbox.configure(state="disabled")
+            self.snap_srt_checkbox.configure(state="disabled")
+
+    def _on_export_change(self, choice):
+        self._on_srt_toggle()
 
     def _on_drop(self, event):
         raw = event.data.strip()
@@ -679,6 +705,7 @@ class SnipSyncApp(_Base):
             do_srt=do_srt,
             model_size=model_size,
             use_gpu=self.gpu_var.get(),
+            snap_srt=self.snap_srt_var.get(),
         )
 
         threading.Thread(

@@ -1043,3 +1043,131 @@ def test_reorder_fcpxml_tracks_invalid_structure_noop(tmp_path):
     assert path.read_text(encoding="utf-8") == before
 
 
+def test_pipeline_srt_snap_gate(temp_dirs, monkeypatch):
+    inp, out_dir = temp_dirs
+    
+    # タイムラインの準備
+    fcpxml_content = """<?xml version="1.0" encoding="utf-8"?>
+<fcpxml version="1.9">
+    <resources>
+        <asset id="r1" name="input.mp4" hasVideo="1" />
+    </resources>
+    <library>
+        <event name="input">
+            <project name="input">
+                <sequence duration="100s" format="r1">
+                    <spine>
+                        <asset-clip offset="0s" duration="15300/1000s" start="0s" ref="r1" name="input" />
+                        <asset-clip offset="15300/1000s" duration="10s" start="0s" ref="r1" name="input" />
+                    </spine>
+                </sequence>
+            </project>
+        </event>
+    </library>
+</fcpxml>
+"""
+    
+    def mock_write(cmd):
+        if "--output" in cmd:
+            idx = cmd.index("--output")
+            output_path = Path(cmd[idx + 1])
+            # resolve 向けならダミー fcpxml、それ以外ならダミー xml を書き出す
+            if output_path.suffix == ".fcpxml":
+                output_path.write_text(fcpxml_content, encoding="utf-8")
+            else:
+                output_path.write_bytes(b"dummy")
+
+    monkeypatch.setattr(subprocess, "Popen", make_mock_popen(
+        stdout_lines=["progress line"], write_output=mock_write
+    ))
+
+    segments = [
+        DummySegment(0.0, 15.36, "Hello world"),  # 15.360 は境界 15.300 に近く snap 対象
+    ]
+
+    class DummyInfo:
+        language = "en"
+        language_probability = 0.99
+
+    def mock_transcribe(wav_path, model_size):
+        return segments, DummyInfo()
+
+    # 1. snap_srt = False のとき: スナップされず元の 15.360 のままであること
+    params = PipelineParams(
+        margin=0.2,
+        threshold=4.0,
+        export_key="resolve",
+        do_srt=True,
+        model_size="small",
+        snap_srt=False
+    )
+
+    res = run_pipeline(
+        ae_path="dummy-ae",
+        inp=inp,
+        out_dir=out_dir,
+        params=params,
+        on_log=lambda m, lvl="": None,
+        should_stop=lambda: False,
+        tr=stub_tr,
+        transcribe=mock_transcribe
+    )
+
+    assert res.ok is True
+    assert res.srt_path.exists()
+    content = res.srt_path.read_text(encoding="utf-8")
+    assert "00:00:15,360" in content
+    assert "00:00:15,300" not in content
+
+    # 2. Premiere Pro (is_fcpxml = False) のとき: スナップされないこと
+    params_prem = PipelineParams(
+        margin=0.2,
+        threshold=4.0,
+        export_key="premiere",
+        do_srt=True,
+        model_size="small",
+        snap_srt=True
+    )
+    res_prem = run_pipeline(
+        ae_path="dummy-ae",
+        inp=inp,
+        out_dir=out_dir,
+        params=params_prem,
+        on_log=lambda m, lvl="": None,
+        should_stop=lambda: False,
+        tr=stub_tr,
+        transcribe=mock_transcribe
+    )
+    assert res_prem.ok is True
+    assert res_prem.srt_path.exists()
+    content_prem = res_prem.srt_path.read_text(encoding="utf-8")
+    assert "00:00:15,360" in content_prem
+    assert "00:00:15,300" not in content_prem
+
+    # 3. snap_srt = True かつ Resolve (is_fcpxml = True) のとき: 15.300 へスナップされること
+    params_snap = PipelineParams(
+        margin=0.2,
+        threshold=4.0,
+        export_key="resolve",
+        do_srt=True,
+        model_size="small",
+        snap_srt=True
+    )
+    res_snap = run_pipeline(
+        ae_path="dummy-ae",
+        inp=inp,
+        out_dir=out_dir,
+        params=params_snap,
+        on_log=lambda m, lvl="": None,
+        should_stop=lambda: False,
+        tr=stub_tr,
+        transcribe=mock_transcribe
+    )
+    assert res_snap.ok is True
+    assert res_snap.srt_path.exists()
+    content_snap = res_snap.srt_path.read_text(encoding="utf-8")
+    assert "00:00:15,300" in content_snap
+    assert "00:00:15,360" not in content_snap
+
+
+

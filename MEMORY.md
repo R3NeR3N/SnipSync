@@ -15,6 +15,12 @@
 
 ---
 
+## 2026-06-20 14:30 — 字幕境界をカット境界へスナップする後処理(SRT-snap)の実装完了（作業: Gemini）
+- 決定: 設計書 `docs/handoff/P3-srt-snap.md` に基づき、字幕境界スナップロジック（`parse_timestamp`, `parse_fcpxml_cut_boundaries`, `_fcpxml_time_to_seconds`, `snap_srt_to_boundaries`）を `src/subtitles.py` に、パイプライン統合（ステップ 2d）を `src/pipeline.py` に、UI制御（チェックボックス・字幕OFF/Premiere時の連動無効化・プリセット復元）を `src/app.py` / `src/presets.py` に実装完了。
+- 理由: 承認された実装計画に沿って正確かつ堅牢に実装し、映像カットと字幕の切り替えの同期を実現するため。
+- 影響/トレードオフ: スナップ処理は純後処理であり、処理負荷は極めて軽微。かつ「distinct時刻モデル」および各種ガード（同一字幕反転ガード・隣接逆転ガード）により、字幕順序の整合性と contiguous が完全に保証される。単体テストを `tests/test_subtitles.py` に 9 ケース、統合テストを `tests/test_pipeline.py` に 1 ケース追加し、全 45 テストのパスを確認。
+- 関連: `src/subtitles.py`, `src/pipeline.py`, `src/app.py`, `src/presets.py`, `src/i18n.py`, `tests/test_subtitles.py`, `tests/test_pipeline.py`
+
 ## 2026-06-20 12:30 — 字幕境界をカット境界へスナップする後処理(SRT-snap)を設計＝MINOR新機能（設計: Opus 4.8）
 - 経緯: ユーザーが本番素材 `2026-06-20 10-56-29.mp4`(4トラック)を 最新版/v1.0.0 双方で実機検証→「前セッションと変わらず」＝**非リグレッション(03:15)を実機再確認**。残る「字幕切替えがカットに乗らない」を直す後処理機能を作る選択（AskUserQuestionでユーザーがSRT-snap実装を選択）。
 - 決定: 字幕(.srt)生成後に、生成済み fcpxml の既知カット境界(映像asset-clipの`offset`)へ字幕境界を **tolerance 内なら吸着**する純後処理を新設。設計書 `docs/handoff/P3-srt-snap.md`(Opus作成)→ 実装は Gemini。
