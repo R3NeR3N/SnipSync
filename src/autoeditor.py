@@ -31,6 +31,26 @@ def build_extract_wav_cmd(ae_path, inp, margin, threshold, output):
     ]
 
 
+def build_v1_export_cmd(ae_path, inp, margin, threshold, out_json, tb):
+    """auto-editor command: export cut decisions as v1 JSON (chunks).
+
+    NLE 形式に依存しないカット境界の正準ソース。-tb で frame グリッドを
+    source fps に固定し、step1 のデフォルト timebase と一致させる（P-2 と同じ
+    margin/threshold）。
+    """
+    from pathlib import Path
+    return [
+        str(ae_path), str(inp),
+        "--margin", f"{margin:.3f}s",
+        "--edit", f"audio:threshold={threshold:.1f}%",
+        "--export", "v1",
+        "-tb", str(int(round(tb))),
+        "--output", str(Path(out_json).resolve()),
+        "--no-open",
+    ]
+
+
+
 def probe_fps(path):
     """ffprobe で動画の r_frame_rate を読み fps(float) を返す。失敗時 None。
 
