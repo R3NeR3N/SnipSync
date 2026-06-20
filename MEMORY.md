@@ -15,6 +15,34 @@
 
 ---
 
+## 2026-06-20 12:30 — 字幕境界をカット境界へスナップする後処理(SRT-snap)を設計＝MINOR新機能（設計: Opus 4.8）
+- 経緯: ユーザーが本番素材 `2026-06-20 10-56-29.mp4`(4トラック)を 最新版/v1.0.0 双方で実機検証→「前セッションと変わらず」＝**非リグレッション(03:15)を実機再確認**。残る「字幕切替えがカットに乗らない」を直す後処理機能を作る選択（AskUserQuestionでユーザーがSRT-snap実装を選択）。
+- 決定: 字幕(.srt)生成後に、生成済み fcpxml の既知カット境界(映像asset-clipの`offset`)へ字幕境界を **tolerance 内なら吸着**する純後処理を新設。設計書 `docs/handoff/P3-srt-snap.md`(Opus作成)→ 実装は Gemini。
+- 実データ検証（本素材・44カット/45境界/45.533s）で設計を裏付け:
+  - srt遷移 15.360→cut15.300(-0.060) / 25.280→25.133(-0.147) / 45.600→45.533(-0.067・超過解消) は**カット隣接→snap**。
+  - srt遷移 20.640→最寄りcut21.117(**+0.477**) は**カット無し（発話中のwhisper文区切り）→動かさない**。
+  - **真のカット隣接差≤0.147 / 偽の差0.477 で分離帯域が広い** → `tolerance = margin + 0.15 ≈ 0.35` で隣接のみ吸着し偽を除外。全字幕遷移がカットに対応するわけではない＝tolerance ゲートが肝（遠いカットへ寄せると逆に音とズレる）。
+- 設計の肝: ①純ロジックは `src/subtitles.py`(`parse_fcpxml_cut_boundaries`/`_fcpxml_time_to_seconds`/`snap_srt_to_boundaries`/`parse_timestamp`)。②pipeline 新ステップ2d（2b後・finallyの`_tracks`掃除前・`is_fcpxml`ガード）。③`PipelineParams.snap_srt=True`(末尾・後方互換)＋UIチェックボックス「字幕をカット境界に合わせる」既定ON（字幕OFF/premiereで disabled）＋presets `SETTING_KEYS`に`snap_srt`。④distinct時刻モデルで start/end を統一remap＝contiguous維持・反転/衝突ガード。⑤fcpxml の `offset`(タイムライン位置)を使う＝`start`(ソースin点)ではない。
+- 対象外: premiere(.xml)は境界構造が違い対象外。`_reorder_fcpxml_tracks`/relocate/`_tracks`掃除は不変。margin/threshold同期(P-2)不変。
+- 区分: **MINOR機能（バグ修正ではない）**。CHANGELOG `[Unreleased]` Added へ。
+- 関連: `docs/handoff/P3-srt-snap.md`, `src/subtitles.py`, `src/pipeline.py`, `src/app.py`, `src/i18n.py`, `src/presets.py`, [[subtitle-cut-margin-inset]], [[role-boundary-opus-design-only]], PITFALLS 2026-06-20(margin-inset)
+
+## 2026-06-20 03:15 — 「字幕切替えが映像カットに乗らない」は非リグレッション＝margin由来の構造的インセット（診断: Opus 4.8 / systematic-debugging）
+- 症状報告: ユーザーが実録画(`2026-06-19 22-55-03.mp4`, OBS 4トラック)を DaVinci 取込→「映像カットと字幕切替えが一致しない。v1.0.0では揃っていた」=リグレッション疑い。
+- 棄却した仮説（すべて実測で否定）:
+  - P-2(mix説): `build_cut_cmd`(timeline)と`build_extract_wav_cmd`(`--mix-audio-streams`付)で無音検出基準が違う説→ 実 auto-editor で同一素材を mix有/無で `--export resolve` 比較→ **カット完全一致(38セグ・offset/duration同一・40.583s)**。mix は無音検出を変えない。
+  - VFR説: fcpxml が `FFVideoFormatRateUndefined`+60fps仮定→ ffprobe で `r=avg=60/1, nb_frames=5273, 87.88s` ＝**真の60fps CFR**。タイムベース正常。
+  - language=None リグレッション説: P0で`language="ja"`→`None`化が唯一の字幕コード差分。small では ja=3セグ/None=7セグと**変わる**が、ユーザー実使用の **medium では ja≡None（境界17.60/36.60/40.60で完全一致）**→ 無影響。
+- 決定的検証（ユーザー実施）: v1.0.0 のモノリス app.py を `git show v1.0.0:src/app.py` で抽出し現行 `.venv` で起動、**同一mp4を同条件で処理**→ DaVinci 目視。結果:
+  - **カット位置(offset,duration)集合 = 現行と完全一致(38)**
+  - **SRT時刻 = 現行と一致(差≤40ms＝whisper実行ゆらぎのみ)**: v1.0.0=17.60/36.60/40.60, 現行=17.56/36.56/40.56
+  - **DaVinci目視も同一**＝v1.0.0でも字幕切替えはカットに乗っていない
+  - ⇒ **コード由来のリグレッションは無い**。v1.0.0と現行は字幕・カットの出力時刻がバイト等価。
+- 真因（恒常・設計由来）: auto-editor は発話の**前後にmargin(0.2s)を残して**カット→各クリップは発話端より0.2s外側に境界。whisperはカット音声の**発話部分**を字幕化するので、字幕境界は各クリップ境界から**margin分(0.2s)内側**に必ず入る。実測差 **+0.20s = margin そのもの**（17.60 vs カット17.40）。whisper任せで字幕切替えをカットに乗せるのは原理的に不可能。「v1.0.0で揃ってた」記憶は本素材で再現せず（別素材/当時非認知の可能性）。
+- 残方針（未着手・ユーザー判断待ち→次セッション）: 本当に「切替えをカットに乗せる」なら **step2: 既知カット境界(fcpxml offset)へSRT境界をスナップする後処理**を新規実装（margin分シフト・model/言語非依存）。これは**機能追加(MINOR)であってバグ修正ではない**。設計=Opus→実装=Gemini。
+- 検証アセット温存（次セッションの別録画再検証用）: `F:/20_Media_Production/21_Recordings/Games/仮フォルダ/` 配下に `_v100_app.py`(v1.0.0実行用), `_v100_out/`(v1.0.0出力), `_compare_current_v1.1/`(現行出力バックアップ)。不要になれば削除可。
+- 関連: `src/autoeditor.py`(build_cut_cmd/build_extract_wav_cmd), `src/pipeline.py`(2a/2b), CONTEXT §1, PITFALLS 2026-06-20(margin-inset), [[snipsync-shared-design-docs]]
+
 ## 2026-06-20 02:30 — fcpxml トラック順: 本番録画素材で実機検証パス＝P3 クローズ（報告: ユーザー / 記録: Opus 4.8）
 - 決定: Gemini 実装 #4（`sorted(wavs, reverse=True)`＋映像ブロック最後 / commit `c35bb01`）を本番の実録画データで実機検証し、**出力トラックの並びが元データと一致**することをユーザーが確認。P3「fcpxml 音声トラック順 reorder」を**クローズ**。
 - 意味: MEMORY 01:50 の残 DoD「実機の本番素材（OBS/VRChat 等の実多トラック動画）での最終目視＝ユーザー側で1回」を充足。合成 E2E（証拠E）＋本番素材の二重確認で機構と実運用の両方が証明された。
