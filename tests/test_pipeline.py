@@ -889,6 +889,7 @@ def test_pipeline_gpu_fallback_lazy_generator(temp_dirs, monkeypatch):
 def test_reorder_fcpxml_tracks_comprehensive(tmp_path):
     """多トラック fcpxml に対し、セグメント数維持、映像 primary、lane順、duration/start保持、gap非破壊などを検証する。"""
     import xml.etree.ElementTree as ET
+
     from pipeline import _reorder_fcpxml_tracks
 
     # id順(r2,r4,r6,r8)とname順(r2=video, r6=_1, r8=_2, r4=_3)をズラしたテストデータ
@@ -1045,7 +1046,7 @@ def test_reorder_fcpxml_tracks_invalid_structure_noop(tmp_path):
 
 def test_pipeline_srt_snap_gate(temp_dirs, monkeypatch):
     inp, out_dir = temp_dirs
-    
+
     # タイムラインの準備
     fcpxml_content = """<?xml version="1.0" encoding="utf-8"?>
 <fcpxml version="1.9">
@@ -1066,7 +1067,7 @@ def test_pipeline_srt_snap_gate(temp_dirs, monkeypatch):
     </library>
 </fcpxml>
 """
-    
+
     def mock_write(cmd):
         if "--output" in cmd:
             idx = cmd.index("--output")

@@ -1,22 +1,24 @@
 import sys
 from pathlib import Path
+
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from subtitles import (
-    parse_timestamp,
     _fcpxml_time_to_seconds,
     parse_fcpxml_cut_boundaries,
+    parse_timestamp,
     snap_srt_to_boundaries,
 )
+
 
 def test_parse_timestamp():
     assert parse_timestamp("00:00:15,300") == 15.300
     assert parse_timestamp("01:02:03,456") == 3600.0 + 120.0 + 3.0 + 0.456
     # comma/period check
     assert parse_timestamp("00:00:15.300") == 15.300
-    
+
     with pytest.raises(ValueError):
         parse_timestamp("invalid")
     with pytest.raises(ValueError):
@@ -70,7 +72,7 @@ def test_parse_fcpxml_cut_boundaries(tmp_path):
 
 def test_parse_fcpxml_cut_boundaries_invalid_xml(tmp_path):
     assert parse_fcpxml_cut_boundaries(tmp_path / "non_existent.fcpxml", "test") == []
-    
+
     xml_path = tmp_path / "empty.fcpxml"
     xml_path.write_text("<invalid>", encoding="utf-8")
     assert parse_fcpxml_cut_boundaries(xml_path, "test") == []
@@ -82,7 +84,7 @@ def test_snap_srt_to_boundaries():
     # 4. 超過の解消 (45.600 > 最終境界 45.533, 差0.067 <= 0.35 -> 45.533にスナップ)
     boundaries = [0.0, 15.300, 21.117, 25.133, 45.533]
     tolerance = 0.35
-    
+
     srt_text = """1
 00:00:00,000 --> 00:00:15,360
 Hello World
@@ -95,7 +97,7 @@ This is a test.
 00:00:25,280 --> 00:00:45,600
 Last subtitle.
 """
-    
+
     expected = """1
 00:00:00,000 --> 00:00:15,300
 Hello World
@@ -108,7 +110,7 @@ This is a test.
 00:00:25,133 --> 00:00:45,533
 Last subtitle.
 """
-    
+
     snapped = snap_srt_to_boundaries(srt_text, boundaries, tolerance)
     assert snapped.strip().replace("\r\n", "\n") == expected.strip().replace("\r\n", "\n")
 

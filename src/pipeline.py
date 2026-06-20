@@ -8,12 +8,12 @@ from pathlib import Path
 
 from autoeditor import build_cut_cmd, build_extract_wav_cmd
 from subtitles import (
+    SRT_SNAP_TOLERANCE_EXTRA,
     add_cuda_dll_dirs,
     format_timestamp,
-    resolve_device,
     parse_fcpxml_cut_boundaries,
+    resolve_device,
     snap_srt_to_boundaries,
-    SRT_SNAP_TOLERANCE_EXTRA,
 )
 
 CREATE_NEW_PROCESS_GROUP = 0x00000200 if sys.platform == "win32" else 0
@@ -170,7 +170,7 @@ def _reorder_fcpxml_tracks(timeline_path: Path, stem: str) -> bool:
 
     # spine をクリアして、正しいトラック of 順番で要素を再配置 (Resolveの逆順展開を考慮して逆順に並べる)
     spine.clear()
-    
+
     # 1. 各 WAV トラックのブロック（WAV_N...WAV1 の降順）
     for stream_idx in sorted(wavs, reverse=True):
         ref_id = wavs[stream_idx]
