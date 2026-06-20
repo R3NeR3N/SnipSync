@@ -15,6 +15,13 @@
 
 ---
 
+## 2026-06-20 14:45 — SRT-snap 実装のレビュー検証＋lint緑化（レビュー: Opus 4.8）
+- 経緯: Gemini 実装完了報告(commit d583a5d)を受け、設計書 `docs/handoff/P3-srt-snap.md` 突合でレビュー検証。
+- 検証結果（設計準拠を確認）: ①純ロジック4関数は `src/subtitles.py`・UI非依存。②pipeline 統合は新ステップ2d=2c掃除後/`finally`(_tracks掃除)前・`is_fcpxml && srt_path && timeline.exists && !stopped` ゲート付き。③UI=チェックボックス既定ON・`is_fcpxml`(premiere除外)/字幕OFF で disabled・i18n ja/en 両添付・presets `SETTING_KEYS` に `snap_srt`・`_collect/_apply_settings` 往復。④全45テスト緑。⑤GUI construct スモーク（checkbox生成・既定True・destroy）OK。
+- 検出＋対応: ruff 12件（W293 ブランク行空白＋I001 import整列）が未解消で **CI を落とす状態**だった。いずれも SRT 文字列リテラル内の真の空行(89/93/102/106)ではなく**コード字下げ空行**と確認のうえ自動修正。ロジック無変更（45テスト緑維持・全lintパス）。`style:` で Opus コミット(b4734b2、§6.1 編集者＝コミット者)。
+- 残 DoD: **実機 DaVinci 目視（検証素材 `2026-06-20 10-56-29.mp4`・15.36/25.28/45.60 がカットへ乗り・20.64 は不動）はユーザー側で1回**（合成テストで機構は証明済み）。
+- 関連: `src/subtitles.py`, `src/pipeline.py`, `src/app.py`, `tests/`, [[subtitle-cut-margin-inset]], [[role-boundary-opus-design-only]]
+
 ## 2026-06-20 14:30 — 字幕境界をカット境界へスナップする後処理(SRT-snap)の実装完了（作業: Gemini）
 - 決定: 設計書 `docs/handoff/P3-srt-snap.md` に基づき、字幕境界スナップロジック（`parse_timestamp`, `parse_fcpxml_cut_boundaries`, `_fcpxml_time_to_seconds`, `snap_srt_to_boundaries`）を `src/subtitles.py` に、パイプライン統合（ステップ 2d）を `src/pipeline.py` に、UI制御（チェックボックス・字幕OFF/Premiere時の連動無効化・プリセット復元）を `src/app.py` / `src/presets.py` に実装完了。
 - 理由: 承認された実装計画に沿って正確かつ堅牢に実装し、映像カットと字幕の切り替えの同期を実現するため。
