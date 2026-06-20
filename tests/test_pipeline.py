@@ -1053,66 +1053,48 @@ def test_reorder_fcpxml_tracks_invalid_structure_noop(tmp_path):
     assert path.read_text(encoding="utf-8") == before
 
 
-def test_pipeline_srt_snap_gate(temp_dirs, monkeypatch):
+def test_pipeline_cut_align_on(temp_dirs, monkeypatch):
+    import json as _json
+
+    import pipeline as _pipeline_mod
     inp, out_dir = temp_dirs
-
-    # タイムラインの準備
-    fcpxml_content = """<?xml version="1.0" encoding="utf-8"?>
-<fcpxml version="1.9">
-    <resources>
-        <asset id="r1" name="input.mp4" hasVideo="1" />
-    </resources>
-    <library>
-        <event name="input">
-            <project name="input">
-                <sequence duration="100s" format="r1">
-                    <spine>
-                        <asset-clip offset="0s" duration="15300/1000s" start="0s" ref="r1" name="input" />
-                        <asset-clip offset="15300/1000s" duration="10s" start="0s" ref="r1" name="input" />
-                    </spine>
-                </sequence>
-            </project>
-        </event>
-    </library>
-</fcpxml>
-"""
-
-    def mock_write(cmd):
-        if "--output" in cmd:
-            idx = cmd.index("--output")
-            output_path = Path(cmd[idx + 1])
-            # resolve 向けならダミー fcpxml、それ以外ならダミー xml を書き出す
-            if output_path.suffix == ".fcpxml":
-                output_path.write_text(fcpxml_content, encoding="utf-8")
-            else:
-                output_path.write_bytes(b"dummy")
-
-    monkeypatch.setattr(subprocess, "Popen", make_mock_popen(
-        stdout_lines=["progress line"], write_output=mock_write
-    ))
-
-    segments = [
-        DummySegment(0.0, 15.36, "Hello world"),  # 15.360 は境界 15.300 に近く snap 対象
-    ]
-
-    class DummyInfo:
-        language = "en"
-        language_probability = 0.99
+    monkeypatch.setattr(_pipeline_mod, "probe_fps", lambda p: 60.0)
 
     def mock_transcribe(wav_path, model_size):
-        return segments, DummyInfo()
+        seg = DummySegment(0.0, 4.0, "AB", words=[
+            DummyWord(0.0, 0.9, "A"), DummyWord(1.0, 1.9, "B"),
+        ])
+        class Info:
+            language = "en"
+            language_probability = 0.9
+        return iter([seg]), Info()
 
-    # 1. snap_srt = False のとき: スナップされず元の 15.360 のままであること
+    def combined_writer(cmd):
+        if "v1" in cmd and "--output" in cmd:
+            out = cmd[cmd.index("--output") + 1]
+            Path(out).write_text(
+                _json.dumps({"chunks": [[0, 60, 1.0], [60, 120, 99999.0], [120, 180, 1.0]]}),
+                encoding="utf-8",
+            )
+        elif "--output" in cmd:
+            idx = cmd.index("--output")
+            output_path = Path(cmd[idx + 1])
+            output_path.write_bytes(b"dummy")
+
+    monkeypatch.setattr(subprocess, "Popen", make_mock_popen(
+        stdout_lines=["progress line"], write_output=combined_writer
+    ))
+
     params = PipelineParams(
         margin=0.2,
         threshold=4.0,
         export_key="resolve",
         do_srt=True,
         model_size="small",
-        snap_srt=False
+        snap_srt=True
     )
 
-    res = run_pipeline(
+    result = run_pipeline(
         ae_path="dummy-ae",
         inp=inp,
         out_dir=out_dir,
@@ -1122,40 +1104,80 @@ def test_pipeline_srt_snap_gate(temp_dirs, monkeypatch):
         tr=stub_tr,
         transcribe=mock_transcribe
     )
+    assert result.ok is True
+    assert result.srt_path.exists()
+    srt = result.srt_path.read_text(encoding="utf-8")
+    assert "00:00:01,000 -->" in srt
 
-    assert res.ok is True
-    assert res.srt_path.exists()
-    content = res.srt_path.read_text(encoding="utf-8")
-    assert "00:00:15,360" in content
-    assert "00:00:15,300" not in content
 
-    # 2. Premiere Pro (is_fcpxml = False) のとき: スナップされないこと
-    params_prem = PipelineParams(
+def test_pipeline_cut_align_off_keeps_natural(temp_dirs, monkeypatch):
+    inp, out_dir = temp_dirs
+
+    def mock_transcribe(wav_path, model_size):
+        seg = DummySegment(0.0, 4.0, "hello")
+        class Info:
+            language = "en"
+            language_probability = 0.9
+        return iter([seg]), Info()
+
+    def mock_write(cmd):
+        if "--output" in cmd:
+            idx = cmd.index("--output")
+            output_path = Path(cmd[idx + 1])
+            output_path.write_bytes(b"dummy")
+
+    monkeypatch.setattr(subprocess, "Popen", make_mock_popen(
+        stdout_lines=["progress line"], write_output=mock_write
+    ))
+
+    params = PipelineParams(
         margin=0.2,
         threshold=4.0,
-        export_key="premiere",
+        export_key="resolve",
         do_srt=True,
         model_size="small",
-        snap_srt=True
+        snap_srt=False
     )
-    res_prem = run_pipeline(
+
+    result = run_pipeline(
         ae_path="dummy-ae",
         inp=inp,
         out_dir=out_dir,
-        params=params_prem,
+        params=params,
         on_log=lambda m, lvl="": None,
         should_stop=lambda: False,
         tr=stub_tr,
         transcribe=mock_transcribe
     )
-    assert res_prem.ok is True
-    assert res_prem.srt_path.exists()
-    content_prem = res_prem.srt_path.read_text(encoding="utf-8")
-    assert "00:00:15,360" in content_prem
-    assert "00:00:15,300" not in content_prem
+    assert result.ok is True
+    assert result.srt_path.exists()
+    srt = result.srt_path.read_text(encoding="utf-8")
+    assert "hello" in srt
 
-    # 3. snap_srt = True かつ Resolve (is_fcpxml = True) のとき: 15.300 へスナップされること
-    params_snap = PipelineParams(
+
+def test_pipeline_cut_align_no_fps_fallback(temp_dirs, monkeypatch):
+    import pipeline as _pipeline_mod
+    inp, out_dir = temp_dirs
+    monkeypatch.setattr(_pipeline_mod, "probe_fps", lambda p: None)
+
+    def mock_transcribe(wav_path, model_size):
+        seg = DummySegment(0.0, 4.0, "hello", words=[DummyWord(0.0, 0.9, "hello")])
+        class Info:
+            language = "en"
+            language_probability = 0.9
+        return iter([seg]), Info()
+
+    def mock_write(cmd):
+        if "--output" in cmd:
+            idx = cmd.index("--output")
+            output_path = Path(cmd[idx + 1])
+            output_path.write_bytes(b"dummy")
+
+    monkeypatch.setattr(subprocess, "Popen", make_mock_popen(
+        stdout_lines=["progress line"], write_output=mock_write
+    ))
+
+    params = PipelineParams(
         margin=0.2,
         threshold=4.0,
         export_key="resolve",
@@ -1163,21 +1185,22 @@ def test_pipeline_srt_snap_gate(temp_dirs, monkeypatch):
         model_size="small",
         snap_srt=True
     )
-    res_snap = run_pipeline(
+
+    result = run_pipeline(
         ae_path="dummy-ae",
         inp=inp,
         out_dir=out_dir,
-        params=params_snap,
+        params=params,
         on_log=lambda m, lvl="": None,
         should_stop=lambda: False,
         tr=stub_tr,
         transcribe=mock_transcribe
     )
-    assert res_snap.ok is True
-    assert res_snap.srt_path.exists()
-    content_snap = res_snap.srt_path.read_text(encoding="utf-8")
-    assert "00:00:15,300" in content_snap
-    assert "00:00:15,360" not in content_snap
+    assert result.ok is True
+    assert result.srt_path.exists()
+    srt = result.srt_path.read_text(encoding="utf-8")
+    assert "hello" in srt
+
 
 
 

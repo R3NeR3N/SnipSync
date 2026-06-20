@@ -406,21 +406,34 @@ def run_pipeline(
             except Exception as e:
                 on_log(tr("log_cleanup_failed", str(e)), "warn")
 
-            # 2d. 字幕境界をカット境界へスナップ（fcpxml かつ字幕生成成功時のみ）
-            if (params.snap_srt and is_fcpxml and result.srt_path
-                    and result.timeline_path and result.timeline_path.exists()
-                    and not result.stopped):
+            # 2d. 字幕をカット境界で分割（カット整合字幕・トグルON時・全形式共通）
+            if params.snap_srt and result.srt_path and srt_words and not result.stopped:
+                v1_json = output_ae.parent / f"{inp.stem}_cuts_v1.json"
                 try:
-                    boundaries = parse_fcpxml_cut_boundaries(result.timeline_path, inp.stem)
+                    fps = probe_fps(inp)
+                    boundaries = []
+                    if fps:
+                        v1_cmd = build_v1_export_cmd(
+                            ae_path, inp, params.margin, params.threshold, v1_json, fps,
+                        )
+                        rc_v1, stopped_v1 = _run_streaming(
+                            v1_cmd, on_log=on_log, should_stop=should_stop,
+                        )
+                        if not stopped_v1 and rc_v1 == 0 and v1_json.exists():
+                            boundaries = parse_v1_boundaries(v1_json, fps)
                     if boundaries:
-                        tolerance = params.margin + SRT_SNAP_TOLERANCE_EXTRA  # 既定 0.15
-                        text = result.srt_path.read_text(encoding="utf-8")
-                        snapped = snap_srt_to_boundaries(text, boundaries, tolerance)
-                        if snapped != text:
-                            result.srt_path.write_text(snapped, encoding="utf-8")
-                            on_log(tr("log_srt_snapped"), "muted")
+                        srt = build_cut_aligned_srt(srt_words, srt_natural_segs, boundaries)
+                        if srt.strip():
+                            result.srt_path.write_text(srt, encoding="utf-8")
+                            on_log(tr("log_srt_cut_aligned"), "muted")
                 except Exception:
                     on_log(tr("log_unexpected", traceback.format_exc()), "error")
+                finally:
+                    try:
+                        if v1_json.exists():
+                            v1_json.unlink()
+                    except Exception:
+                        pass
 
     except Exception:
         # Catch any unexpected top-level worker thread crashes
