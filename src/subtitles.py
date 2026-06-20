@@ -113,8 +113,49 @@ def parse_v1_boundaries(json_path, tb):
     return sorted(set(boundaries))
 
 
+def build_cut_aligned_srt(words, natural_segments, boundaries):
+    """whisper word-level を「カット境界 ∪ 文境界」で再分割した SRT を返す。
+
+    各区間 [b_i, b_{i+1}) に start が入る単語を 1 字幕に連結。
+    カット境界由来の b_i は字幕 start に厳密一致する。空区間/ゼロ尺は除外。
+    boundaries か words が空なら "" を返す（呼び出し側でフォールバック）。
+    """
+    if not boundaries or not words:
+        return ""
+
+    breaks = {round(b, 3) for b in boundaries}
+    for seg_start, _seg_end in natural_segments:
+        breaks.add(round(seg_start, 3))
+    last_word_end = max(w[1] for w in words)
+    breaks.add(round(last_word_end, 3))
+    breaks = sorted(breaks)
+
+    entries = []
+    for i in range(len(breaks) - 1):
+        b0, b1 = breaks[i], breaks[i + 1]
+        seg_words = [w for w in words if b0 <= round(w[0], 3) < b1]
+        if not seg_words:
+            continue
+        text = "".join(w[2] for w in seg_words).strip()
+        if not text:
+            continue
+        start = b0
+        end = min(max(w[1] for w in seg_words), b1)
+        if start >= end:
+            continue
+        entries.append((start, end, text))
+
+    out = []
+    for idx, (start, end, text) in enumerate(entries, start=1):
+        out.append(str(idx))
+        out.append(f"{format_timestamp(start)} --> {format_timestamp(end)}")
+        out.append(text)
+        out.append("")
+    return "\n".join(out)
+
 
 def _fcpxml_time_to_seconds(text: str) -> float:
+
     """Convert rational time format "N/Ds" or "Ns" or "0s" to float seconds."""
     text = text.strip()
     if text.endswith("s"):
