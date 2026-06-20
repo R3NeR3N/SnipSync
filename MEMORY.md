@@ -15,6 +15,12 @@
 
 ---
 
+## 2026-06-20 17:55 — SRT-snap後処理を「カット整合字幕」へ置換（実装: Gemini）
+- 決定: 設計書 `docs/superpowers/specs/2026-06-20-cut-aligned-subtitles-design.md` に基づき、字幕生成を whisper word-level + 全カット境界での再分割に作り直し。カット境界は auto-editor `--export v1`（ffprobe fps→`-tb` ピン留め）で NLE 形式非依存に取得。
+- 理由: 旧 snap(吸着) は字幕とカットを 1:1 にできず tolerance 外も乗らなかった。ユーザー要求「各カット開始に字幕境界を乗せる/全NLE同一出力」を満たすため分割を作り直す。
+- 影響/トレードオフ: 字幕数 ≥ カット数。トグル流用(既定ON)・premiere でも有効。v1/fps 失敗時は自然分割へフォールバック。旧 snap 関数群を撤去。
+- 関連: `src/subtitles.py`, `src/autoeditor.py`(probe_fps/build_v1_export_cmd), `src/pipeline.py`, `src/app.py`, `src/i18n.py`, `tests/`
+
 ## 2026-06-20 14:45 — SRT-snap 実装のレビュー検証＋lint緑化（レビュー: Opus 4.8）
 - 経緯: Gemini 実装完了報告(commit d583a5d)を受け、設計書 `docs/handoff/P3-srt-snap.md` 突合でレビュー検証。
 - 検証結果（設計準拠を確認）: ①純ロジック4関数は `src/subtitles.py`・UI非依存。②pipeline 統合は新ステップ2d=2c掃除後/`finally`(_tracks掃除)前・`is_fcpxml && srt_path && timeline.exists && !stopped` ゲート付き。③UI=チェックボックス既定ON・`is_fcpxml`(premiere除外)/字幕OFF で disabled・i18n ja/en 両添付・presets `SETTING_KEYS` に `snap_srt`・`_collect/_apply_settings` 往復。④全45テスト緑。⑤GUI construct スモーク（checkbox生成・既定True・destroy）OK。

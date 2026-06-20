@@ -13,7 +13,7 @@
 - AI 駆動開発用ドキュメント群を追加: `AGENTS.md` / `CLAUDE.md` / `CONTEXT.md` / `ARCHITECTURE.md` / `DESIGN.md` / `MEMORY.md` / `PITFALLS.md` / `CHANGELOG.md` / `ROADMAP.md` / `CONTRIBUTING.md`。
 - 出力プリセット: 名前付きプリセットの保存/読込/削除 + 前回終了時設定の自動復元（`%APPDATA%/SnipSync/presets.json`）。
 - GPU (CUDA) 対応: オプトイン（既定OFF）。GPU 失敗時は CPU へ自動フォールバック。
-- 字幕スナップ (SRT-snap): 生成済み fcpxml のカット境界 (offset) へ字幕 (.srt) 境界を tolerance (既定 0.35s) 以内で吸着し、映像カットと字幕の切り替えを同期させる純後処理を追加。
+- カット整合字幕（Cut-Aligned Subtitles）: 字幕を whisper の word-level timestamp で生成し、全カット境界（auto-editor v1 JSON 境界）で再分割することで、どの NLE 形式（DaVinci/Premiere/FCP）でも各カット開始に整合する字幕 (.srt) を生成する機能を追加（旧 SRT-snap 方式から置換）。
 - 単体テスト導入（`tests/`）と `pyproject.toml`（直接依存の切り出し）。
 
 ### Changed
