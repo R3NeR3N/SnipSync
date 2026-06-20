@@ -11,11 +11,20 @@ from pipeline import PipelineParams, _kill_tree, run_pipeline
 from subtitles import cuda_available, resolve_device
 
 
+class DummyWord:
+    def __init__(self, start, end, word):
+        self.start = start
+        self.end = end
+        self.word = word
+
+
 class DummySegment:
-    def __init__(self, start, end, text):
+    def __init__(self, start, end, text, words=None):
         self.start = start
         self.end = end
         self.text = text
+        self.words = words
+
 
 
 # Helper/stub callbacks

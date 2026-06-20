@@ -6,14 +6,18 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
 
-from autoeditor import build_cut_cmd, build_extract_wav_cmd
+from autoeditor import (
+    build_cut_cmd,
+    build_extract_wav_cmd,
+    build_v1_export_cmd,
+    probe_fps,
+)
 from subtitles import (
-    SRT_SNAP_TOLERANCE_EXTRA,
     add_cuda_dll_dirs,
+    build_cut_aligned_srt,
     format_timestamp,
-    parse_fcpxml_cut_boundaries,
+    parse_v1_boundaries,
     resolve_device,
-    snap_srt_to_boundaries,
 )
 
 CREATE_NEW_PROCESS_GROUP = 0x00000200 if sys.platform == "win32" else 0
@@ -301,6 +305,8 @@ def run_pipeline(
         if result.ok and params.do_srt and not result.stopped:
             temp_wav = output_ae.parent / f"{inp.stem}_temp_audio.wav"
             temp_success = False
+            srt_words = []
+            srt_natural_segs = []
 
             # 2a. Generate Temp WAV
             on_log(tr("log_srt_temp_start"), "info")
@@ -341,7 +347,10 @@ def run_pipeline(
                             if dev == "cuda":
                                 add_cuda_dll_dirs()   # venv内CUDA DLLをロード可能に（Win）
                             model = WhisperModel(params.model_size, device=dev, compute_type=ctype)
-                            seg_iter, inf = model.transcribe(str(temp_wav), beam_size=5, language=None)
+                            seg_iter, inf = model.transcribe(
+                                str(temp_wav), beam_size=5, language=None,
+                                word_timestamps=params.snap_srt,
+                            )
                         return list(seg_iter), inf   # ← list() でデコード完走（例外はここで出る）
 
                     try:
@@ -361,6 +370,12 @@ def run_pipeline(
                             raise   # CPU でも失敗なら外側 except へ（log_unexpected）
 
                     on_log(tr("log_lang_detected", info.language, info.language_probability), "muted")
+
+                    srt_natural_segs = [(s.start, s.end) for s in segments]
+                    srt_words = []
+                    for s in segments:
+                        for w in (getattr(s, "words", None) or []):
+                            srt_words.append((w.start, w.end, w.word))
 
                     # SRT 書き込み（segments は確定済みリスト）
                     with open(output_srt, "w", encoding="utf-8") as srt_file:
