@@ -15,6 +15,15 @@
 
 ---
 
+## 2026-06-20 19:10 — premiere(.xml) 8トラック膨張の真因を実XMLで確定＝「回避不可」を訂正・検証ゲート設置（診断: Opus 4.8）
+- 経緯: ユーザーが「premiere出力(.xml)で音声トラックが分かれる問題」の整理を要求→ 回避策の新規設計へ。MEMORY 2026-06-20 18:40 / PITFALLS 2026-06-19 は本現象を「DaVinci 固有・回避不可」と記録していたが、**実XML未解析の推測**だった。
+- 実XML解析で真因確定（`仮フォルダ/Premiere/2026-06-20 10-56-29_snipsynced.xml`）: sequence が音声**8トラック**を宣言し、各 `<sourcetrack><trackindex>1..8`・`explodedTracks="true"`。ffprobe で source mp4 = **音声4ストリーム×各2ch(stereo)** を確認。⇒ auto-editor が **チャンネル単位で展開**（4×2=8）して 1ch=1トラック化。映像 clipitem の `<link>` も audio trackindex 1〜8 を張る。「4→8膨張」は **auto-editor 生成段階の構造**で、SnipSync 側 XML 後処理で修正可能（fcpxml の `_reorder_fcpxml_tracks` 等と同型）。**「回避不可」は誤判定**。
+- 制約の再フレーミング（ユーザー確認で判明）: ①.xml の本来の取込先は **Premiere Pro**（DaVinci ではない）。MEMORY 18:40 の「8トラック/6無音」は DaVinci 観測で、**Premiere 自身の挙動は未検証**＝直す物が在るか未確定。②ユーザーは **Premiere 未契約 → 実機検証は知人(非開発者)に依頼**＝検証往復が高コスト。
+- 決定（ユーザー選択）: 盲目で XML 手術せず、**まず現行無改変 xml が Premiere で本当に壊れるか1回検証**してから修正案を選ぶ（systematic-debugging: 実対象で症状確定が先）。auto-editor 29.x は Nim バイナリ化でソース改変/属性プローブ不可のため、修正は後処理一択（フラグ抑制 C 案は不可寄り）。
+- 成果物: ①自己完結の検証パッケージ `仮フォルダ/検証用_Premiere/`（mp4 + 新鮮 xml・同フォルダ参照・8トラック再確認）。②**非開発者向け**検証ガイド `docs/handoff/premiere-xml-verification-for-tester.md`（用語3語の説明→メニュー1クリック単位→再リンク対処→穴埋め報告テンプレ。テスト①生mp4=正解基準 vs ②xml=被験の2本立て）。
+- 次（結果待ち）: 8段/空あり→症状実在→**A案(8ch→4stereo集約)** or **B案(_tracks/*.wav 4本を各トラック参照=fcpxml B案流用・最堅牢)** を本設計→知人で再検証。4段/全部音→Premiere問題なし→修正不要・**D案(DaVinci 向け注記のみ)**。A/B 詳細は結果待ち（盲目実装回避）。
+- 関連: `docs/handoff/premiere-xml-verification-for-tester.md`, `src/pipeline.py`, MEMORY 2026-06-20 18:40 / 2026-06-19 16:50, PITFALLS 2026-06-19(premiere/_tracks), [[role-boundary-opus-design-only]]
+
 ## 2026-06-20 18:40 — カット整合字幕を実機検証パス＝DoD充足・本機能クローズ（報告: ユーザー / 記録: Opus 4.8）
 - 決定: 素材 `2026-06-20 10-56-29.mp4`(4トラック) を SnipSync で処理し、**resolve出力(.fcpxml) / premiere出力(.xml) の両方を DaVinci Resolve 21 へ取込**→ いずれも **字幕境界(字幕1トラック)がクリップ頭(V1)と一致**することをユーザーが目視確認。MEMORY 18:10 レビューの残DoD #3（実機目視）を充足し、カット整合字幕(2026-06-20 置換)を**クローズ**。
 - 観測: 字幕=40クリップ / 映像=44クリップ。字幕<カットは設計の「空区間スキップ」（発話ゼロのカットは字幕を作らない・§3.2 step4）通りで正常（全カットに字幕が乗るのではなく、各カット開始に字幕境界が乗る・発話有りカットのみ字幕化）。テスト＋実機の二重で機構を証明。
