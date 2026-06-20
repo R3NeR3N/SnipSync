@@ -81,6 +81,39 @@ def parse_timestamp(ts_str: str) -> float:
     return hrs * 3600.0 + mins * 60.0 + secs + ms / 1000.0
 
 
+def parse_v1_boundaries(json_path, tb):
+    """auto-editor v1 JSON の kept chunk 累積尺からタイムライン境界(秒)を作る。
+
+    chunk = [start_frame, end_frame, speed]。speed>=99999 は cut(除去)。
+    kept chunk の尺 (end-start)/tb を累積し、各境界 + 先頭 0.0 を返す。
+    解析不能/tb 無し/kept 無し -> []。
+    """
+    import json
+    from pathlib import Path
+    try:
+        data = json.loads(Path(json_path).read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    chunks = data.get("chunks", [])
+    if not chunks or not tb:
+        return []
+    boundaries = [0.0]
+    acc = 0.0
+    for chunk in chunks:
+        try:
+            start, end, speed = chunk[0], chunk[1], chunk[2]
+        except (IndexError, TypeError):
+            continue
+        if speed >= 99999:
+            continue
+        acc += (end - start) / tb
+        boundaries.append(round(acc, 6))
+    if len(boundaries) <= 1:
+        return []
+    return sorted(set(boundaries))
+
+
+
 def _fcpxml_time_to_seconds(text: str) -> float:
     """Convert rational time format "N/Ds" or "Ns" or "0s" to float seconds."""
     text = text.strip()

@@ -182,3 +182,40 @@ Second
     curr_end = parse_timestamp(curr_ts.split(" --> ")[1])
     nxt_start = parse_timestamp(nxt_ts.split(" --> ")[0])
     assert curr_end <= nxt_start
+
+
+def test_parse_v1_boundaries_basic(tmp_path):
+    import json
+
+    from subtitles import parse_v1_boundaries
+    # kept(30f) / cut(10f) / kept(30f)  @ tb=10  -> 境界 [0.0, 3.0, 6.0]
+    p = tmp_path / "c.json"
+    p.write_text(json.dumps({"chunks": [[0, 30, 1.0], [30, 40, 99999.0], [40, 70, 1.0]]}), encoding="utf-8")
+    assert parse_v1_boundaries(p, 10) == [0.0, 3.0, 6.0]
+
+
+def test_parse_v1_boundaries_excludes_cut(tmp_path):
+    import json
+
+    from subtitles import parse_v1_boundaries
+    # 全 cut -> kept 無し -> []
+    p = tmp_path / "c.json"
+    p.write_text(json.dumps({"chunks": [[0, 30, 99999.0]]}), encoding="utf-8")
+    assert parse_v1_boundaries(p, 10) == []
+
+
+def test_parse_v1_boundaries_bad_json(tmp_path):
+    from subtitles import parse_v1_boundaries
+    p = tmp_path / "c.json"
+    p.write_text("not json", encoding="utf-8")
+    assert parse_v1_boundaries(p, 10) == []
+
+
+def test_parse_v1_boundaries_no_tb(tmp_path):
+    import json
+
+    from subtitles import parse_v1_boundaries
+    p = tmp_path / "c.json"
+    p.write_text(json.dumps({"chunks": [[0, 30, 1.0]]}), encoding="utf-8")
+    assert parse_v1_boundaries(p, 0) == []
+
