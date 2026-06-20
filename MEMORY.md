@@ -15,6 +15,15 @@
 
 ---
 
+## 2026-06-20 18:10 — カット整合字幕の実装をレビュー検証＝設計準拠を確認（レビュー: Opus 4.8）
+- 経緯: Gemini 実装完了報告（commit 6013ecf〜a5d8c14・8コミット / tree clean）を受け、設計書 `docs/superpowers/specs/2026-06-20-cut-aligned-subtitles-design.md` と突合してレビュー。
+- 検証結果（設計準拠を確認）:
+  - ①`parse_v1_boundaries`＝kept累積尺・cut(speed≥99999)除外・先頭0/末尾全長（§2）。②`build_cut_aligned_srt`＝break=カット境界∪文境界、word.start基準で区間割当、end=min(最終word.end, 次break)でクランプ、空区間/ゼロ尺/反転をガード、空boundaries·words→""（§3）。③`build_v1_export_cmd`/`probe_fps`＝margin·threshold をstep1/2aと一致(P-2)・`-tb`でfpsグリッド固定・`.resolve()`(P-3)（§4.4）。④pipeline 2d＝2b後/finally前・全形式共通(is_fcpxmlガード無し)・v1一時json掃除・v1/fps失敗時は自然分割フォールバック（§4.3）。⑤2b＝`word_timestamps=params.snap_srt`、`list(seg_iter)`でデコード完走（遅延ジェネレータ対策 PITFALLS 2026-06-17）（§4.2）。⑥UI＝disable条件を「字幕OFFのみ」に変更しpremiere有効化、既定ON（§5.1）。⑦i18n＝`snap_srt_label`改訂＋`log_srt_cut_aligned`追加 ja/en 両方（§5.3）。
+- 検証エビデンス: `pytest tests/`=**56 passed** / `ruff check src/ tests/`=クリーン。核ケース全実在（カット境界強制分割でstart厳密一致`00:00:02,000`・文内追加分割・空区間skip・ゼロ尺ガード・空入力→""・pipeline cut_align on/off/no-fps-fallback）。GUI構築スモーク＝checkbox既定ON(normal/True)・**premiere選択でもnormal**（設計の変化点を実確認）。
+- 軽微所見（範囲内・修正不要）: `-tb int(round(tb))` は 29.97等NTSCで整数化ズレが生じ得るが、設計が CFR/整数fps前提・VFRは対象外と明記（§2.3 / §8）のため許容。
+- 残DoD: **実機目視（素材 `2026-06-20 10-56-29.mp4`・resolve出力→DaVinci取込で各カット開始に字幕境界が乗るか）はユーザー側で1回**（機構はテストで証明済）。本ターン後にユーザーが実施。
+- 関連: `src/subtitles.py`, `src/autoeditor.py`, `src/pipeline.py`, `src/app.py`, `src/i18n.py`, `tests/`, [[subtitle-cut-margin-inset]], [[role-boundary-opus-design-only]]
+
 ## 2026-06-20 17:55 — SRT-snap後処理を「カット整合字幕」へ置換（実装: Gemini）
 - 決定: 設計書 `docs/superpowers/specs/2026-06-20-cut-aligned-subtitles-design.md` に基づき、字幕生成を whisper word-level + 全カット境界での再分割に作り直し。カット境界は auto-editor `--export v1`（ffprobe fps→`-tb` ピン留め）で NLE 形式非依存に取得。
 - 理由: 旧 snap(吸着) は字幕とカットを 1:1 にできず tolerance 外も乗らなかった。ユーザー要求「各カット開始に字幕境界を乗せる/全NLE同一出力」を満たすため分割を作り直す。
