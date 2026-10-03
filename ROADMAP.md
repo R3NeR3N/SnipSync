@@ -12,8 +12,10 @@
 ## P3（候補・要精査）
 
 - [ ] **code-review 指摘5件の修正** — GPUフォールバック取りこぼし(#1実バグ)/whisper未導入i18n(#2)/compute_type未使用(#3)/プリセット無効モデルガード(#4)/log_error空detail(#5)。**設計済**: `docs/handoff/P3-review-fixes.md`（実装は Gemini）。担当: 🧠(設計)→🔧
-- バッチ処理（複数動画の連続投入）。担当: 🧠(設計)→🔧
 - macOS 対応の可否調査。担当: 🧠(調査)
+- **実 NLE での取り込み検証**: マーカー / 倍速 / VAD 経路の FCPXML・Premiere XML（`docs/handoff/verification-2026-10.md`）。担当: ユーザー(実機)
+- NG テイク（言い直し）の検出をマーカーで提示（削除はしない）。担当: 🧠(設計)→🔧
+- フィラー語は Whisper が書き起こさないため自動カットは見送り。単語間の不自然な空白をマーカー化する案。担当: 🧠(調査)
 - 完全パッケージ化（`src/snipsync/`）— build.spec / test import への影響あり、段階移行（ARCHITECTURE §2）。担当: 🧠→🔧
 
 ---

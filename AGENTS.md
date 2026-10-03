@@ -34,32 +34,38 @@ SnipSync = 動画の無音区間を自動カットし、NLE 用タイムライ�
 | 言語 | Python 3.10+ | |
 | GUI | CustomTkinter 5.x | ダークテーマ固定 |
 | D&D | tkinterdnd2 | 任意（無くても起動可） |
-| 無音カット/XML出力 | auto-editor 29.x | 外部プロセス呼び出し |
-| 字幕生成 (ASR) | faster-whisper 1.x | CPU / int8 |
+| 無音カット/XML出力 | auto-editor 31.x（公式バイナリ） | 外部プロセス。固定版は `src/aebin.py` の `AE_VERSION`、SHA-256 を照合。PyPI 版は 29.3.1 で止まっているため pip 依存にしない |
+| 字幕生成 (ASR) | faster-whisper 1.x | 既定 CPU / int8、GPU(CUDA) は任意 |
+| 音声区間検出 (VAD) | Silero VAD | faster-whisper に同梱 |
+| 話者分離 | sherpa-onnx | onnxruntime のみ。モデルは初回取得・SHA-256 検証 |
+| 日本語字幕の文節改行 | BudouX | 純Python |
+| XML の読み込み | defusedxml | XXE 対策（AGENTS §4.1） |
 | 配布 | PyInstaller 6.x | 単一 `.exe` |
-| 前提 | FFmpeg が PATH に必要 | |
+| 前提 | なし（FFmpeg の PATH 設定は不要） | auto-editor 同梱版が内蔵。fps は ffprobe が無ければ PyAV で取得 |
 
 ---
 
 ## 3. ビルド・実行コマンド
 
 ```bash
-# 仮想環境（venv）作成 — ホストを汚さない隔離境界。初回のみ
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1     # PowerShell（cmd は .venv\Scripts\activate.bat）
+# 仮想環境の作成（Python は uv に任せる）— ホストを汚さない隔離境界。初回のみ
+uv venv .venv --python 3.13
+uv pip install --python .venv\Scripts\python.exe -e ".[dev]"
 
-# 依存導入 — pyproject.toml を単一ソースに（直接依存＋開発ツール pytest/ruff）
-pip install -e ".[dev]"
+# 開発実行（GUI 目視確認はホストの .venv で行う）。初回の字幕生成でモデルが、初回の処理で auto-editor が自動取得される
+.venv\Scripts\python.exe src/app.py
 
-# 開発実行（GUI 目視確認はホストの venv 内で行う）
-python src/app.py
+# テスト・lint
+.venv\Scripts\python.exe -m pytest -q
+.venv\Scripts\python.exe -m ruff check .
 
-# EXE ビルド
-pip install -e ".[build]"
-pyinstaller build/app.spec       # → dist/SnipSync.exe
+# EXE ビルド（auto-editor を同梱するため、先に取得する）
+uv pip install --python .venv\Scripts\python.exe -e ".[build]"
+.venv\Scripts\python.exe scripts/fetch_auto_editor.py     # → build/vendor/auto-editor.exe（SHA-256 検証つき）
+.venv\Scripts\python.exe -m PyInstaller build/app.spec    # → dist/SnipSync.exe
 ```
 
-> ⚠ 依存は `pyproject.toml` の `dependencies` / `optional-dependencies` が**単一ソース**。`pip install -e ".[dev]"` で直接依存（auto-editor / faster-whisper / customtkinter / tkinterdnd2）＋開発ツール（pytest / ruff）が入る。新規依存は **`pyproject.toml` だけ**に足せばよい（3箇所手書きのドリフトを防ぐ）。`requirements.txt` は再現用フルフリーズ（生成ロック扱い）。
+> ⚠ 依存は `pyproject.toml` の `dependencies` / `optional-dependencies` が**単一ソース**。`pip install -e ".[dev]"` で直接依存（faster-whisper / customtkinter / tkinterdnd2 / BudouX / sherpa-onnx / defusedxml ほか）＋開発ツール（pytest / ruff）が入る。**auto-editor は pip の依存ではない**（`src/aebin.py` が公式リリースの固定版を取得して使う）。新規依存は **`pyproject.toml` だけ**に足せばよい（3箇所手書きのドリフトを防ぐ）。`requirements.txt` は再現用フルフリーズ（生成ロック扱い）。
 > ⚠ **venv はホスト汚染を止める隔離境界**。ランタイムを PC 本体へ直入れせず `.venv` 内に閉じ込める（`.gitignore` 済）。不要になれば `.venv` を消すだけで本体は元通り。
 > ⚠ **ホスト venv とコンテナの役割分担**: GUI 目視確認（§8 DoD #1）と実パイプライン実行は **ホストの `.venv`**（重依存フル導入）で行う。Dev Container は test/lint/AI エージェント用で **意図的に lean**（subprocess/transcribe をモックするため重依存を入れない）。詳細は `.devcontainer/devcontainer.json` のコメント参照。
 
@@ -84,25 +90,29 @@ pyinstaller build/app.spec       # → dist/SnipSync.exe
 - ❌ ユーザー確認なしに `requirements.txt` 全行を書き換える。
 - ❌ バージョン番号を一箇所だけ更新する（コードと README/CHANGELOG を必ず揃える。§5）。
 - ❌ PITFALLS.md に記録済みの失敗手順を再試行する。
+- ❌ auto-editor のフラグ名を、公式サイトの記述だけを根拠に使う。**固定版の `--help` と実バイナリで確認する**（PITFALLS 2026-10-03）。版を上げるときは `AE_VERSION` と SHA-256 を同時に更新し、フラグ・カット結果・NLE 出力を再検証する。
+- ❌ XML を標準ライブラリ（`xml.etree.ElementTree.parse`）で直接読む。読み込みは `src/safexml.py` を通す。
+- ❌ GitHub Actions のサードパーティ action をタグ（`@v4`）で指定する。コミット SHA で固定する（`tests/test_security.py` が検査する）。
 
 ---
 
 ## 5. バージョニング規則
 
-### 5.1 方式: Semantic Versioning 2.0（`MAJOR.MINOR.PATCH`）
+### 5.1 方式: Semantic Versioning 2.0（`MAJOR.MINOR.PATCH`）— 現在は初期開発段階（MAJOR = 0）
 
-現行 `1.0.0` から継続。各桁の意味は SnipSync 固有に以下で定義する。
+SemVer 2.0 の `0.y.z`（初期開発）に従う。**MAJOR は 0 のまま**。`1.0.0` へ上げる時期は オーナーが決める（公開 API・出力形式・設定ファイルを安定させると宣言するとき）。
 
-| 桁 | 上げる条件 | 例 |
+| 桁 | 上げる条件（`0.y.z` の間） | 例 |
 |---|---|---|
-| **MAJOR** | ユーザーの互換性が壊れる変更（前のやり方が通じなくなる） | 出力 XML/FCPXML の構造変更で既存 NLE が取込不可 / エクスポート形式の削除 / `presets.json` スキーマ破壊 / 対応 NLE の廃止 / 最低要件（Python・FFmpeg）の引上げ |
-| **MINOR** | 後方互換のある機能追加（既存はそのまま動く） | GPU 対応 / プリセット / 新エクスポート形式 / 新 Whisper モデル / 新 UI 言語 / バッチ処理 |
-| **PATCH** | 機能追加なしのバグ修正のみ | 無音検出のズレ修正 / i18n 誤訳 / クラッシュ修正 / 文字化け修正 |
+| **MAJOR** | 0 のまま。`1.0.0` は「互換性を保つと約束する」宣言 | — |
+| **MINOR** | 機能追加、**および互換性を壊す変更**（0.y.z では両方 MINOR） | 新機能 / 新エクスポート形式 / 新モデル / auto-editor の版移行でカット結果が変わる / `presets.json` スキーマ変更 / 出力 XML 構造の変更 / 最低要件の引上げ |
+| **PATCH** | 機能追加なしのバグ修正のみ | 無音検出のズレ修正 / i18n 誤訳 / クラッシュ修正 / 文字化け修正 / 依存の脆弱性対応 |
 
 判断補助:
 - 内部リファクタ・テスト追加・依存整理など**ユーザーに見えない変更**は単独では桁を動かさない（次の MINOR/PATCH に相乗り）。
 - 1リリースに複数種が混在したら**最も大きい桁**を採用（機能追加＋修正 → MINOR）。
-- 配布前テストはプレリリース接尾辞 `-rc.1` / `-beta.1` を付ける（例 `1.1.0-rc.1`）。本番は接尾辞なし。
+- 配布前テストはプレリリース接尾辞 `-rc.1` / `-beta.1` を付ける（例 `0.3.0-rc.1`）。本番は接尾辞なし。
+- 旧表記: 最初の公開版（GitHub タグ `v1.0.0`）は、この体系では 0.1.0 に相当する。既存のタグ・リリースは書き換えない。
 
 ### 5.2 単一ソース
 

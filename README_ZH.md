@@ -9,7 +9,7 @@
 [![auto-editor](https://img.shields.io/badge/Engine-auto--editor-FF6B6B?style=for-the-badge)](https://github.com/WyattBlue/auto-editor)
 [![License](https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Windows-0078D4?style=for-the-badge&logo=windows&logoColor=white)](https://www.microsoft.com/windows)
-[![Version](https://img.shields.io/badge/Version-v1.0.0-success?style=for-the-badge)](https://github.com/R3NeR3N/SnipSync/releases/latest)
+[![Version](https://img.shields.io/badge/Version-v0.2.0-success?style=for-the-badge)](https://github.com/R3NeR3N/SnipSync/releases/latest)
 
 [English](README.md) | [日本語](README_JA.md) | [简体中文](README_ZH.md) | [한국어](README_KO.md)
 
@@ -43,6 +43,13 @@
 | 🌐 **多语言 UI** | 运行时支持英语、日语界面的自由切换 |
 | 📁 **拖放支持** | 只需将视频文件拖到应用程序窗口中即可 |
 | 📦 **零配置** | 单个 `.exe` 文件发布 — 免安装 Python 及任何依赖包 |
+| 🎙 **语音检测剪切** | 可选音量阈值或语音检测（Silero VAD）；也可将静音加速而不是剪掉 |
+| 〰 **波形预览** | 处理前即可看到哪些部分会被剪掉 |
+| 🧩 **批量与音频文件** | 支持多个文件／文件夹；支持纯音频输入和导出剪切后的媒体 |
+| 🈶 **易读字幕** | 日语按词组换行（BudouX）、术语表、可选说话人分离 |
+| 📄 **字幕全文导出** | 可预览并保存为 `.txt` / `.md` / `.srt` |
+| 📍 **时间线标记** | 可选添加剪切点／说话人切换标记（尚未在真实 NLE 中验证） |
+| 🤖 **更多模型** | large-v3-turbo、large-v3、kotoba-whisper（实验性）、distil-large-v3（仅英语） |
 
 ### 支持的导出格式
 
@@ -54,120 +61,161 @@
 
 ### 支持的输入格式
 
-`.mp4` · `.mov` · `.avi` · `.mkv` · `.wmv` · `.flv` · `.webm` · `.m4v`
+`.mp4` · `.mov` · `.avi` · `.mkv` · `.wmv` · `.flv` · `.webm` · `.m4v` · audio: `.wav` · `.mp3` · `.m4a` · `.flac` · `.aac` · `.ogg` · `.opus` · `.wma`
 
 ---
 
-## 🚀 安装与使用
+## 🚀 安装
 
-### 方法 A: 运行预编译的 EXE（推荐）
+### 方式 A：直接运行已构建的 EXE（推荐）
 
-> 无需 Python 或任何其他软件。
+> 无需安装 Python、FFmpeg 或其他任何软件。
 
 1. 从 [Releases](https://github.com/R3NeR3N/SnipSync/releases/latest) 页面下载 `SnipSync.exe`。
-2. 将其放置在您电脑上的任何位置（例如，桌面）。
+2. 放在电脑上的任意位置（例如桌面）。
 3. 双击 `SnipSync.exe` 启动。
 
-**首次使用时的 Whisper 模型下载：**
-当您首次启用字幕生成功能时，所选的 AI 模型将自动从 Hugging Face 下载。请确保您在此时连接了互联网。模型将在本地缓存，供后续离线使用。
+**首次下载**（需联网，仅一次）：
 
-> **💡 模型缓存位置与卸载清理**
-> 下载的模型数据不会保存在 `.exe` 文件所在位置，而是缓存在系统的用户目录中：
-> `C:\Users\<您的用户名>\.cache\huggingface\hub`
+| 内容 | 时机 | 大小 |
+|---|---|---|
+| Whisper 模型 | 首次用该模型生成字幕时 | `tiny` 0.08GB · `base` 0.15GB · `small` 0.49GB · `medium` 1.5GB · `large-v3-turbo` 1.6GB · `large-v3` 3.1GB · `distil-large-v3` 1.5GB · `kotoba-whisper` 1.5GB |
+| 说话人分离模型 | 首次开启 **分离说话人** 时 | 约 35MB |
+
+> **💡 保存位置与删除方法**
+> - Whisper 模型：`C:\Users\<用户名>\.cache\huggingface\hub`
+> - kotoba-whisper、说话人分离模型、预设：`%APPDATA%\SnipSync`
 >
-> 如果您将来不再使用 SnipSync，仅删除 `.exe` 文件不会清理这些模型数据。为释放磁盘空间（模型可能占用数 GB），您可以安全地手动删除该文件夹。
+> 删除 `SnipSync.exe` 不会删除这些文件。如需释放磁盘空间，请手动删除上述文件夹。
 
 ---
 
-### 方法 B: 从源码运行（开发环境）
+### 方式 B：从源码运行
 
-#### 前置要求
+#### 前提
 
-- Python **3.10 或更高版本**
-- 已安装 [FFmpeg](https://ffmpeg.org/download.html) 并将其添加至环境变量 `PATH`
+- Windows 10 / 11（64 位）
+- [uv](https://docs.astral.sh/uv/)（可同时管理 Python）。**不需要** FFmpeg。
 
-#### 步骤 1 — 克隆仓库
+#### 步骤（PowerShell）
 
-```bash
+```powershell
 git clone https://github.com/R3NeR3N/SnipSync.git
 cd SnipSync
+uv venv .venv --python 3.13
+uv pip install --python .venv\Scripts\python.exe -e ".[dev]"
+.venv\Scripts\python.exe src\app.py
 ```
 
-#### 步骤 2 — 创建并激活虚拟环境
-
-```bash
-python -m venv venv
-# Windows (PowerShell)
-.\venv\Scripts\Activate.ps1
-# Windows (命令提示符)
-venv\Scripts\activate.bat
-```
-
-#### 步骤 3 — 安装依赖
-
-```bash
-pip install auto-editor faster-whisper customtkinter tkinterdnd2
-```
-
-#### 步骤 4 — 运行应用
-
-```bash
-python src/app.py
-```
+首次运行时，会从官方 GitHub Release 下载 auto-editor 31.7.2（约 45MB），并在校验 SHA-256 后使用。
 
 ---
 
-### 方法 C: 自行打包 EXE (PyInstaller)
+### 方式 C：自行构建 EXE（PyInstaller）
 
-#### 步骤 1 — 安装打包依赖
-
-```bash
-pip install pyinstaller
+```powershell
+uv pip install --python .venv\Scripts\python.exe -e ".[build]"
+.venv\Scripts\python.exe scripts\fetch_auto_editor.py   # 获取并内置 auto-editor（已校验 SHA-256）
+.venv\Scripts\python.exe -m PyInstaller build\app.spec
 ```
 
-#### 步骤 2 — 执行构建
-
-```bash
-pyinstaller build/app.spec
-```
-
-生成的独立可执行文件将保存在 `dist\SnipSync.exe`。
+独立可执行文件将输出到 `dist\SnipSync.exe`。
 
 ---
 
 ## ⚙️ 使用指南
 
-1. **启动** `SnipSync.exe`（或运行 `python app.py`）。
-2. **拖放** 您的视频文件到放置区，或点击浏览文件。
-3. **配置** 您的设置：
-   - **静音边距 (Silence Margin)** — 在每个剪辑点周围保留的额外缓冲时间（默认：`0.20 秒`）
-   - **音量阈值 (Volume Threshold)** — 音量低于该值将被视为静音（默认：`4.0%`）
-   - **导出格式 (Export Format)** — 选择您的剪辑软件（DaVinci Resolve, Final Cut Pro, 或 Premiere Pro）
-   - **生成字幕 (Generate .srt)** — 开启/关闭 AI 字幕生成
-   - **AI 模型大小 (AI Model Size)** — 在处理速度与准确率之间取得平衡（`tiny` → `medium`）
-4. **点击** `▶ 开始处理 (Start Processing)`。
-5. 处理完成后，应用会提示您打开输出文件夹。您的 `_snipsynced.fcpxml`（或 `.xml`）以及 `.srt` 文件将准备就绪，可直接导入。
+### 快速开始
+
+1. **启动** `SnipSync.exe`。
+2. 将一个或多个视频/音频文件（或文件夹）**拖入**投放区，也可点击选择。
+3. 选择**导出格式**，点击 **▶ 开始处理**。
+4. 将生成的文件导入剪辑软件（见[导入剪辑软件](#导入剪辑软件)）。
+
+输出文件保存在输入文件所在文件夹（或你指定的文件夹）。
+
+| 文件 | 内容 |
+|---|---|
+| `<名称>_snipsynced.fcpxml` / `.xml` | 剪切后的时间线（多音轨时还会有 `<名称>_tracks` 文件夹，请保持在 `.fcpxml` 旁边） |
+| `<名称>_snipsynced.mp4` / `.wav` … | 导出格式为“剪切后的媒体”时的视频/音频 |
+| `<名称>.srt` | 字幕 |
+| `<名称>.txt` / `<名称>.md` | 完整文字稿（勾选时） |
+
+### 设置项
+
+| 设置 | 说明 |
+|---|---|
+| **静音余量** | 每个剪切点前后保留的时间（默认 `0.20 秒`） |
+| **音量阈值** | 低于此值视为静音（默认 `4.0%`）。“语音检测”方式不使用 |
+| **剪切方式** | “音量阈值”或“语音检测 (VAD)”。VAD 会剪掉所有非人声部分，通常更能应对环境噪音 |
+| **静音处理** | “剪掉”会删除静音；“加速”会保留静音并按设定倍速播放（默认 ×8） |
+| **导出格式** | DaVinci Resolve / Premiere Pro / Final Cut Pro / “剪切后的媒体”（已渲染的视频/音频） |
+| **字幕生成** | 使用 Whisper 生成 `.srt` |
+| **AI 模型** | `tiny`/`base`/`small` 速度快；**追求精度推荐 `large-v3-turbo`**；`kotoba-whisper` 专为日语优化但属实验性（单词时间较粗）；`distil-large-v3` 仅限英语 |
+| **使用 GPU (CUDA)** | 可选。需要 NVIDIA GPU 及 CUDA 12、cuDNN 9 |
+| **按剪切点拆分字幕** | 在每个剪切点开始新字幕，使字幕与片段对齐 |
+| **每行字幕字数** | 日语按词组换行（BudouX），每条字幕不超过 2 行。`0` 为关闭（默认 `20`） |
+| **分离说话人** | 标注说话人（`说话人1：…`），说话人变化时拆分字幕。若已知人数，请设置**说话人数** |
+| **同时保存 .txt / .md** | 将完整文字稿（含说话人和时间）保存在字幕旁边 |
+| **添加标记** | 在时间线上为每个剪切点和说话人切换添加标记（实验性，见下方说明） |
+| **术语表** | 用逗号分隔，填写希望 Whisper 优先识别的词（人名、产品名等） |
+| **预设** | 保存/载入整套设置。启动时会恢复上次的设置 |
+
+### 处理前先预览
+
+- **〰 波形预览** — 在波形上用红色显示将被删除的部分（加速部分为橙色），并显示处理后的时长。修改余量/阈值/剪切方式后，点击**重新计算**。
+- **📄 字幕预览** — 以 `.txt` / `.md` / `.srt` 形式显示完整文字稿，可复制、保存，也可打开已有的 `.srt` 查看或转换格式。
+
+### 常见用法
+
+- **说话类视频 → 带字幕导入 DaVinci Resolve**：导出格式选“DaVinci Resolve”，开启字幕，模型选 `large-v3-turbo`。先导入 `.fcpxml`，再导入 `.srt`。
+- **多人访谈/播客**：开启**分离说话人**（已知人数则设置**说话人数**），勾选**同时保存 .md**。可得到带说话人标注的字幕和易读的文字稿。
+- **嘈杂环境/有背景音乐**：将**剪切方式**设为“语音检测 (VAD)”。
+- **保留停顿但加快速度**：将**静音处理**设为“加速”。
+- **大量录音**：直接拖入整个文件夹。AI 模型只加载一次并重复使用。
+- **只想要干净的音频文件**：拖入 `.wav` / `.m4a` / `.mp3`，选择“剪切后的媒体”，将输出 `.wav`（见下方说明）。
+
+### 导入剪辑软件
+
+菜单名称可能因版本而略有不同。
+
+| 剪辑软件 | 时间线 | 字幕 |
+|---|---|---|
+| DaVinci Resolve | 文件 → 导入 → 时间线… 选择 `.fcpxml` | 文件 → 导入 → 字幕…，或将 `.srt` 拖到时间线 |
+| Premiere Pro | 文件 → 导入，选择 `.xml` | 导入 `.srt` 并拖到序列上 |
+| Final Cut Pro | 文件 → 导入 → XML… 选择 `.fcpxml` | 文件 → 导入 → 字幕… |
+
+### 说明
+
+- **4K 媒体导出**：内置的 auto-editor（无许可证密钥）会把渲染结果缩小到 3200×1800 以内。开始前 SnipSync 会给出警告。**时间线导出不受影响**，需要原分辨率时请使用时间线导出。
+- **仅音频的剪切媒体**以 `.wav` / `.flac` / `.ogg` / `.opus` 输出。`.mp3` / `.m4a` / `.aac` / `.wma` 因内置 auto-editor 没有对应编码器，会输出为 `.wav`。
+- **标记**属于实验性功能，尚未在所有剪辑软件中验证导入效果。
+- **剪切结果与 SnipSync 0.1.0 不同**：新版 auto-editor 还会去除过短的剪切和片段（`--smooth`），因此剪切数量更少、单段更长。
+- 字幕从第一个说出的词开始，所以每条字幕会比片段开头稍晚开始。这是正常的（余量部分保持静音）。
 
 ---
 
 ## 🖥️ 系统要求
 
 ### 运行环境（EXE 用户）
-- **操作系统:** Windows 10 / 11 (64-bit)
-- **内存 (RAM):** 最低 4 GB；如果使用 `medium` 模型，推荐 8 GB 以上
-- **磁盘空间:** 首次运行需预留 2–4 GB 空间用于缓存 Whisper 模型
-- **网络连接:** 仅首次运行下载 Whisper 模型时需要
-- **GPU:** (可选) 若要使用 GPU 加速生成字幕，您需要在系统 `PATH` 中额外安装 NVIDIA 驱动、CUDA 12 Toolkit 和 cuDNN 9。EXE 中未捆绑 GPU 二进制文件。
+- **操作系统：** Windows 10 / 11（64 位）
+- **内存：** 最低 4GB；使用 `medium` 及以上模型建议 8GB 以上
+- **磁盘：** 视所选 Whisper 模型而定，约 0.1–3GB（仅首次）
+- **网络：** 仅首次下载（Whisper 模型、说话人分离模型）时需要
+- **GPU：**（可选）系统 PATH 中已安装 CUDA 12 和 cuDNN 9 的 NVIDIA GPU。EXE 不包含 GPU 库。
 
 ### 开发环境（源码用户）
 
-| 包名 | 用途 |
+| 软件包 | 用途 |
 |---|---|
-| `auto-editor` | 静音检测剪辑与 NLE XML 导出引擎 |
-| `faster-whisper` | AI 语音转文本 (基于 CTranslate2 后端) |
-| `customtkinter` | 现代深色主题 GUI 框架 |
-| `tkinterdnd2` | 提供拖放文件的支持 |
-| `pyinstaller` | *(仅打包)* 将应用打包为单一的 `.exe` |
+| auto-editor 31.x *（官方二进制，由 `src/aebin.py` 获取并校验）* | 静音/语音剪切及 NLE 导出引擎 |
+| `faster-whisper` | AI 语音转文字（CTranslate2）及 Silero VAD |
+| `sherpa-onnx` | 说话人分离 |
+| `budoux` | 日语词组换行 |
+| `defusedxml` | 安全读取 XML |
+| `av` · `numpy` | 音频解码与处理 |
+| `customtkinter` · `tkinterdnd2` | 界面与拖放 |
+| `pyinstaller` | *（仅构建时）* 打包为单个 `.exe` |
 
 ---
 
@@ -177,7 +225,7 @@ pyinstaller build/app.spec
 
 > **免责声明：** SnipSync 按“原样”提供，没有任何保证。对于因使用本软件而导致的任何数据丢失、文件损坏或其他问题，作者概不负责。请务必保留原始素材的备份。
 
-> SnipSync 内部使用了 [auto-editor](https://github.com/WyattBlue/auto-editor) (MIT) 和 [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (MIT)。有关它们各自的许可协议，请参阅各个项目的官方主页。
+> SnipSync 内部使用 [auto-editor](https://github.com/WyattBlue/auto-editor)（Unlicense；官方二进制在无许可证密钥时会将*渲染*结果限制在 3200×1800，时间线导出不受影响）、[faster-whisper](https://github.com/SYSTRAN/faster-whisper)（MIT）、[BudouX](https://github.com/google/budoux)（Apache-2.0）和 [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx)（Apache-2.0）。模型：Whisper（MIT）、kotoba-whisper（MIT）、pyannote segmentation-3.0 ONNX（MIT）、3D-Speaker CAM++（Apache-2.0）。各自许可证请参阅对应项目。
 
 ---
 

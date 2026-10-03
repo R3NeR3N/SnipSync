@@ -119,7 +119,7 @@ AI 協業（頭脳 × 作業）を前提とした、ソロ開発向けの軽量 
 - merge 方式は **Squash merge** を推奨（`main` 履歴を論理単位で保つ）。
 
 ### 5.4 リリース（タグ + GitHub Releases）
-- `APP_VERSION`・git tag・README バッジの **3 点を必ず一致**させる（AGENTS.md §5）。tag は SemVer（例 `v1.0.0`）。
+- `APP_VERSION`・git tag・README バッジの **3 点を必ず一致**させる（AGENTS.md §5）。tag は SemVer（例 `v0.2.0`）。
 - 手順: `CHANGELOG.md` の `Unreleased` を確定 → tag `vX.Y.Z` を打つ → GitHub Release 作成 → `dist/SnipSync.exe` を **アセットとして添付**（リポジトリにはコミットしない）。
 - Release note は CHANGELOG の該当節を流用。
 

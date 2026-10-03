@@ -15,6 +15,37 @@
 
 ---
 
+## 2026-10-03 22:00 — auto-editor 31.7.2 への移行・セキュリティ検証・バージョン表記を 0.2.0 へ（実装・検証: Claude Sonnet 5.5 / オーナーの依頼）
+- 決定:
+  1. **auto-editor を 29.3.1 → 31.7.2 へ移行**。PyPI は 29.3.1 で止まっているため pip 依存をやめ、公式リリースの固定版を取得して使う（`src/aebin.py`、SHA-256 を GitHub API の digest と実測で照合。配布 EXE は `scripts/fetch_auto_editor.py` で同梱）。理由: 30.2.2 / 31.1.2 に NLE 出力の重要な修正（FCPXML の開始タイムコードずれ・Final Cut Pro が拒否する audioLayout・Premiere XML の重複 clipitem と参照切れ・モノラル・NTSC 1000/1001・ドロップフレーム）、モノラル破損も修正済み。
+  2. フラグを 31.x の正式名へ（`--when-inactive`）。`--progress none` でログ欄の汚れを防ぐ。v1 JSON 入力は全形式・複数トラック・29.97fps で直接実行と完全一致を実測。
+  3. **29.3.1 用の回避策を削除**: メディア書き出し時の音声合成（mux）と自前 WAV。字幕用音声の「chunks から自前で組み立て」は、版に依存せず再レンダリングも不要なので維持。
+  4. 倍速モードの境界は「小数累積→フレーム丸め」（31.7.2 の XML と最大1フレーム）。マーカーは1フレーム手前を次クリップ先頭へ吸着。
+  5. セキュリティ: XML は defusedxml、取得は https のみ＋SHA-256、kotoba は HF コミット固定、HF テレメトリ停止、Actions を SHA 固定＋権限最小化。pip-audit 0件、bandit 高0・中0、秘密情報なし。
+  6. **バージョンを 0.2.0（SemVer 2.0・MAJOR=0）へ**。旧 v1.0.0 は 0.1.0 相当。AGENTS.md §5 を 0.y.z 向けに書き直し（0.y.z の間は機能追加も互換性を壊す変更も MINOR）。
+  7. `.venv` と `venv` を uv で再作成（Python 3.13）。`build/app.spec` は実行中インタプリタの site-packages を使う。
+- オーナーの判断: `line_chars` 既定 20 を承認。AGENTS.md の FFmpeg 前提を更新（承認済み）。PR は不要（個人開発）→ dev ブランチへ直接 push。
+- 検証した範囲: pytest 170件・ruff 緑（Python 3.10 / CI 最小構成でも通過）。31.7.2 の実バイナリで全シナリオ（音量/VAD・倍速・音声のみ・29.97fps・複数トラック・モノラル・字幕・話者・マーカー）を通し、生成した NLE ファイルの内部整合性を機械検査して問題0件。字幕が実 XML のカット境界をまたがないことも確認。UI 16項目、PyInstaller ビルドと起動。
+- **NLE の実取り込み検証は未実施**: この PC の Resolve 21.1 は無料版で外部スクリプトが使えず自動化できなかった（PITFALLS 2026-10-03）。取り込みは人間の確認待ち（`docs/handoff/verification-2026-10.md`）。構造は 29.x と同じ（アセット・トラック順・`_tracks`）で、30.2.2 / 31.1.2 の修正により 29.x より安全になっている見込み（確信度: 中）。
+- 影響/トレードオフ: カット結果が変わる（`--smooth` 既定。27→19 区間）。4K 超のメディア書き出しは縮小される。mp3/m4a/aac の書き出し不可（WAV に変換）。初回は auto-editor（約45MB）を取得する（EXE は同梱）。
+- 関連: `src/aebin.py`, `src/autoeditor.py`, `src/pipeline.py`, `src/audiocut.py`, `src/safexml.py`, `scripts/fetch_auto_editor.py`, `build/app.spec`, `.github/workflows/`, PITFALLS 2026-10-03（追加5件・更新3件）
+
+## 2026-10-03 15:00 — ブラッシュアップ第1弾: 13機能を導入し、実測で設計を変更（実装・検証: Claude Sonnet 5.5 / オーナーの依頼）
+- 決定（導入）: モデル追加（large-v3-turbo / large-v3 / kotoba / distil-large-v3）、日本語の文節改行（BudouX）、バッチ処理、無音の倍速化、音声ファイル入力とメディア書き出し、波形プレビュー、用語辞書、VAD カット、タイムラインマーカー、話者分離、字幕全文の .txt/.md 書き出しとプレビュー。
+- 決定（設計変更）:
+  1. **字幕用のカット後音声は v1 chunks から自前で組み立てる**。理由: auto-editor 29.3.1 はモノラル音声のカット書き出しで音を壊す（PITFALLS 2026-10-03）。ステレオでは一致を確認済みなので、実質的な互換性は保たれる。副次効果として、字幕用の音声レンダリング（auto-editor）が不要になる（v1 export は解析のみで軽い）。
+  2. **VAD の区間は v1 JSON を auto-editor の入力にして渡す**。理由: `--cut-out` が1区間しか取れない。出力は直接実行と同一（Premiere XML はバイト一致）。
+  3. **v1 の `-tb` は有理数のまま渡す**（29.97fps の境界ずれの修正）。
+  4. **話者分離は sherpa-onnx**（pyannote.audio は PyTorch 必須＋Hugging Face のトークン発行・利用条件承認が要る gated モデルで、単一 EXE・環境構築なしの前提に合わない）。日本語2話者の合成音声で、CAM++(zh_en) と NeMo titanet-small は正解、英語のみ学習の wespeaker は過剰分割。既定は CAM++。
+  5. **kotoba-whisper は「実験的」**。config 補正が必要で、単語時刻が粗い。カット整合字幕には large-v3-turbo を推奨。CrisperWhisper は英独のみ・CC-BY-NC のため不採用。
+  6. **フィラー語の自動カット・NG テイク検出は見送り**（Whisper がフィラーをほぼ書き起こさない）。
+- 既定値の変更（要確認）: 字幕1行の文字数 `line_chars` の既定を **20（文節改行 ON）** にした。従来の出力（整形なし）に戻すには 0。
+- 検証した範囲: pytest 137件・ruff 緑（CI 最小構成でも 85 通過・3 モジュールはスキップ）。実 auto-editor 29.3.1 / faster-whisper / sherpa-onnx で、合成2話者（Windows 音声合成・48kHz・ステレオ/モノラル・30/29.97fps・2トラック）を通し検証。UI を実起動して 16項目（波形プレビュー・バッチ・字幕プレビュー等）。PyInstaller ビルド成功（約135MB）・EXE 起動・内容物（BudouX モデル/sherpa DLL/VAD モデル/追加モジュール）を確認。
+- 未検証: **実 NLE（Resolve / Premiere / Final Cut）への取り込み**（マーカー・倍速・VAD 経由 FCPXML）、実音声での話者分離の精度、EXE 内での実処理、GPU 経路の再確認、CI の実行。→ `docs/handoff/verification-2026-10.md`
+- 影響/トレードオフ: 依存が増えた（BudouX / sherpa-onnx、EXE 約+20MB）。字幕音声の組み立てで元ファイルを全デコードするため、長尺では時間とメモリが増える（16kHz mono float32 で1時間≈230MB）。auto-editor は 29.x 固定のまま（31.x へ移行すればモノラル破損は直るがフラグ名変更あり）。
+- 関連: `src/pipeline.py`, `src/audiocut.py`, `src/vad.py`, `src/diarize.py`, `src/models.py`, `src/markers.py`, `src/subtitles.py`, `src/transcript.py`, `src/waveform.py`, `src/app.py`, PITFALLS 2026-10-03 の7件
+- 矛盾の記録（AGENTS.md §0）: AGENTS.md の技術スタック表は「FFmpeg が PATH に必要」とあるが、FFmpeg も ffprobe も無い PC で通し検証できた（auto-editor 同梱版が内蔵・fps は PyAV）。AGENTS.md は未変更。更新するかは オーナーの判断。
+
 ## 2026-06-20 19:10 — premiere(.xml) 8トラック膨張の真因を実XMLで確定＝「回避不可」を訂正・検証ゲート設置（診断: Opus 4.8）
 - 経緯: ユーザーが「premiere出力(.xml)で音声トラックが分かれる問題」の整理を要求→ 回避策の新規設計へ。MEMORY 2026-06-20 18:40 / PITFALLS 2026-06-19 は本現象を「DaVinci 固有・回避不可」と記録していたが、**実XML未解析の推測**だった。
 - 実XML解析で真因確定（`仮フォルダ/Premiere/2026-06-20 10-56-29_snipsynced.xml`）: sequence が音声**8トラック**を宣言し、各 `<sourcetrack><trackindex>1..8`・`explodedTracks="true"`。ffprobe で source mp4 = **音声4ストリーム×各2ch(stereo)** を確認。⇒ auto-editor が **チャンネル単位で展開**（4×2=8）して 1ch=1トラック化。映像 clipitem の `<link>` も audio trackindex 1〜8 を張る。「4→8膨張」は **auto-editor 生成段階の構造**で、SnipSync 側 XML 後処理で修正可能（fcpxml の `_reorder_fcpxml_tracks` 等と同型）。**「回避不可」は誤判定**。

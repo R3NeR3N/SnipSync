@@ -9,30 +9,32 @@
 
 ```
 SnipSync/
-├── src/
-│   └── app.py            # 752行モノリス（UI + i18n + 処理 すべて混在）
-├── tests/
-│   ├── test.wav          # サンプル音声（実テストではない）
-│   └── dummy.wav
-├── build/
-│   ├── app.spec          # PyInstaller 設定
-│   └── build_hooks/
-│       └── hook-tkinterdnd2.py
-├── dist/
-│   └── SnipSync.exe       # 配布物（生成物・gitignore）
-├── docs/                  # 空
-├── venv/                  # 仮想環境（生成物・gitignore）
-├── requirements.txt       # フルフリーズ（直接/間接依存が混在）
-├── README*.md             # en / ja / zh / ko の4言語
-└── LICENSE                # MIT
+├── src/                    # flat 配置（パッケージ化は未実施）
+│   ├── app.py              # UI（CustomTkinter）+ 波形/字幕プレビュー窓 + バッチ実行
+│   ├── pipeline.py         # 処理全体のオーケストレーション（run_pipeline）
+│   ├── aebin.py            # auto-editor 31.x バイナリの取得・SHA-256 検証・同梱版の解決
+│   ├── autoeditor.py       # auto-editor コマンド組み立て / fps・長さ・解像度の取得（PyAV 代替あり）
+│   ├── subtitles.py        # 字幕: 境界計算・文節改行・話者付与・Cue/SRT
+│   ├── vad.py              # 音声読み込み（全トラック加算）・VAD・v1 chunks 生成
+│   ├── audiocut.py         # chunks から字幕用のカット後音声を自前で組み立てる
+│   ├── safexml.py          # XML を defusedxml で読む（DOCTYPE・エンティティを拒否）
+│   ├── diarize.py          # 話者分離（sherpa-onnx・モデル取得と SHA-256 検証）
+│   ├── models.py           # Whisper モデル登録（kotoba の alignment_heads 補正を含む）
+│   ├── markers.py          # FCPXML / xmeml へのマーカー挿入
+│   ├── transcript.py       # .txt / .md 生成・SRT 読み込み
+│   ├── waveform.py         # 波形ピーク・カット統計（描画は app.py）
+│   ├── i18n.py / presets.py / theme.py / version.py
+├── tests/                  # pytest（subprocess / transcribe はモック）
+├── build/app.spec          # PyInstaller（budoux / sherpa_onnx を collect_all、auto-editor は build/vendor から同梱）
+├── scripts/fetch_auto_editor.py  # 同梱用の auto-editor を取得（SHA-256 検証）
+├── docs/handoff/           # 設計・検証の引き継ぎ書
+├── pyproject.toml          # 直接依存の単一ソース
+└── requirements.txt        # 再現用フルフリーズ
 ```
 
-### 現状の問題点
-1. **`app.py` がモノリス**。UI 構築・i18n 辞書・処理パイプラインが 1 ファイルに同居 → AI が部分編集する際に無関係箇所と衝突しやすい。
-2. **実テストが無い**（`tests/` は wav サンプルのみ）。
-3. **バージョン定数が無い**。タイトル文字列に `v1.3.1` がハードコードされ README とズレている。
-4. **`requirements.txt` がフルフリーズ**。直接依存が埋もれ、更新判断が難しい。
-5. **`docs/` が空**。
+### 残っている課題
+1. `src/snipsync/` へのパッケージ化は未実施（§2 の目標構造）。
+2. auto-editor は 31.7.2 に固定（`aebin.AE_VERSION`）。ライセンスキー無しではレンダリングが 3200×1800 に縮小される（タイムライン出力は無制限）。版を上げるときは SHA-256・フラグ・カット結果・NLE 出力を再検証する（AGENTS.md §4.2）。
 
 ---
 
@@ -44,7 +46,7 @@ SnipSync/
 SnipSync/
 ├── src/
 │   └── snipsync/
-│       ├── __init__.py        # __version__ = "1.3.1" を一元管理
+│       ├── __init__.py        # __version__ = "0.2.0" を一元管理
 │       ├── __main__.py        # エントリポイント（python -m snipsync）
 │       ├── config.py          # 定数: EXPORT_MODES, デフォルト値, パス解決
 │       ├── i18n.py            # I18N 辞書 + t() ヘルパ（ja/en）
@@ -73,37 +75,31 @@ SnipSync/
 
 ## 3. 処理パイプライン（現状の実データフロー）
 
-`src/app.py` の `_start_process` → `_worker` の流れ。
+`pipeline.run_pipeline`。音量方式の例（VAD 方式は 0 で区間を自前生成し、以降の auto-editor 呼び出しへ v1 JSON として渡す）。
 
 ```
-[入力動画]
-   │
-   │ ① auto-editor（メイン）
-   │   cmd: auto-editor <in> --margin <m>s --edit audio:threshold=<t>%
-   │        --export <mode> --output <stem>_snipsynced.<ext> --no-open
+[入力 動画/音声]
+   │ 0. （VAD 方式のみ）decode_mix → Silero VAD → v1 chunks JSON（全体を隙間なく覆う区間）
+   │ 1. auto-editor でカット → NLE タイムライン（.fcpxml / .xml）またはカット済みメディア
+   │      ・fcpxml は _tracks を移動して参照を書換え、音声トラック順を Resolve 向けに整列
+   │      ・メディア書き出しは auto-editor のレンダリング。音声のみ入力は wav/flac/ogg/opus、それ以外は WAV
    ▼
-[NLE タイムライン: .fcpxml / .xml]   ← 成果物①
-   │
-   │ ②（字幕ON時のみ）auto-editor で音声のみ抽出
-   │   cmd: auto-editor <in> --margin <m>s --edit audio:threshold=<t>%
-   │        -vn -sn -dn --mix-audio-streams --output <stem>_temp_audio.wav --no-open
+[成果物①]
+   │ 2a. chunks（auto-editor の v1 export、または VAD 区間）→ カット後音声を自前で組み立て（16kHz mono）
+   │     組み立てられなければ従来どおり auto-editor で WAV を書き出す
+   │ 2b. faster-whisper（単語時刻つき）。モデルは model_cache で使い回し。用語辞書は hotwords
+   │ 2b'. （任意）sherpa-onnx で話者分離（カット後音声＝タイムライン基準）
+   │ 2d. 字幕整形: カット境界 ∪ 文境界 ∪ 話者交代で分割 → BudouX 文節改行 → SRT
    ▼
-[一時 WAV（カット済み音声）]
-   │
-   │ ③ faster-whisper で文字起こし
-   │   WhisperModel(model_size, device="cpu", compute_type="int8")
-   │   model.transcribe(wav, beam_size=5, language="ja")  ← ⚠言語ハードコード（既知バグ）
-   ▼
-[字幕: .srt]   ← 成果物②（タイムコードはカット後音声基準＝タイムラインと同期）
-   │
-   ▼
-[一時 WAV を削除] → 完了ダイアログ
+[成果物② .srt]（+ 任意で .txt / .md）
+   │ 4. （任意）カット点・話者交代のマーカーを FCPXML / xmeml へ追加
 ```
 
 ### 設計上の要点
-- **同期の肝**: 字幕は①と同じ `margin`/`threshold` で再カットした音声（②）に対して生成するため、タイムコードがタイムラインと一致する。①と②でパラメータを必ず一致させること。
-- **スレッド分離**: 処理は `threading.Thread(daemon=True)` でバックグラウンド実行し、UI ログは `self.after(0, ...)` でメインスレッドへ反映。
-- **停止**: `subprocess.run` は外部から即時 kill できないため、`stop_requested` フラグで**次ステージをスキップ**する方式。実行中プロセス自体は完了を待つ。
+- **同期の肝**: タイムラインも字幕用音声もマーカーも**同じ chunks** から作る。以前は auto-editor を別々に3回走らせて margin / threshold を揃えていた（P-2）。
+- **チャンクの正準ソース**: auto-editor は v1 JSON を**入力**として受け取れる。直接実行と同じ出力になる（31.7.2 は全形式・複数トラック・29.97fps で完全一致を実測）。FCPXML のトラック順は `_reorder_fcpxml_tracks` で Resolve 向けに整列する。
+- **スレッド分離**: 処理は `threading.Thread(daemon=True)`。UI ログは `self.after(0, ...)`。
+- **停止**: `Popen` + `taskkill /F /T` で即時 kill。バッチは次のファイルへ進まない。
 
 ---
 

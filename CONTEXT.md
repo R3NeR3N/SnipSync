@@ -32,13 +32,17 @@ SnipSync の解法:
 
 ### 含む (In Scope)
 - 無音自動カット（音量閾値・前後マージン調整可）。
-- NLE タイムライン出力（resolve / final-cut-pro / premiere）。
+- NLE タイムライン出力（resolve / final-cut-pro / premiere）、またはカット済みメディア（動画／音声）の書き出し。
+- 入力は動画に加え音声ファイルも可。複数ファイルのバッチ処理。
+- カット方式: 音量しきい値 / 音声区間検出（VAD）。無音のカットまたは倍速化。
+- 字幕: 日本語の文節改行、用語辞書、話者分離、`.txt` / `.md` 書き出し、プレビュー。
+- タイムラインマーカー（カット点・話者交代・任意）。
 - AI 字幕生成（tiny / base / small / medium モデル選択）。
 - 日本語／英語 UI 切替（実行中に随時）。
 - ドラッグ＆ドロップ入力。
 
 ### 含まない (Out of Scope)
-- 動画の再エンコード／レンダリング（タイムラインデータのみ出力、非破壊）。
+- 動画編集そのもの（トランジション・テロップ装飾など）。既定はタイムラインのみ出力で非破壊。メディア書き出しは auto-editor のレンダリングを使うだけで、独自エンコードはしない。
 - macOS / Linux 対応（現状 Windows のみ）。
 - クラウド処理（完全ローカル。モデル DL 時のみ通信）。
 
@@ -88,16 +92,18 @@ SnipSync の解法:
 
 ## 7. 制約・前提
 
-- 実行には **FFmpeg が PATH に通っている**ことが前提（auto-editor が内部利用）。
+- **FFmpeg の PATH 設定は不要**（auto-editor 同梱版が内蔵。fps は ffprobe が無ければ PyAV で取得。FFmpeg も ffprobe も無い PC で通し検証済み 2026-10）。
 - Whisper モデルは初回のみ Hugging Face から自動 DL → `C:\Users\<user>\.cache\huggingface\hub` にキャッシュ。
 - モデルは大きい（数 GB）ためリポジトリにコミットしない（`.gitignore` で `*.bin` `*.pt` 除外）。
-- 字幕生成は CPU + int8 固定（配布 EXE に巨大な GPU バイナリを同梱しないため）。
+- 字幕生成は既定で CPU + int8。GPU(CUDA) は任意（pip の `[gpu]`）。話者分離は sherpa-onnx（CPU）。
+- 話者分離モデル（約35MB）は初回のみ公式 GitHub リリースから `%APPDATA%/SnipSync/models/diarization` へ取得（SHA-256 検証）。
+- **auto-editor は 31.7.2 の公式バイナリを固定**（`aebin.AE_VERSION`、SHA-256 照合）。PyPI の版は 29.3.1 で止まっている。ライセンスキー無しでは、**メディア書き出しが 3200×1800 を超えると自動で縮小**される（NLE 用タイムライン出力は無制限）。複数入力の結合は要キーなので使わない。
 
 ---
 
 ## 8. 関連ファイル
 
-- 実装: `src/app.py`
+- 実装: `src/`（`app.py` UI / `pipeline.py` 処理 / `autoeditor.py` / `subtitles.py` / `vad.py` / `audiocut.py` / `diarize.py` / `markers.py` / `transcript.py` / `models.py` / `waveform.py`）
 - 構造詳細: ARCHITECTURE.md
 - UI 指標: DESIGN.md
 - 既知の課題・決定: MEMORY.md / PITFALLS.md

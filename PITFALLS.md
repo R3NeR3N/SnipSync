@@ -16,6 +16,104 @@
 
 ---
 
+## 2026-10-03 — `.gitignore` の `build/` が PyInstaller の設定（app.spec・フック）まで除外していた
+- やったこと/疑い: 動作確認を終えてコミットする前に、`git ls-files build` で追跡対象を確認した。
+- 何が起きたか: 結果が**空**。`build/app.spec` と `build/build_hooks/hook-tkinterdnd2.py` が一度も git に入っておらず、リリース用ワークフロー（`pyinstaller build/app.spec`）は GitHub 上でビルドに必要なファイルを持たない状態だった。手元ではファイルがあるため気付けない。
+- 原因: `.gitignore` の `build/`（生成物の置き場）が、同じフォルダにある設定ファイルまで巻き込んでいた。
+- 回避策 / 正しい手順: `build/*` で生成物を除外し、`!build/app.spec` と `!build/build_hooks/` で設定を追跡する。**「手元で動く」ことと「リポジトリに入っている」ことは別**。コミット前に、動作に必要なファイルが `git ls-files` に出るかを確認する。
+- 関連: `.gitignore`, `build/app.spec`, `.github/workflows/release.yml`
+
+## 2026-10-03 — 31.x を鍵なしで使うと、レンダリングが 3200x1800 に縮小される（NLE 用タイムライン出力は無制限）
+- やったこと/疑い: auto-editor を 31.x へ移行する際、30.0.0 のリリースノートにある「一部のリリースはライセンスキーが必要になる（FOSSIL モデル）」が、無料アプリの SnipSync の主機能を止めないかを確認した。
+- 実測（31.7.2・キー無し）: 4K(3840x2160) の **FCPXML 出力は制限なく成功**。4K の**レンダリング（メディア書き出し）は失敗せず、警告を出して 0.75 倍（2880x1620）に自動縮小**する。公式ノート 31.4.0: 単一入力のレンダリングは 3200x1800 まで、複数入力の結合は要キー（タイムライン出力も）。リポジトリは Unlicense。
+- 影響: 無料版の主機能（NLE 用タイムライン出力）は無制限。影響するのは「カット済みメディア」の 4K 超のみ。
+- 回避策 / 運用: メディア書き出しの開始前に解像度を調べて警告する（`pipeline` の `log_media_downscale`）。フル解像度が要るときはタイムライン出力を案内。**版は固定してハッシュを照合**する（今後の版でキーの要件が増える可能性があるため、`AE_VERSION` を勝手に上げない）。
+- 関連: `src/autoeditor.py`(`UNLICENSED_RENDER_MAX`), `src/pipeline.py`, `src/aebin.py`
+
+## 2026-10-03 — 31.x は同じ設定でもカット結果が変わる（`--smooth` が既定で効く）
+- やったこと: 29.3.1 と 31.7.2 を同じ素材・同じ `--margin` / `--edit audio:threshold` で比べた。
+- 何が起きたか: カット区間が 27 → 19 に減る（短すぎるカット・クリップが除かれる）。29.97fps 素材でも同様。
+- 原因: 31.x は `--smooth MINCUT,MINCLIP`（既定 0.2s,0.1s）が既定で適用される。29.3.1 には無かった。
+- 対応: 仕様変更として受け入れる（短すぎるカットが減るのは編集上は好ましい）。CHANGELOG と README に明記。前の挙動に戻したいときは `--smooth 0`（UI には出していない）。
+- 関連: `docs/handoff/verification-2026-10.md`
+
+## 2026-10-03 — 同梱の auto-editor 31.7.2 は mp3 / m4a / aac を書き出せない（`Could not open encoder`）
+- やったこと: 音声のみ入力のメディア書き出しで、拡張子ごとに書き出せるかを実測した。
+- 何が起きたか: wav / flac / ogg / opus は成功。**mp3 / m4a / aac は `Error! Could not open encoder`**。wma は成功扱いだが PCM の巨大ファイルになる。
+- 回避策: 書き出せない形式の入力は WAV で出力する（`autoeditor.AUDIO_RENDER_EXTS`、`pipeline._output_ext`）。
+- 関連: `src/autoeditor.py`, `src/pipeline.py`
+
+## 2026-10-03 — DaVinci Resolve が無料版だと、外部スクリプトで取り込み検証を自動化できない
+- やったこと: この PC の Resolve 21.1 に、スクリプト API（`DaVinciResolveScript`）で FCPXML を自動取り込みして検証しようとした。
+- 何が起きたか: Resolve を起動しても `scriptapp("Resolve")` が `None`。公式の README どおり、外部スクリプトの接続設定は **Resolve Studio のみ**（無料版は Workspace → Scripts からの内部実行だけ）。
+- 代替: 出力ファイルの内部整合性を機械的に検査する（参照切れ・クリップの連続性・範囲外・トラック長の不一致・マーカーの範囲外・`linkclipref`）。実 NLE への取り込みは人間が行う（`docs/handoff/verification-2026-10.md`）。
+- 関連: `docs/handoff/verification-2026-10.md`
+
+## 2026-10-03 — 倍速モードの境界は、版ごとにクリップ位置の丸め規則が違う（累積して丸めれば最大1フレーム）
+- やったこと: 倍速化した無音区間の長さを `(end-start)/speed`（小数）で累積して、字幕のカット境界とマーカー位置を計算した。
+- 何が起きたか: 実際の FCPXML のクリップ位置と合わない。1フレーム未満の極小の倍速区間は XML に出力されず、残る区間数も v1 の27に対し XML は23（29.3.1）。
+- 原因（実測）: **29.3.1**: クリップごとに「元のフレーム数 ÷ 倍速」を四捨五入した整数フレームにし、0 の区間は出力しない（この規則で23クリップの位置が完全に再現できた）。**31.7.2**: 同じ規則では再現できず（9.625→9、6.625→6 だが 3.625→4）、全体の長さに誤差を配分しているように見える。単純な per-chunk 丸め・累積の floor/ceil/round のどれも一致しない。
+- 回避策 / 正しい手順: 長さは**小数のまま累積し、境界ごとに四捨五入（.5 は切り上げ）でフレームへ丸める**（`subtitles.chunks_to_boundaries`、`audiocut.render_cut_audio`）。31.7.2 の XML のクリップ位置と最大1フレーム以内で一致（誤差が溜まらない）。マーカーは境界の1フレーム手前に入ったらクリップ先頭へ寄せる（`markers`）。**等速のみの場合は完全に一致**。字幕が実際のカット境界をまたがないことは実 XML で確認済み。
+- 関連: `src/subtitles.py`, `src/audiocut.py`, `src/markers.py`, `tests/test_subtitles_v2.py`
+
+## 2026-10-03 — マーカーの時刻は先にフレーム格子へ丸める（丸め済みの秒数だと直前のクリップに入る）
+- やったこと: カット境界（秒・小数6桁に丸め済み）を、そのまま FCPXML のクリップ範囲 `[offset, offset+duration)` に当てはめてマーカーを付けた。
+- 何が起きたか: クリップの境目ぴったりの境界（523/30 秒）が 17.433333 秒になり、直前のクリップの**末尾（範囲外）**に付いた。1つのクリップに「カット 8」「カット 9」が重なる。lint では見つからず、実データの XML を数えて発覚。
+- 原因: 丸め済みの秒数が、クリップ境界よりわずかに小さい。
+- 回避策 / 正しい手順: 時刻を先にフレーム格子へ丸めてから（`round(t/fd)*fd`）所属クリップを決める。検証は「全マーカーがクリップ範囲内・フレーム格子上・1クリップに複数のカット点マーカーが無い」を XML から機械的に確認する。カット点マーカーはタイムライン先頭と終端を含めない。
+- 関連: `src/markers.py`, `tests/test_transcript_markers_models.py`
+
+## 2026-10-03 — auto-editor 29.3.1 は「モノラル音声」のカット書き出しで音を壊す（字幕が誤認識された真因・31.x で修正済み）
+- やったこと: 合成した日本語2話者音声（モノラル）から、字幕用の WAV を `auto-editor -vn --mix-audio-streams` で書き出して Whisper に渡した。
+- 何が起きたか: 「こんにちは」が「ボンニティは」に。mp4 由来の WAV は言語判定すら失敗（en 0.25・字幕0件）。tiny/turbo どちらでも同じ。
+- 原因（波形の相関とエネルギーで確定）: 29.3.1 はモノラルを書き出すと、**カットなし**でも元と無相関（相関 0.003）・エネルギー半減になる。ステレオ（左右同一）は相関 1.000 で正常。`-layout stereo` は mp4 では形が戻るが左チャンネルのみ、WAV では直らない。`--margin` / `-tb` / `-ar` / `-c:a` を変えても直らない。`_tracks/*.wav` の書き出しと NLE 用タイムライン出力は影響なし。
+- **解決**: 31.7.2 で修正済み（モノラル WAV 相関 1.000、モノラル mp4 は 6 秒以降 1.000・エネルギー比 0.993〜0.998）。SnipSync は 31.7.2 へ移行した。
+- やりがちな失敗: 認識結果だけを見て「モデルが小さい」「TTS が不自然」と判断し、モデルを大きくする。まず元音声と出力音声の**相関・エネルギー**を直接比べる。
+- 運用: 字幕用のカット後音声は、版に依存せず・音声の再レンダリングが不要になるため、**v1 chunks から自前で組み立てる方式を維持**（`audiocut.render_cut_audio`）。メディア書き出しは 31.x でモノラルも正しいので auto-editor に任せる（29.x 用に作った音声合成の回避策は削除した）。
+- 関連: `src/audiocut.py`, `src/pipeline.py`(2a), MEMORY 2026-10-03
+
+## 2026-10-03 — kotoba-whisper-v2.0-faster で単語時刻を有効にするとプロセスごと落ちる（セグメンテーション違反）
+- やったこと: 日本語特化の `kotoba-tech/kotoba-whisper-v2.0-faster` を faster-whisper で `word_timestamps=True` にして実行（カット整合字幕は単語時刻が必須）。
+- 何が起きたか: Python の例外ではなく**プロセスが異常終了**（終了コード 139）。`word_timestamps=False` なら正常。tiny で同条件にすると正常（対照実験）。
+- 原因: 配布 config の `alignment_heads` が large-v3（デコーダ32層）の番号（7〜25層目）のままだが、kotoba は2層に蒸留してあり存在しない層を指す。CTranslate2 が範囲外参照で落ちる。
+- 回避策 / 正しい手順: 蒸留元と同型の distil-large-v3 と同じ `[[1, 0..19]]` に config を補正する（`models.patch_alignment_heads`）。専用フォルダへ取得して補正（`prepare_model`）。補正後は単語時刻つきで動くが、単語時刻が粗く短い字幕に細かく割れるため「実験的」扱い。カット整合字幕には large-v3-turbo を推奨。
+- 関連: `src/models.py`, `tests/test_transcript_markers_models.py`
+
+## 2026-10-03 — PyAV 19 系だと faster-whisper 1.2.1 の `decode_audio` が落ちる
+- やったこと: 新規環境で `pip install faster-whisper` → PyAV の最新（19.0.1）が入った。
+- 何が起きたか: `TypeError: open() got an unexpected keyword argument 'metadata_errors'`（`decode_audio`）。
+- 原因: faster-whisper 1.2.1 は `av` の上限を指定しておらず、新しい PyAV で引数が無くなっている。`requirements.txt`（フリーズ）は `av==17.0.1` で、`pyproject.toml` に指定が無かったため新規導入で再現する。
+- 回避策 / 正しい手順: `pyproject.toml` に `av>=17,<18` を明記（17.0.1 で動作確認）。
+- 関連: `pyproject.toml`
+
+## 2026-10-03 — v1 export の `-tb` を整数に丸めると 29.97fps で NLE の格子とずれる
+- やったこと: `probe_fps` の値（29.97）を `str(int(round(tb)))` で `-tb 30` にして v1 JSON を作り、字幕のカット境界を計算していた（カット整合字幕の初期実装）。
+- 何が起きたか: 実測で `-tb 30` と `-tb 30000/1001` ではカット位置のフレームが変わる（例: 31 と 32）。NLE のタイムラインは 30000/1001 なので、境界が最大1フレームずつずれ、カットが多いほど累積する。
+- 原因: タイムベースの丸め。`-tb` は有理数（`30000/1001`）を受け付ける。
+- 回避策 / 正しい手順: `autoeditor.format_timebase` で有理数のまま渡す（`Fraction(...).limit_denominator(1001)`）。
+- 関連: `src/autoeditor.py`, `tests/test_autoeditor.py`
+
+## 2026-10-03 — auto-editor 公式サイトのフラグ名は 29.3.1 に存在しない（版を手元で確認せよ）
+- やったこと: 公式サイト（auto-editor.com）の `--when-inactive` / `--cut` を使って倍速化と区間指定を実装しようとした。
+- 何が起きたか: `Error! Unknown option: --when-inactive`。
+- 原因: 公式サイトは新しい版（GitHub は 31.x）の記述。PyPI の `auto-editor` は 29.3.1 で止まっており、`--help` の実フラグは `--when-silent` / `--cut-out`。Windows 版バイナリの資産名も `auto-editor-windows-amd64.exe`（29.x）から `auto-editor-windows-x86_64.exe`（30 以降）に変わっている。
+- 回避策 / 正しい手順: 固定している版の `--help` と実バイナリで必ず確認する。フラグ名は `autoeditor.py` の冒頭に注記した。移行時はここを直す。**→ 2026-10-03 に 31.7.2 へ移行し、`--when-inactive` を使う**（`--when-silent` も別名として残っているが正式名を使う）。
+- 関連: `src/autoeditor.py`
+
+## 2026-10-03 — `--cut-out` は1回に1区間しか取れない → v1 JSON を入力にする
+- やったこと: VAD で得た多数の無音区間を `--cut-out 2sec,4sec 10sec,12sec` のように渡そうとした。
+- 何が起きたか: `Input file must have an extension: 10sec,12sec`（空白区切りは入力ファイル扱い）。1区間を超えるカンマ連結は `--cut-out has too many arguments`。繰り返し指定も期待どおりにならない。
+- 原因: 29.x の引数仕様。
+- 回避策 / 正しい手順: auto-editor は v1 JSON を**入力**として受け取れる。直接実行と同じ出力になる（29.3.1 は Premiere XML が1バイトも違わず、FCPXML は複数トラックで名前だけ差があった。**31.7.2 は Premiere / Resolve / Final Cut Pro の全形式・複数トラック・29.97fps で完全一致**を実測）。区間を v1 JSON に書いて渡す（`vad.write_v1` → `build_cut_cmd_from_chunks`）。31.x の `--cut` は引数仕様が変わったが、この経路は変わらない。
+- 関連: `src/vad.py`, `src/autoeditor.py`, `src/pipeline.py`
+
+## 2026-10-03 — 「呼び出し回数 N 回目で停止」型のテストは、呼び出し順を変えると壊れる
+- やったこと: 字幕用音声の組み立て方を変え、auto-editor の呼び出し順が変わった。
+- 何が起きたか: `test_pipeline_should_stop` が失敗。`should_stop()` を数えて「8回目で停止」としていたため、停止が意図より早く発火した。
+- 原因: テストが実装の呼び出し回数に結合していた。
+- 回避策 / 正しい手順: 意図（文字起こしが済んだ後、2つ目の字幕を書く前に停止）を状態で表す。呼び出し回数でタイミングを指定しない。
+- 関連: `tests/test_pipeline.py`
+
 ## 2026-06-20 — 「字幕切替えがカットに乗らない」をリグレッションと決めつけて追うな（margin由来の恒常仕様）
 - やったこと/疑い: ユーザーが「映像カットと字幕切替えが一致しない。v1.0.0では揃っていた」と報告→ 直近の fcpxml reorder/relocate 改修を疑い、コード変更起点のリグレッションとして調査を開始しがち。
 - 何が起きたか/真相: 実測で**コード由来のリグレッションは無かった**。v1.0.0 と現行は字幕SRT時刻もカットoffset集合もバイト等価（差はwhisper実行ゆらぎ≤40ms）。ズレの正体は **auto-editor が発話前後に margin(0.2s) を残してカット**するため、whisper がカット音声の**発話部分**を字幕化すると字幕境界がクリップ境界から**margin分内側**に入る恒常現象。実測差 +0.20s = margin そのもの。v1.0.0 でも同じだけズレていた。

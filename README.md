@@ -9,7 +9,7 @@
 [![auto-editor](https://img.shields.io/badge/Engine-auto--editor-FF6B6B?style=for-the-badge)](https://github.com/WyattBlue/auto-editor)
 [![License](https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Windows-0078D4?style=for-the-badge&logo=windows&logoColor=white)](https://www.microsoft.com/windows)
-[![Version](https://img.shields.io/badge/Version-v1.0.0-success?style=for-the-badge)](https://github.com/R3NeR3N/SnipSync/releases/latest)
+[![Version](https://img.shields.io/badge/Version-v0.2.0-success?style=for-the-badge)](https://github.com/R3NeR3N/SnipSync/releases/latest)
 
 [English](README.md) | [日本語](README_JA.md) | [简体中文](README_ZH.md) | [한국어](README_KO.md)
 
@@ -43,6 +43,13 @@ No Python installation required. SnipSync ships as a single `.exe` file.
 | 🌐 **Multilingual UI** | Full Japanese / English interface switchable at runtime |
 | 📁 **Drag & Drop** | Simply drag your video file onto the app window |
 | 📦 **Zero Setup** | Ships as a single `.exe` — no Python, no dependencies to install |
+| 🎙 **Voice-Activity Cut** | Choose volume threshold or speech detection (Silero VAD); optionally speed silence up instead of cutting |
+| 〰 **Waveform Preview** | See exactly what will be cut before you process |
+| 🧩 **Batch & Audio Files** | Drop several files or a folder; audio-only inputs and cut-media export supported |
+| 🈶 **Readable Subtitles** | Japanese phrase-aware line breaks (BudouX), glossary hints, optional speaker separation |
+| 📄 **Transcript Export** | Preview and save the whole transcript as `.txt` / `.md` / `.srt` |
+| 📍 **Timeline Markers** | Optional cut-point / speaker-change markers (not yet verified in a real NLE) |
+| 🤖 **More Models** | large-v3-turbo, large-v3, kotoba-whisper (experimental), distil-large-v3 (English only) |
 
 ### Supported Export Formats
 
@@ -54,99 +61,137 @@ No Python installation required. SnipSync ships as a single `.exe` file.
 
 ### Supported Input Formats
 
-`.mp4` · `.mov` · `.avi` · `.mkv` · `.wmv` · `.flv` · `.webm` · `.m4v`
+`.mp4` · `.mov` · `.avi` · `.mkv` · `.wmv` · `.flv` · `.webm` · `.m4v` · audio: `.wav` · `.mp3` · `.m4a` · `.flac` · `.aac` · `.ogg` · `.opus` · `.wma`
 
 ---
 
-## 🚀 Installation / Usage
+## 🚀 Installation
 
 ### Option A: Run the Pre-built EXE (Recommended)
 
-> No Python or any other software needed.
+> No Python, FFmpeg, or any other software needed.
 
 1. Download `SnipSync.exe` from the [Releases](https://github.com/R3NeR3N/SnipSync/releases/latest) page.
 2. Place it anywhere on your PC (e.g., your Desktop).
 3. Double-click `SnipSync.exe` to launch.
 
-**First-time Whisper model download:**
-When you first enable subtitle generation, the selected AI model will be downloaded automatically from Hugging Face. Ensure you have an internet connection for this step. The model is cached locally for all subsequent uses.
+**First-run downloads** (internet required, once only):
 
-> **💡 Model Cache Location & Removal**
-> The downloaded models are NOT stored next to the `.exe` file. Instead, they are cached in your system's user directory:
-> `C:\Users\<YourUsername>\.cache\huggingface\hub`
+| What | When | Size |
+|---|---|---|
+| Whisper model | The first time you generate subtitles with that model | `tiny` 0.08 GB · `base` 0.15 GB · `small` 0.49 GB · `medium` 1.5 GB · `large-v3-turbo` 1.6 GB · `large-v3` 3.1 GB · `distil-large-v3` 1.5 GB · `kotoba-whisper` 1.5 GB |
+| Speaker-separation models | The first time you turn on **Separate speakers** | about 35 MB |
+
+> **💡 Where things are stored (and how to remove them)**
+> - Whisper models: `C:\Users\<YourUsername>\.cache\huggingface\hub`
+> - kotoba-whisper, speaker-separation models, presets: `%APPDATA%\SnipSync`
 >
-> If you decide to uninstall or stop using SnipSync, deleting the `.exe` file will not remove these models. To free up disk space (models can be several GBs), you can safely delete that folder manually.
+> Deleting `SnipSync.exe` does not remove them. To free disk space, delete those folders manually.
 
 ---
 
-### Option B: Run from Source (Python Environment)
+### Option B: Run from Source
 
 #### Prerequisites
 
-- Python **3.10 or later**
-- [FFmpeg](https://ffmpeg.org/download.html) installed and accessible from your `PATH`
+- Windows 10 / 11 (64-bit)
+- [uv](https://docs.astral.sh/uv/) (it manages Python for you). FFmpeg is **not** required.
 
-#### Step 1 — Clone the repository
+#### Steps (PowerShell)
 
-```bash
+```powershell
 git clone https://github.com/R3NeR3N/SnipSync.git
 cd SnipSync
+uv venv .venv --python 3.13
+uv pip install --python .venv\Scripts\python.exe -e ".[dev]"
+.venv\Scripts\python.exe src\app.py
 ```
 
-#### Step 2 — Create and activate a virtual environment
-
-```bash
-python -m venv venv
-# Windows (PowerShell)
-.\venv\Scripts\Activate.ps1
-# Windows (Command Prompt)
-venv\Scripts\activate.bat
-```
-
-#### Step 3 — Install dependencies
-
-```bash
-pip install auto-editor faster-whisper customtkinter tkinterdnd2
-```
-
-#### Step 4 — Run the application
-
-```bash
-python src/app.py
-```
+The first run downloads auto-editor 31.7.2 (about 45 MB) from its official GitHub release and verifies its SHA-256 before using it.
 
 ---
 
 ### Option C: Build the EXE yourself (PyInstaller)
 
-#### Step 1 — Install build dependencies
-
-```bash
-pip install pyinstaller
+```powershell
+uv pip install --python .venv\Scripts\python.exe -e ".[build]"
+.venv\Scripts\python.exe scripts\fetch_auto_editor.py   # bundles auto-editor (SHA-256 verified)
+.venv\Scripts\python.exe -m PyInstaller build\app.spec
 ```
 
-#### Step 2 — Build
-
-```bash
-pyinstaller build/app.spec
-```
-
-The standalone executable will be output to `dist\SnipSync.exe`.
+The standalone executable is written to `dist\SnipSync.exe`.
 
 ---
 
 ## ⚙️ How to Use
 
-1. **Launch** `SnipSync.exe` (or run `python app.py`).
-2. **Drop** your video file into the drop zone, or click to browse.
-3. **Configure** your settings:
-   - **Silence Margin** — Extra buffer kept around each cut point (default: `0.20 sec`)
-   - **Volume Threshold** — Audio level below which a segment is considered silent (default: `4.0%`)
-   - **Export Format** — Choose your NLE (DaVinci Resolve, Final Cut Pro, or Premiere Pro)
-   - **Generate .srt** — Toggle AI subtitle generation on/off
-   - **AI Model Size** — Balance between speed and accuracy (`tiny` → `medium`)
-4. **Click** `▶ Start Processing`.
-5. When done, the app will prompt you to open the output folder. Your `_snipsynced.fcpxml` (or `.xml`) and `.srt` files will be ready to import.
+### Quick start
+
+1. **Launch** `SnipSync.exe`.
+2. **Drop** one or more video/audio files (or a folder) onto the drop zone, or click it to browse.
+3. Pick an **Export Format**, then click **▶ Start Processing**.
+4. Import the generated files into your editor (see [Importing into your editor](#importing-into-your-editor)).
+
+Outputs are written next to each input file (or to the folder you choose):
+
+| File | What it is |
+|---|---|
+| `<name>_snipsynced.fcpxml` / `.xml` | The cut timeline (plus a `<name>_tracks` folder for multi-track audio — keep it next to the `.fcpxml`) |
+| `<name>_snipsynced.mp4` / `.wav` … | Cut media, when the export format is *Cut media* |
+| `<name>.srt` | Subtitles |
+| `<name>.txt` / `<name>.md` | Whole transcript, if you ticked them |
+
+### Settings
+
+| Setting | What it does |
+|---|---|
+| **Silence Margin** | Extra time kept around speech at each cut (default `0.20 s`) |
+| **Volume Threshold** | Level below which sound counts as silence (default `4.0 %`). Not used by *Voice detection* |
+| **Cut Method** | *Volume threshold*, or *Voice detection (VAD)* — cuts everything that is not a human voice, so it usually copes better with background noise |
+| **Silence** | *Cut out* removes silence; *Speed up* keeps it but plays it at the speed you set (default ×8) |
+| **Export Format** | DaVinci Resolve, Premiere Pro, Final Cut Pro, or *Cut media* (a rendered video/audio file) |
+| **Subtitles** | Generate `.srt` with Whisper |
+| **AI Model Size** | `tiny`/`base`/`small` are fast; **`large-v3-turbo` is the recommended accurate model**; `kotoba-whisper` is Japanese-specialised but experimental (its word timing is coarse); `distil-large-v3` is English only |
+| **Use GPU (CUDA)** | Optional. Needs an NVIDIA GPU with CUDA 12 and cuDNN 9 |
+| **Split subtitles at cut boundaries** | Starts a new subtitle at every cut, so subtitles line up with your clips |
+| **Chars per subtitle line** | Wraps Japanese at natural phrase boundaries (BudouX) and keeps each subtitle to 2 lines. `0` turns it off (default `20`) |
+| **Separate speakers** | Labels who is speaking (`Speaker 1: …`) and starts a new subtitle when the speaker changes. Set **Speakers** if you know how many people there are |
+| **Also write .txt / .md** | Saves the whole transcript (with speakers and timestamps) next to the subtitles |
+| **Add markers** | Adds markers for every cut and every speaker change to the timeline *(experimental — see notes)* |
+| **Glossary** | Comma-separated terms (names, product names) that Whisper should prefer |
+| **Preset** | Save and load a whole set of settings. Your last settings are restored on launch |
+
+### Preview before you commit
+
+- **〰 Waveform Preview** — shows the waveform with the parts that will be removed in red (sped-up parts in orange), plus the new length. Change the margin/threshold or cut method, then press **Recalculate**.
+- **📄 Subtitle Preview** — shows the whole transcript as `.txt`, `.md` or `.srt`. You can copy it, save it, or open any existing `.srt` file to read or export it.
+
+### Recipes
+
+- **Talking-head video → DaVinci Resolve with subtitles**: Export Format *DaVinci Resolve*, Subtitles on, model `large-v3-turbo`. Import the `.fcpxml`, then the `.srt`.
+- **Interview or podcast with several people**: tick **Separate speakers** (set **Speakers** if you know the count) and **Also write .md**. You get speaker-labelled subtitles and a readable transcript.
+- **Noisy room or background music**: set **Cut Method** to *Voice detection (VAD)*.
+- **Keep the pauses but make them fast**: set **Silence** to *Speed up*.
+- **A pile of recordings**: drop the whole folder. The AI model is loaded once and reused.
+- **Just need a clean audio file**: drop a `.wav` / `.m4a` / `.mp3`, choose *Cut media*. You get a `.wav` (see notes).
+
+### Importing into your editor
+
+Menu names can differ slightly between versions.
+
+| Editor | Timeline | Subtitles |
+|---|---|---|
+| DaVinci Resolve | File → Import → Timeline… → choose the `.fcpxml` | File → Import → Subtitle…, or drag the `.srt` onto the timeline |
+| Premiere Pro | File → Import → choose the `.xml` | Import the `.srt` and drag it onto the sequence |
+| Final Cut Pro | File → Import → XML… → choose the `.fcpxml` | File → Import → Captions… |
+
+### Notes
+
+- **Cut media export at 4K**: the bundled auto-editor (no license key) scales rendered output down to 3200×1800 or less. SnipSync warns you before it starts. **Timeline exports are not affected** — use them for full-resolution work.
+- **Audio-only cut media** is written as `.wav` / `.flac` / `.ogg` / `.opus`. `.mp3`, `.m4a`, `.aac` and `.wma` are written as `.wav` because the bundled auto-editor has no encoder for them.
+- **Markers** are experimental: they have not yet been verified by importing into every editor.
+- **Cuts differ from SnipSync 0.1.0**: the newer auto-editor also removes cuts and clips that are too short (`--smooth`), so you will see fewer, longer cuts.
+- Subtitles start at the first spoken word, so each subtitle begins a little after the start of its clip. This is expected (the margin is kept silent).
 
 ---
 
@@ -154,19 +199,22 @@ The standalone executable will be output to `dist\SnipSync.exe`.
 
 ### Runtime (EXE users)
 - **OS:** Windows 10 / 11 (64-bit)
-- **RAM:** 4 GB minimum; 8 GB+ recommended for `medium` model
-- **Disk:** ~2–4 GB free space for Whisper model cache (first run only)
-- **Internet:** Required only on first run to download the selected Whisper model
-- **GPU:** (Optional) NVIDIA GPU with CUDA 12 and cuDNN 9 installed on your system PATH is required to use GPU acceleration. GPU binaries are NOT bundled in the EXE.
+- **RAM:** 4 GB minimum; 8 GB+ recommended for `medium` and larger models
+- **Disk:** about 0.1–3 GB for the Whisper model you choose (first run only)
+- **Internet:** Only for first-run downloads (Whisper models, speaker-separation models)
+- **GPU:** (Optional) NVIDIA GPU with CUDA 12 and cuDNN 9 on your system PATH. GPU libraries are NOT bundled in the EXE.
 
-### Development (Source users)
+### Development (source users)
 
 | Package | Purpose |
 |---|---|
-| `auto-editor` | Silent cut detection & NLE XML export engine |
-| `faster-whisper` | AI speech-to-text transcription (CTranslate2 backend) |
-| `customtkinter` | Modern dark-theme GUI framework |
-| `tkinterdnd2` | Drag-and-drop support for the file drop zone |
+| auto-editor 31.x *(official binary, fetched and verified by `src/aebin.py`)* | Silence/voice cut engine & NLE export |
+| `faster-whisper` | AI speech-to-text (CTranslate2) and Silero VAD |
+| `sherpa-onnx` | Speaker separation |
+| `budoux` | Japanese phrase-aware line breaks |
+| `defusedxml` | Safe XML parsing |
+| `av` · `numpy` | Audio decoding and processing |
+| `customtkinter` · `tkinterdnd2` | GUI and drag-and-drop |
 | `pyinstaller` | *(Build only)* Packages the app into a single `.exe` |
 
 ---
@@ -177,7 +225,7 @@ This project is licensed under the **MIT License**.
 
 > **Disclaimer:** SnipSync is provided "as-is" without any warranty. The author is not responsible for any data loss, file corruption, or other issues arising from the use of this software. Always keep backups of your original source footage.
 
-> SnipSync internally uses [auto-editor](https://github.com/WyattBlue/auto-editor) (MIT) and [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (MIT). Please refer to each project for their respective licenses.
+> SnipSync uses [auto-editor](https://github.com/WyattBlue/auto-editor) (Unlicense; the official binary limits *rendered* output to 3200×1800 without a license key, timeline exports are unaffected), [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (MIT), [BudouX](https://github.com/google/budoux) (Apache-2.0) and [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) (Apache-2.0). Models: Whisper (MIT), kotoba-whisper (MIT), pyannote segmentation-3.0 ONNX (MIT), 3D-Speaker CAM++ (Apache-2.0). Please refer to each project for their respective licenses.
 
 ---
 
