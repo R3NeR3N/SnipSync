@@ -24,7 +24,7 @@
 
   // ffmpeg = auto-editor runtime prerequisite (CONTEXT.md §7); python3-tk = Tk
   // backend so customtkinter imports under test.
-  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg python3-tk && python -m pip install --upgrade pip ruff pytest customtkinter",
+  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg python3-tk && python -m pip install --upgrade pip ruff pytest customtkinter numpy budoux defusedxml",
 
   "customizations": {
     "vscode": {
