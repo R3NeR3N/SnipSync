@@ -346,3 +346,70 @@ def test_without_hold_subtitles_files_are_written_as_before(dirs, monkeypatch):
                  transcribe=_transcribe_two_speakers)
     assert (out / "input.srt").exists() and (out / "input.txt").exists()
     assert res.pending_paths == {}
+
+
+# ── 文字起こしの途中停止と進捗 ──────────────────────────────────────────────────
+
+def _lazy_transcribe(counter, n=50):
+    def gen():
+        for i in range(n):
+            counter["pulled"] = i + 1
+            yield DummySegment(i * 1.0, i * 1.0 + 0.9, f"文{i}")
+    return lambda wav, size: (gen(), type("I", (), {"language": "ja", "language_probability": 1.0, "duration": float(n)})())
+
+
+def test_stop_during_transcription_is_honored_per_segment_and_leaves_no_partial_srt(dirs, monkeypatch):
+    inp, out = dirs
+    monkeypatch.setattr(pl, "probe_fps", lambda p: 10.0)
+    counter = {"pulled": 0}
+    stop = {"now": False}
+
+    def should_stop():
+        stop["now"] = stop["now"] or counter["pulled"] >= 3          # 3 つ目を受け取ったら「停止」が押された
+        return stop["now"]
+
+    monkeypatch.setattr(subprocess, "Popen", make_mock_popen(stdout_lines=["x"], write_output=Recorder(v1_chunks=[[0, 60, 1.0]])))
+    logs = []
+    res = pl.run_pipeline("ae", inp, out, base_params(do_srt=True, snap_srt=False),
+                          on_log=lambda m, lvl="": logs.append((m, lvl)), should_stop=should_stop, tr=stub_tr,
+                          transcribe=_lazy_transcribe(counter))
+    assert res.stopped and res.srt_path is None
+    assert counter["pulled"] == 3                                     # 残りの 47 件を待たずに止まる
+    assert not list(out.glob("*.srt"))
+    assert any(m == "log_stopped" for m, _ in logs) and not any("log_unexpected" in m for m, _ in logs)
+
+
+def test_transcription_progress_is_reported_in_seconds_and_closed(dirs, monkeypatch):
+    inp, out = dirs
+    monkeypatch.setattr(pl, "probe_fps", lambda p: 10.0)
+    seen = []
+    monkeypatch.setattr(subprocess, "Popen", make_mock_popen(stdout_lines=["x"], write_output=Recorder(v1_chunks=[[0, 60, 1.0]])))
+    res = pl.run_pipeline("ae", inp, out, base_params(do_srt=True, snap_srt=False),
+                          on_log=lambda m, lvl="": None, should_stop=lambda: False, tr=stub_tr,
+                          transcribe=_lazy_transcribe({"pulled": 0}, n=5),
+                          on_progress=lambda kind, d, t: seen.append((kind, d, t)))
+    assert res.ok and res.srt_path
+    assert seen[0] == ("transcribe", 0.9, 5.0) and ("transcribe", 4.9, 5.0) in seen
+    assert seen[-1] == ("transcribe", None, None)
+
+
+def test_gpu_failure_falls_back_to_cpu_and_the_log_says_why(dirs, monkeypatch):
+    inp, out = dirs
+    monkeypatch.setattr(pl, "probe_fps", lambda p: 10.0)
+    monkeypatch.setattr(pl, "resolve_device", lambda use_gpu: ("cuda", "int8_float16"))
+    monkeypatch.setattr(pl, "add_cuda_dll_dirs", lambda: None)
+    calls = []
+
+    def transcribe(wav, size):
+        calls.append(1)
+        if len(calls) == 1:
+            raise RuntimeError("Library cublas64_12.dll is not found or cannot be loaded")
+        return iter([DummySegment(0, 1, "ok")]), type("I", (), {"language": "ja", "language_probability": 1.0, "duration": 1.0})()
+
+    monkeypatch.setattr(subprocess, "Popen", make_mock_popen(stdout_lines=["x"], write_output=Recorder(v1_chunks=[[0, 60, 1.0]])))
+    logs = []
+    res = pl.run_pipeline("ae", inp, out, base_params(do_srt=True, snap_srt=False, use_gpu=True),
+                          on_log=lambda m, lvl="": logs.append((m, lvl)), should_stop=lambda: False, tr=stub_tr,
+                          transcribe=transcribe)
+    assert res.ok and res.srt_path and len(calls) == 2
+    assert any(m.startswith("log_gpu_fallback:") and "cublas64_12.dll" in m for m, _ in logs)

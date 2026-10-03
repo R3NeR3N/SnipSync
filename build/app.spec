@@ -57,7 +57,7 @@ all_hiddenimports = [
     'tqdm',
     'numpy',
     'vad', 'audiocut', 'diarize', 'models', 'markers', 'transcript', 'waveform', 'aebin',
-    'theme', 'widgets', 'preview', 'subtitle_edit', 'subtitle_editor', 'player',
+    'theme', 'widgets', 'preview', 'subtitle_edit', 'subtitle_editor', 'player', 'cudalibs',
 ] + (fw_hiddenimports + ct_hiddenimports + tk_hiddenimports + av_hiddenimports + tr_hiddenimports
       + bx_hiddenimports + sh_hiddenimports + sd_hiddenimports + sdd_hiddenimports)
 

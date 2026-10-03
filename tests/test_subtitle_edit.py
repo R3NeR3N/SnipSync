@@ -134,3 +134,163 @@ def test_save_writes_each_format_and_srt_roundtrips(tmp_path):
         assert "お願いいたします。" in (tmp_path / f"out.{ext}").read_text(encoding="utf-8")
     back = parse_srt((tmp_path / "out.srt").read_text(encoding="utf-8"))
     assert [(c.start, c.end) for c in back] == [(0.0, 2.0), (2.0, 6.0), (6.5, 8.0)]
+
+
+# ── 元に戻す・やり直す、結合・分割のあとの「最初に戻す」、話者名 ─────────────────────────
+def texts(ed):
+    return [c.text for c in ed.cues]
+
+
+def test_revert_after_merge_restores_both_original_cues():
+    ed = CueEditor(sample())
+    ed.merge_next(0)
+    assert len(ed) == 2 and ed.is_changed(0)
+    assert ed.revert(0) is True
+    assert texts(ed) == ["こんにちは、", "今日は説明します。", "お願いします。"]
+    assert [(c.start, c.end) for c in ed.cues] == [(0.0, 2.0), (2.0, 6.0), (6.5, 8.0)]
+    assert not any(ed.is_changed(i) for i in range(3))
+    assert ed.revert(0) is False
+
+
+def test_revert_after_merge_and_text_edit_still_restores():
+    ed = CueEditor(sample())
+    ed.merge_next(0)
+    ed.set_text(0, "ぜんぶ書き換えた")
+    ed.revert(0)
+    assert texts(ed) == ["こんにちは、", "今日は説明します。", "お願いします。"]
+
+
+def test_revert_after_split_joins_the_pieces_back():
+    ed = CueEditor(sample())
+    ed.split(1, 3)
+    assert len(ed) == 4 and ed.is_changed(1) and ed.is_changed(2)
+    ed.revert(2)                                     # どちらの片方からでも
+    assert texts(ed) == ["こんにちは、", "今日は説明します。", "お願いします。"]
+    assert (ed.cue(1).start, ed.cue(1).end) == (2.0, 6.0)
+
+
+def test_revert_a_merged_cue_in_the_middle_leaves_the_others_alone():
+    ed = CueEditor(sample())
+    ed.set_text(2, "別の編集")
+    ed.merge_next(0)                                 # 0+1 を結合。2 は編集済み
+    ed.revert(0)
+    assert texts(ed) == ["こんにちは、", "今日は説明します。", "別の編集"]
+
+
+def test_revert_also_restores_the_speaker():
+    ed = CueEditor(sample())
+    ed.set_speaker(2, 0)
+    assert ed.is_changed(2)
+    ed.revert(2)
+    assert ed.cue(2).speaker == 1
+
+
+def test_undo_and_redo_text_edit_with_typing_grouped_into_one_step():
+    ed = CueEditor(sample())
+    for t in ("あ", "あい", "あいう"):                # 1文字ずつ打つ
+        ed.set_text(0, t)
+    assert len(ed._undo) == 1
+    assert ed.undo() is True and ed.cue(0).text == "こんにちは、" and not ed.dirty
+    assert ed.redo() is True and ed.cue(0).text == "あいう" and ed.dirty
+    assert ed.redo() is False
+
+
+def test_typing_in_another_cue_or_after_a_break_is_a_separate_step():
+    ed = CueEditor(sample())
+    ed.set_text(0, "a")
+    ed.set_text(1, "b")
+    assert len(ed._undo) == 2
+    ed.end_typing()
+    ed.set_text(1, "bb")
+    assert len(ed._undo) == 3
+
+
+@pytest.mark.parametrize("do", [
+    lambda ed: ed.merge_next(0),
+    lambda ed: ed.split(1, 3),
+    lambda ed: ed.delete(1),
+    lambda ed: ed.set_speaker(0, 1),
+    lambda ed: ed.set_speakers([0, 1, 2], None),
+    lambda ed: ed.rename_speaker(0, "山田"),
+    lambda ed: (ed.merge_next(0), ed.set_text(0, "x"), ed.end_typing(), ed.split(0, 1)),
+])
+def test_every_operation_can_be_undone_and_redone(do):
+    ed = CueEditor(sample())
+    before = ed._state()
+    do(ed)
+    after = ed._state()
+    assert after != before
+    while ed.can_undo:
+        ed.undo()
+    assert ed._state() == before and not ed.dirty
+    while ed.can_redo:
+        ed.redo()
+    assert ed._state() == after
+
+
+def test_a_new_edit_after_undo_discards_the_redo_history():
+    ed = CueEditor(sample())
+    ed.set_speaker(0, 1)
+    ed.undo()
+    assert ed.can_redo
+    ed.delete(0)
+    assert not ed.can_redo
+
+
+def test_dirty_follows_the_saved_state_through_undo():
+    ed = CueEditor(sample())
+    ed.delete(0)
+    ed.mark_saved()
+    assert not ed.dirty
+    ed.undo()                                        # 保存したあとで元に戻すと、保存済みの内容と違う
+    assert ed.dirty
+    ed.redo()
+    assert not ed.dirty
+
+
+def test_set_speakers_changes_many_at_once_as_one_undo_step():
+    ed = CueEditor(sample())
+    assert ed.set_speakers([0, 1, 2], 3) is True
+    assert [c.speaker for c in ed.cues] == [3, 3, 3]
+    assert ed.set_speakers([0, 1, 2], 3) is False     # 変わらない
+    assert len(ed._undo) == 1
+    ed.undo()
+    assert [c.speaker for c in ed.cues] == [0, 0, 1]
+
+
+def test_set_speakers_skips_cues_that_already_have_it():
+    ed = CueEditor(sample())
+    assert ed.set_speakers([0, 1], 0) is False
+
+
+def test_rename_speaker_applies_to_every_cue_of_that_speaker_in_all_outputs():
+    ed = CueEditor(sample())
+    assert ed.rename_speaker(0, "  山田  ") is True and ed.names == {0: "山田"}
+    srt = render(ed.cues, "srt", names=ed.names)
+    assert "山田：こんにちは、" in srt and "山田：今日は説明します。" in srt and "話者2：お願いします。" in srt
+    assert "山田：" in render(ed.cues, "txt", names=ed.names)
+    md = render(ed.cues, "md", title="t", names=ed.names)
+    assert "## 山田" in md and "- 話者: 山田、話者2" in md
+    assert ed.rename_speaker(0, "山田") is False
+    assert ed.rename_speaker(0, "") is True and ed.names == {}        # 空にすると「話者N」に戻る
+    assert "話者1：" in render(ed.cues, "srt", names=ed.names)
+
+
+def test_speaker_name_falls_back_to_the_default():
+    ed = CueEditor(sample())
+    assert ed.speaker_name(0, "話者1") == "話者1" and ed.speaker_name(None, "x") == ""
+    ed.rename_speaker(0, "A")
+    assert ed.speaker_name(0, "話者1") == "A"
+
+
+def test_english_labels_use_custom_names_too():
+    ed = CueEditor(sample())
+    ed.rename_speaker(1, "Bob")
+    assert "Bob: お願いします。" in render(ed.cues, "srt", ui_lang="en", names=ed.names)
+
+
+def test_save_uses_the_names(tmp_path):
+    ed = CueEditor(sample())
+    ed.rename_speaker(0, "山田")
+    save(ed.cues, tmp_path / "o.srt", names=ed.names)
+    assert "山田：" in (tmp_path / "o.srt").read_text(encoding="utf-8")

@@ -302,13 +302,13 @@ def test_speed_choices_go_up_to_four_times(app):
 
 def test_model_download_progress_shows_a_bar_and_hides_it_at_the_end(app):
     assert not app.dl_bar.winfo_manager()
-    app._on_model_progress(0, 0)
-    app._on_model_progress(300_000_000, 1_500_000_000)
+    app._on_progress("model", 0, 0)
+    app._on_progress("model", 300_000_000, 1_500_000_000)
     pump(app, 3)
     assert app.dl_bar.winfo_manager() and app.dl_bar.get() == pytest.approx(0.2)
     text = app.dl_text.cget("text")
     assert "300" in text and "1500" in text and "20%" in text
-    app._on_model_progress(None, None)
+    app._on_progress("model", None, None)
     pump(app, 3)
     assert not app.dl_bar.winfo_manager() and not app.dl_text.winfo_manager()
 
@@ -330,3 +330,179 @@ def test_open_model_folder_opens_the_folder_of_the_selected_model(app, tmp_path,
     app._open_model_folder()
     assert opened[-1] == tmp_path / "SnipSync" / "models" / "kotoba"
     app.model_key = "small"
+
+
+def _open_plain_editor(app):
+    app.last_cues, app.last_title = list(CUES), "demo"
+    app._open_editor()
+    pump(app, 10)
+    return app.editor_win
+
+
+def test_several_rows_can_be_selected_and_their_speaker_changed_together(app):
+    ed = _open_plain_editor(app)
+    ed.tree.selection_set("0", "1", "2")
+    ed._on_select()
+    pump(app)
+    assert ed._sel is None and ed._sels == [0, 1, 2]
+    assert str(ed.text._textbox.cget("state")) == "disabled"        # 本文は1件ずつ
+    assert ed.speaker_var.get() == app.t("ed_speaker_mixed")         # 話者がばらばら
+    ed._on_speaker(app.t("ed_speaker_n", 2))
+    assert [c.speaker for c in ed.editor.cues] == [1, 1, 1]
+    assert ed.speaker_var.get() == app.t("ed_speaker_n", 2)
+    ed.undo()
+    assert [c.speaker for c in ed.editor.cues] == [0, 1, 0]            # 1回で、まとめて元に戻る
+
+
+def test_speaker_can_be_renamed_and_the_name_shows_in_the_table_and_the_output(app):
+    ed = _open_plain_editor(app)
+    ed.tree.selection_set("0")
+    ed._on_select()
+    pump(app)
+    ed.name_var.set("山田")
+    ed._on_rename()
+    assert ed.tree.item("0", "values")[1] == "山田" and ed.tree.item("2", "values")[1] == "山田"   # 同じ話者の行すべて
+    assert ed.tree.item("1", "values")[1] == app.t("ed_speaker_n", 2)
+    ed.view.set_key("srt")
+    ed._show_view()
+    assert "山田：あいう" in ed.preview.get("1.0", "end")
+    assert ed.speaker_menu.cget("values")[1] == "山田"
+    ed.undo()
+    assert ed.tree.item("0", "values")[1] == app.t("ed_speaker_n", 1)
+
+
+def test_revert_after_merge_works_from_the_window(app):
+    ed = _open_plain_editor(app)
+    ed.tree.selection_set("0")
+    ed._on_select()
+    pump(app)
+    ed.merge()
+    assert len(ed.editor) == 2 and str(ed.btn_revert.cget("state")) == "normal"
+    ed.revert()
+    assert len(ed.editor) == 3
+    assert [c.text for c in ed.editor.cues] == [c.text for c in CUES]
+
+
+def test_undo_and_redo_buttons_follow_the_history(app):
+    ed = _open_plain_editor(app)
+    assert str(ed.btn_undo.cget("state")) == "disabled" and str(ed.btn_redo.cget("state")) == "disabled"
+    ed.tree.selection_set("1")
+    ed._on_select()
+    ed.delete()
+    assert len(ed.editor) == 2 and str(ed.btn_undo.cget("state")) == "normal"
+    ed.undo()
+    assert len(ed.editor) == 3 and str(ed.btn_redo.cget("state")) == "normal" and not ed.editor.dirty
+    ed.redo()
+    assert len(ed.editor) == 2
+
+
+def test_typed_text_is_undone_in_one_step_and_the_split_hint_is_shown(app):
+    ed = _open_plain_editor(app)
+    ed.tree.selection_set("0")
+    ed._on_select()
+    pump(app)
+    for s in ("あ", "あい", "あいう！"):
+        ed.text.delete("1.0", "end")
+        ed.text.insert("1.0", s)
+        pump(app, 3)
+    assert ed.editor.cue(0).text == "あいう！"
+    ed.undo()
+    assert ed.editor.cue(0).text == "あいう"                          # CUES[0] の元の文
+    assert "カーソル位置で分ける" in ed.split_hint.cget("text")
+
+
+# ── GPU 用の部品（cuBLAS・cuDNN）がないとき ──────────────────────────────────────────
+def _prepare_start(app, monkeypatch, tmp_path, *, libs_ready, answer):
+    import threading
+    import types
+
+    import app as appmod
+
+    media = tmp_path / "talk.wav"
+    media.write_bytes(b"x")
+    app.input_files = [str(media)]
+    app.srt_var.set(True)
+    app.gpu_var.set(True)
+    monkeypatch.setattr(appmod, "cuda_available", lambda: True)
+    monkeypatch.setattr(appmod, "cuda_libs_ready", lambda: libs_ready)
+    asked = []
+    monkeypatch.setattr(appmod.messagebox, "askyesnocancel", lambda *a, **k: asked.append(a) or answer)
+    started = []
+    monkeypatch.setattr(app, "_worker", lambda files, params, fetch=False: started.append((params, fetch)))
+
+    class InlineThread:
+        def __init__(self, target=None, args=(), daemon=None):
+            self._target, self._args = target, args
+
+        def start(self):
+            self._target(*self._args)
+
+    monkeypatch.setattr(appmod, "threading", types.SimpleNamespace(Thread=InlineThread, Event=threading.Event))
+    return asked, started
+
+
+def test_without_gpu_parts_start_asks_and_cancel_does_not_start(app, tmp_path, monkeypatch):
+    asked, started = _prepare_start(app, monkeypatch, tmp_path, libs_ready=False, answer=None)
+    app._start_process()
+    assert len(asked) == 1 and started == [] and not app.running
+
+
+def test_without_gpu_parts_answering_no_runs_on_the_cpu_this_time(app, tmp_path, monkeypatch):
+    _, started = _prepare_start(app, monkeypatch, tmp_path, libs_ready=False, answer=False)
+    app._start_process()
+    (params, fetch), = started
+    assert params.use_gpu is False and fetch is False
+    assert app.gpu_var.get() is True                    # 設定そのものは変えない（次回も GPU を選んだまま）
+    app.running = False
+
+
+def test_without_gpu_parts_answering_yes_fetches_them_and_keeps_the_gpu(app, tmp_path, monkeypatch):
+    _, started = _prepare_start(app, monkeypatch, tmp_path, libs_ready=False, answer=True)
+    app._start_process()
+    (params, fetch), = started
+    assert params.use_gpu is True and fetch is True
+    app.running = False
+
+
+def test_with_gpu_parts_present_start_does_not_ask(app, tmp_path, monkeypatch):
+    asked, started = _prepare_start(app, monkeypatch, tmp_path, libs_ready=True, answer=None)
+    app._start_process()
+    assert asked == [] and started[0][0].use_gpu is True and started[0][1] is False
+    app.running = False
+
+
+def test_gpu_part_fetch_failure_continues_on_the_cpu(app, monkeypatch):
+    import cudalibs
+
+    def boom(**kw):
+        raise cudalibs.CudaLibsFailed("timed out")
+
+    monkeypatch.setattr(cudalibs, "download_libs", boom)
+    from pipeline import PipelineParams
+    params = PipelineParams(margin=0.2, threshold=4.0, export_key="resolve", do_srt=True, model_size="small",
+                            use_gpu=True)
+    out = app._fetch_gpu_libs(params)
+    assert out.use_gpu is False
+
+
+def test_gpu_part_fetch_progress_uses_its_own_text(app):
+    app._on_progress("gpu", 700_000_000, 1_400_000_000)
+    pump(app, 3)
+    assert "GPU" in app.dl_text.cget("text") and "50%" in app.dl_text.cget("text")
+    app._on_progress("gpu", None, None)
+
+
+def test_transcription_progress_and_loading_text(app):
+    app._on_progress("load", 0, 0)
+    assert app.t("model_loading") in app.dl_text.cget("text")
+    app._on_progress("transcribe", 35.0, 70.0)
+    assert "50%" in app.dl_text.cget("text") and app.dl_bar.get() == pytest.approx(0.5)
+    app._on_progress("transcribe", None, None)
+    assert not app.dl_text.winfo_manager()
+
+
+def test_stop_shows_immediate_feedback_even_when_the_stage_cannot_be_interrupted(app):
+    app._stop_process()
+    assert app.stop_requested and app.dl_text.cget("text") == app.t("stopping")
+    app.stop_requested = False
+    app._on_progress("model", None, None)

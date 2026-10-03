@@ -12,6 +12,7 @@ SnipSync/
 ├── src/                    # flat 配置（パッケージ化は未実施）
 │   ├── app.py              # メインウィンドウ（モニター・設定タブ・実行・ログ）+ バッチ実行
 │   ├── widgets.py          # 部品（Btn / Choice / CutMap / Legend ほか）。色・書体は theme から
+│   ├── cudalibs.py         # GPU 用の NVIDIA ライブラリ（cuBLAS・cuDNN）の取得（版・SHA-256 固定。UI に依存しない）
 │   ├── player.py           # 編集後の音の再生（EditedAudio・倍速変換・Player。UI に依存しない）
 │   ├── preview.py          # カットマップ用の計算（auto-editor の区間を取得。UI に依存しない）
 │   ├── subtitle_edit.py    # 字幕の編集ロジック（CueEditor・書き出し文字列の生成。UI に依存しない）

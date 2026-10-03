@@ -288,8 +288,8 @@ def test_pipeline_should_stop(temp_dirs, monkeypatch):
     assert res.srt_path is None
     assert not (out_dir / "input_temp_audio.wav").exists()
 
-    # 3c. Stopped during transcription loop
-    # （呼び出し回数ではなく状態で表す: 文字起こしが済んだ後、1つ目の字幕を書いたら停止）
+    # 3c. Stopped during transcription
+    # （呼び出し回数ではなく状態で表す: 文字起こしが済んだ後、1つ目の字幕を受け取ったら停止）
     stop_state = {"transcribed": False, "calls_after": 0}
 
     def stateful_should_stop():
@@ -329,10 +329,8 @@ def test_pipeline_should_stop(temp_dirs, monkeypatch):
     assert res.ok is True
     assert res.stopped is True
     assert res.srt_path is None
-    assert (out_dir / "input.srt").exists()
-    srt_content = (out_dir / "input.srt").read_text(encoding="utf-8")
-    assert "Hello world" in srt_content
-    assert "This is SnipSync" not in srt_content
+    # 文字起こしの途中で止めたら、字幕ファイルは作らない（途中までの字幕を残さない）
+    assert not (out_dir / "input.srt").exists()
 
 
 def test_pipeline_should_stop_mid_stream(temp_dirs, monkeypatch):
@@ -823,7 +821,7 @@ def test_pipeline_gpu_fallback(temp_dirs, monkeypatch):
     assert len(call_history) == 2  # First call on GPU failed, second call on CPU succeeded
 
     # Verify warning and device logging
-    assert ("log_gpu_fallback", "warn") in logs
+    assert any(m.startswith("log_gpu_fallback") and lvl == "warn" for m, lvl in logs)
     assert ("log_device:cpu", "muted") in logs
 
 
@@ -895,7 +893,7 @@ def test_pipeline_gpu_fallback_lazy_generator(temp_dirs, monkeypatch):
     assert res.srt_path == out_dir / "input.srt"
     assert len(call_history) == 2
 
-    assert ("log_gpu_fallback", "warn") in logs
+    assert any(m.startswith("log_gpu_fallback") and lvl == "warn" for m, lvl in logs)
     assert ("log_device:cpu", "muted") in logs
 
 

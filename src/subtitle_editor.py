@@ -38,7 +38,8 @@ class SubtitleEditor(ctk.CTkToplevel):
         self.pending = pending
         self.saved = False
         self._on_closed = on_closed
-        self._sel: int | None = None
+        self._sel: int | None = None          # 1件だけ選んでいるときの番号
+        self._sels: list[int] = []            # 選んでいる件（複数のことがある）
         self._loading = False
         self._status_after = None
         self.configure(fg_color=T.BENCH)
@@ -49,6 +50,9 @@ class SubtitleEditor(ctk.CTkToplevel):
         self._style_tree()
         self._build()
         self.bind("<Control-s>", lambda _e: self.save())
+        self.bind("<Control-z>", lambda _e: self.undo())
+        self.bind("<Control-y>", lambda _e: self.redo())
+        self.bind("<Control-Shift-Z>", lambda _e: self.redo())
         self._refresh_all()
         if self.pending and self.paths:
             self.status.configure(text=self.t("ed_dest", ", ".join(p.name for p in self.paths.values())))
@@ -81,7 +85,11 @@ class SubtitleEditor(ctk.CTkToplevel):
         self.count_lbl = W.caption(bar)
         self.count_lbl.grid(row=0, column=1, sticky="e", padx=(0, T.S4))
         self.dirty_lbl = W.label(bar, "", "label", T.PENCIL)
-        self.dirty_lbl.grid(row=0, column=2, sticky="e")
+        self.dirty_lbl.grid(row=0, column=2, sticky="e", padx=(0, T.S4))
+        self.btn_undo = W.Btn(bar, self.t("ed_undo"), self.undo, height=30)
+        self.btn_undo.grid(row=0, column=3, padx=(0, T.S2))
+        self.btn_redo = W.Btn(bar, self.t("ed_redo"), self.redo, height=30)
+        self.btn_redo.grid(row=0, column=4)
 
         # 中段: 編集ビューとプレビュー（重ねて切り替える）
         self.body = ctk.CTkFrame(self, fg_color="transparent")
@@ -124,7 +132,7 @@ class SubtitleEditor(ctk.CTkToplevel):
         well.columnconfigure(0, weight=1)
         well.rowconfigure(0, weight=1)
         self.tree = ttk.Treeview(well, columns=("time", "speaker", "text"), show="headings",
-                                 style="Snip.Treeview", selectmode="browse")
+                                 style="Snip.Treeview", selectmode="extended")
         self.tree.grid(row=0, column=0, sticky="nsew", padx=(T.S2, 0), pady=T.S2)
         sb = ctk.CTkScrollbar(well, command=self.tree.yview, fg_color=T.WELL, button_color=T.EDGE,
                               button_hover_color=T.RAISED)
@@ -158,7 +166,7 @@ class SubtitleEditor(ctk.CTkToplevel):
         self.detail_time.grid(row=0, column=1, sticky="w", padx=T.S4)
         self.time_note = W.caption(head, self.t("ed_time_note"))
         self.time_note.grid(row=0, column=2, sticky="e")
-        self.text = ctk.CTkTextbox(self.detail, height=86, wrap="word", undo=True, corner_radius=T.R_CONTROL,
+        self.text = ctk.CTkTextbox(self.detail, height=86, wrap="word", undo=False, corner_radius=T.R_CONTROL,
                                    fg_color=T.WELL, text_color=T.CHALK, border_width=1, border_color=T.EDGE,
                                    font=T.font(ctk, "body"))
         self.text.grid(row=1, column=0, sticky="ew", padx=T.S4, pady=(T.S1, T.S2))
@@ -171,7 +179,12 @@ class SubtitleEditor(ctk.CTkToplevel):
         self.speaker_lbl.pack(side="left", padx=(0, T.S2))
         self.speaker_var = tk.StringVar()
         self.speaker_menu = W.menu(tools, [""], command=self._on_speaker, width=120, variable=self.speaker_var)
-        self.speaker_menu.pack(side="left", padx=(0, T.S4))
+        self.speaker_menu.pack(side="left", padx=(0, T.S2))
+        self.name_var = tk.StringVar()
+        self.name_entry = W.entry(tools, self.name_var, width=110, placeholder=self.t("ed_name_placeholder"))
+        self.name_entry.pack(side="left", padx=(0, T.S4))
+        self.name_entry.bind("<Return>", lambda _e: self._on_rename())
+        self.name_entry.bind("<FocusOut>", lambda _e: self._on_rename())
         self.btn_revert = W.Btn(tools, self.t("ed_revert"), self.revert)
         self.btn_split = W.Btn(tools, self.t("ed_split"), self.split)
         self.btn_merge = W.Btn(tools, self.t("ed_merge"), self.merge)
@@ -179,6 +192,8 @@ class SubtitleEditor(ctk.CTkToplevel):
         for b in (self.btn_revert, self.btn_split, self.btn_merge):
             b.pack(side="left", padx=(0, T.S2))
         self.btn_delete.pack(side="right")
+        self.split_hint = W.caption(self.detail, self.t("ed_split_hint"))
+        self.split_hint.grid(row=3, column=0, sticky="w", padx=T.S4, pady=(0, T.S3))
 
     def _build_preview_view(self):
         self.preview_view = ctk.CTkFrame(self.body, fg_color="transparent")
@@ -204,7 +219,7 @@ class SubtitleEditor(ctk.CTkToplevel):
             self._on_select()
         else:
             self.empty.place(relx=0, rely=0, relwidth=1, relheight=1)
-            self._sel = None
+            self._sel, self._sels = None, []
             self._load_detail()
         self._show_view()
 
@@ -218,8 +233,12 @@ class SubtitleEditor(ctk.CTkToplevel):
 
     def _row(self, i: int):
         c = self.editor.cue(i)
-        spk = self.t("ed_speaker_n", c.speaker + 1) if c.speaker is not None else ""
-        return (_hms(c.start), spk, c.text.replace("\n", " "))
+        return (_hms(c.start), self._speaker_name(c.speaker), c.text.replace("\n", " "))
+
+    def _speaker_name(self, speaker) -> str:
+        if speaker is None:
+            return ""
+        return self.editor.speaker_name(speaker, self.t("ed_speaker_n", speaker + 1))
 
     def _tags(self, i: int):
         c = self.editor.cue(i)
@@ -237,6 +256,8 @@ class SubtitleEditor(ctk.CTkToplevel):
         self.dirty_lbl.configure(text=self.t("ed_pending") if self.pending else (self.t("ed_dirty") if dirty else ""))
         name = f" — {self.stem}" if self.stem else ""
         self.title(f"{'● ' if unsaved else ''}{self.t('ed_title')}{name}")
+        self.btn_undo.enable(self.editor.can_undo)
+        self.btn_redo.enable(self.editor.can_redo)
         self.btn_save.enable(bool(len(self.editor)))
         self.btn_save_as.enable(bool(len(self.editor)))
         self.btn_copy.enable(bool(len(self.editor)))
@@ -250,8 +271,8 @@ class SubtitleEditor(ctk.CTkToplevel):
         else:
             self.preview_view.tkraise()
             self.ts_switch.configure(state="normal" if key in ("txt", "md") else "disabled")
-            text = render(self.editor.cues, key, timestamps=self.ts_var.get(), line_chars=self.app.line_chars(),
-                          ui_lang=self.app.lang, title=self.stem) if len(self.editor) else self.t("ed_empty")
+            text = render(self.editor.cues, key, title=self.stem,
+                          **self._render_args()) if len(self.editor) else self.t("ed_empty")
             self.preview.configure(state="normal")
             self.preview.delete("1.0", "end")
             self.preview.insert("1.0", text)
@@ -265,37 +286,62 @@ class SubtitleEditor(ctk.CTkToplevel):
 
     # ── 選択と編集 ──────────────────────────────────────────────────────────────────
     def _on_select(self):
-        sel = self.tree.selection()
-        self._sel = int(sel[0]) if sel else None
+        self.editor.end_typing()                       # 別の字幕へ移ったら、文字入力のまとまりはここで区切る
+        self._sels = sorted(int(i) for i in self.tree.selection())
+        self._sel = self._sels[0] if len(self._sels) == 1 else None
         self._load_detail()
 
     def _speaker_values(self) -> list[str]:
-        top = max([MAX_SPEAKERS, *(s + 1 for s in self.editor.speakers())])
-        return [self.t("ed_speaker_none")] + [self.t("ed_speaker_n", i + 1) for i in range(top)]
+        top = max([MAX_SPEAKERS, *(sp + 1 for sp in self.editor.speakers())])
+        return [self.t("ed_speaker_none")] + [self._speaker_name(i) for i in range(top)]
+
+    def _shared_speaker(self):
+        """選んでいる字幕の話者が全部同じならその番号。違う・話者なしなら None。"""
+        found = {self.editor.cue(i).speaker for i in self._sels}
+        return found.pop() if len(found) == 1 else None
 
     def _load_detail(self):
         self._loading = True
-        has = self._sel is not None
-        self.text.configure(state="normal" if has else "disabled")
+        n = len(self._sels)
+        single = self._sel is not None
+        self.text.configure(state="normal" if single else "disabled")
         self.text.delete("1.0", "end")
-        if has:
+        if single:
             c = self.editor.cue(self._sel)
             self.text.insert("1.0", c.text)
             self.text._textbox.edit_reset()
             self.text._textbox.edit_modified(False)
+            self.detail_title.configure(text=self.t("ed_detail"))
             self.detail_time.configure(text=f"{_hms(c.start)} – {_hms(c.end)}")
-            self.speaker_menu.configure(values=self._speaker_values())
-            self.speaker_var.set(self.t("ed_speaker_n", c.speaker + 1) if c.speaker is not None
-                                 else self.t("ed_speaker_none"))
+        elif n > 1:
+            self.detail_title.configure(text=self.t("ed_detail_multi", n))
+            self.detail_time.configure(text=self.t("ed_multi_note"))
         else:
+            self.detail_title.configure(text=self.t("ed_detail"))
             self.detail_time.configure(text=self.t("ed_detail_none"))
-        for b in (self.btn_revert, self.btn_split, self.btn_merge, self.btn_delete):
-            b.enable(has)
-        self.speaker_menu.configure(state="normal" if has else "disabled")
-        if has:
-            self.btn_revert.enable(self.editor.is_changed(self._sel))
+        values = self._speaker_values()
+        self.speaker_menu.configure(values=values, state="normal" if n else "disabled")
+        shared = self._shared_speaker() if n else None
+        if n and len({self.editor.cue(i).speaker for i in self._sels}) > 1:
+            self.speaker_var.set(self.t("ed_speaker_mixed"))
+        elif n:
+            self.speaker_var.set(values[0 if shared is None else shared + 1])
+        self._load_name()
+        for b in (self.btn_split, self.btn_merge):
+            b.enable(single)
+        self.btn_delete.enable(single)
+        self.btn_revert.enable(single and self.editor.is_changed(self._sel))
+        if single:
             self.btn_merge.enable(self._sel < len(self.editor) - 1)
         self._loading = False
+
+    def _load_name(self):
+        """話者名の欄: 選んだ字幕の話者が1人なら、その人の名前（未設定なら空で「話者N」を薄く出す）。"""
+        spk = self._shared_speaker() if self._sels else None
+        usable = spk is not None
+        self.name_entry.configure(state="normal" if usable else "disabled",
+                                  placeholder_text=self._speaker_name(spk) if usable else self.t("ed_name_placeholder"))
+        self.name_var.set(self.editor.names.get(spk, "") if usable else "")
 
     def _on_text_modified(self, _e=None):
         tb = self.text._textbox
@@ -312,20 +358,49 @@ class SubtitleEditor(ctk.CTkToplevel):
     def _refresh_row(self, i: int):
         self.tree.item(str(i), values=self._row(i), tags=self._tags(i))
 
+    def _refresh_rows(self):
+        for i in range(len(self.editor)):
+            self._refresh_row(i)
+
     def _on_speaker(self, shown: str):
-        if self._sel is None:
+        if not self._sels:
             return
         values = self._speaker_values()
         idx = values.index(shown) if shown in values else 0
-        if self.editor.set_speaker(self._sel, None if idx == 0 else idx - 1):
-            self._refresh_row(self._sel)
-            self._update_chrome()
-
-    def revert(self):
-        if self._sel is not None and self.editor.revert(self._sel):
-            self._refresh_row(self._sel)
+        if self.editor.set_speakers(self._sels, None if idx == 0 else idx - 1):
+            self._refresh_rows()
             self._load_detail()
             self._update_chrome()
+
+    def _on_rename(self):
+        """話者名の欄の確定。その話者のすべての字幕の表示と、書き出しの名前が変わる。"""
+        if self._loading or not self._sels:
+            return
+        spk = self._shared_speaker()
+        if spk is None:
+            return
+        if self.editor.rename_speaker(spk, self.name_var.get()):
+            self._refresh_rows()
+            self._load_detail()
+            self._update_chrome()
+            self._show_view()
+
+    def revert(self):
+        """この字幕を取り込んだときの状態へ。結合・分割したものは、元の字幕に戻る（件数が変わる）。"""
+        if self._sel is not None and self.editor.revert(self._sel):
+            self._refresh_all(select=self._sel)
+
+    def undo(self):
+        if self.editor.undo():
+            self._after_history()
+
+    def redo(self):
+        if self.editor.redo():
+            self._after_history()
+
+    def _after_history(self):
+        keep = self._sels[0] if self._sels else None
+        self._refresh_all(select=keep)
 
     def split(self):
         if self._sel is None:
@@ -346,7 +421,8 @@ class SubtitleEditor(ctk.CTkToplevel):
 
     # ── 保存・コピー・読み込み ────────────────────────────────────────────────────────
     def _render_args(self) -> dict:
-        return dict(timestamps=self.ts_var.get(), line_chars=self.app.line_chars(), ui_lang=self.app.lang)
+        return dict(timestamps=self.ts_var.get(), line_chars=self.app.line_chars(), ui_lang=self.app.lang,
+                    names=self.editor.names)
 
     def save(self):
         """上書き保存。宛先が決まっていなければ「名前を付けて保存」。"""
@@ -449,11 +525,13 @@ class SubtitleEditor(ctk.CTkToplevel):
         self.ts_switch.configure(text=self.t("ed_timestamps"))
         for btn, key in ((self.btn_open, "ed_open"), (self.btn_copy, "ed_copy"), (self.btn_save_as, "ed_save_as"),
                          (self.btn_save, "ed_save"), (self.btn_revert, "ed_revert"), (self.btn_split, "ed_split"),
-                         (self.btn_merge, "ed_merge"), (self.btn_delete, "ed_delete")):
+                         (self.btn_merge, "ed_merge"), (self.btn_delete, "ed_delete"), (self.btn_undo, "ed_undo"),
+                         (self.btn_redo, "ed_redo")):
             btn.configure(text=self.t(key))
         self.detail_title.configure(text=self.t("ed_detail"))
         self.time_note.configure(text=self.t("ed_time_note"))
         self.speaker_lbl.configure(text=self.t("ed_speaker"))
+        self.split_hint.configure(text=self.t("ed_split_hint"))
         self.preview_note.configure(text=self.t("ed_preview_note"))
         self._empty_label.configure(text=self.t("ed_empty"))
         self._empty_btn.configure(text=self.t("ed_open"))

@@ -29,6 +29,7 @@ try:
 except ImportError:
     WHISPER_AVAILABLE = False
 
+import cudalibs
 import theme as T
 import widgets as W
 from aebin import get_auto_editor_path
@@ -43,6 +44,7 @@ from preview import CutSettings, compute_preview
 from subtitle_editor import SubtitleEditor
 from subtitles import (  # noqa: F401  (format_timestamp re-exported for tests)
     cuda_available,
+    cuda_libs_ready,
     format_timestamp,
 )
 from vad import decode_mix
@@ -983,6 +985,16 @@ class SnipSyncApp(_Base):
             messagebox.showerror(self.t("err_title"), self.t("err_not_found"))
             return
         params = self._build_params()
+        fetch_gpu_libs = False
+        if params.do_srt and params.use_gpu and cuda_available() and not cuda_libs_ready():
+            # GPU の部品（cuBLAS・cuDNN）が無いと、GPU を選んでも CPU に切り替わる。取得してよいか、先に聞く。
+            answer = messagebox.askyesnocancel(self.t("gpu_ask_title"), self.t("gpu_ask"))
+            if answer is None:
+                return
+            if answer:
+                fetch_gpu_libs = True
+            else:
+                params = dataclasses.replace(params, use_gpu=False)
         files = [Path(f).resolve() for f in self.input_files]
         self._log("", "")
         self._log(self.t("log_start"), "info")
@@ -992,9 +1004,15 @@ class SnipSyncApp(_Base):
         self.btn_stop.enable(True)
         self.progress.configure(mode="indeterminate")
         self.progress.start()
-        threading.Thread(target=self._worker, args=(files, params), daemon=True).start()
+        threading.Thread(target=self._worker, args=(files, params, fetch_gpu_libs), daemon=True).start()
 
-    def _worker(self, files, params):
+    def _worker(self, files, params, fetch_gpu_libs=False):
+        if fetch_gpu_libs:
+            params = self._fetch_gpu_libs(params)
+            if self.stop_requested:
+                self.running = False
+                self.after(0, self._reset_ui)
+                return
         try:
             ae_path = get_auto_editor_path(self._log)    # 初回のみ公式リリースから取得（SHA-256 検証）
         except Exception as exc:
@@ -1016,7 +1034,7 @@ class SnipSyncApp(_Base):
                       "info")
             result = run_pipeline(ae_path, inp, out_dir, dataclasses.replace(params, out_stem=stem),
                                   on_log=self._log, should_stop=lambda: self.stop_requested, tr=self.t,
-                                  model_cache=model_cache, on_progress=self._model_progress_threadsafe)
+                                  model_cache=model_cache, on_progress=self._progress_threadsafe)
             if result.pending_paths and not result.stopped:
                 self._review_and_wait(result, inp.stem if stem is None else stem)
             if result.ok and not result.stopped:
@@ -1070,15 +1088,30 @@ class SnipSyncApp(_Base):
         self.review_win.focus()
 
     # ── AI モデルの取得 ──────────────────────────────────────────────────────────────
-    def _model_progress_threadsafe(self, done, total):
-        self.after(0, lambda: self._on_model_progress(done, total))
+    def _progress_threadsafe(self, kind, done, total):
+        self.after(0, lambda: self._on_progress(kind, done, total))
 
-    def _on_model_progress(self, done, total):
-        """取得中だけ、ログの上に進捗バーと「取得済み / 全体（速さ）」を出す。done=None は終了。"""
+    def _on_progress(self, kind, done, total):
+        """処理の途中経過を、ログの上に出す。kind: "model"=AI モデルの取得（バイト）/ "load"=モデルの読み込み /
+        "transcribe"=文字起こし（秒）。done=None は、その段階の終わり。"""
         if done is None:
             self._dl_samples = []
             self.dl_text.grid_remove()
             self.dl_bar.grid_remove()
+            return
+        if kind in ("model", "gpu"):
+            pass                                          # 下の「バイトの取得」の表示を使う
+        if kind == "load":
+            self.dl_bar.grid_remove()
+            self.dl_text.configure(text=self.t("model_loading"))
+            self.dl_text.grid()
+            return
+        if kind == "transcribe":
+            self.dl_bar.set(min(1.0, done / total) if total else 0)
+            self.dl_text.configure(text=self.t("transcribe_progress", W.fmt_time(done), W.fmt_time(total),
+                                               done / total * 100 if total else 0))
+            self.dl_text.grid()
+            self.dl_bar.grid()
             return
         now = time.monotonic()
         self._dl_samples = [x for x in [*self._dl_samples, (now, done)] if now - x[0] <= 4.0]
@@ -1086,7 +1119,8 @@ class SnipSyncApp(_Base):
         speed = (done - b0) / (now - t0) / 1e6 if now - t0 > 0.5 else 0.0
         if total:
             self.dl_bar.set(min(1.0, done / total))
-            text = self.t("model_progress", done / 1e6, total / 1e6, done / total * 100, speed)
+            text = self.t("gpu_progress" if kind == "gpu" else "model_progress", done / 1e6, total / 1e6,
+                          done / total * 100, speed)
         else:
             self.dl_bar.set(0)
             text = self.t("model_progress_wait")
@@ -1104,9 +1138,26 @@ class SnipSyncApp(_Base):
                 target.mkdir(parents=True, exist_ok=True)
         os.startfile(str(target))
 
+    def _fetch_gpu_libs(self, params):
+        """GPU 用の部品を取得する。失敗したら、その旨を知らせて CPU で続ける（params を返す）。"""
+        self._log(self.t("log_gpu_libs_download"), "info")
+        try:
+            cudalibs.download_libs(on_progress=lambda d, t: self._progress_threadsafe("gpu", d, t),
+                                   should_stop=lambda: self.stop_requested)
+            self._log(self.t("log_gpu_libs_done"), "success")
+        except cudalibs.CudaLibsCancelled:
+            self._log(self.t("log_stopped"), "warn")
+        except cudalibs.CudaLibsFailed as exc:
+            self._log(self.t("log_gpu_libs_failed", exc), "error")
+            params = dataclasses.replace(params, use_gpu=False)
+        return params
+
     def _stop_process(self):
         self.stop_requested = True
         self._log(self.t("log_stop_requested"), "warn")
+        self.dl_bar.grid_remove()                    # すぐ効かない段階（モデルの読み込み・文字起こしの途中）でも、反応を見せる
+        self.dl_text.configure(text=self.t("stopping"))
+        self.dl_text.grid()
 
     def _reset_ui(self):
         self.running = False
@@ -1117,7 +1168,7 @@ class SnipSyncApp(_Base):
         self.progress.stop()
         self.progress.configure(mode="determinate")
         self.progress.set(0)
-        self._on_model_progress(None, None)
+        self._on_progress("model", None, None)
 
     def _open_output(self):
         if self.last_out_dir:

@@ -30,7 +30,7 @@ def merge_turns(cues: list[Cue]) -> list[Cue]:
 
 
 def cues_to_txt(cues: list[Cue], *, timestamps: bool = True, speakers: bool = True,
-                ui_lang: str = "ja") -> str:
+                ui_lang: str = "ja", names: dict | None = None) -> str:
     sep = "：" if ui_lang == "ja" else ": "
     lines = []
     for t in merge_turns(cues):
@@ -38,25 +38,25 @@ def cues_to_txt(cues: list[Cue], *, timestamps: bool = True, speakers: bool = Tr
         if timestamps:
             head += f"[{hms(t.start)}] "
         if speakers and t.speaker is not None:
-            head += f"{speaker_label(t.speaker, ui_lang)}{sep}"
+            head += f"{speaker_label(t.speaker, ui_lang, names)}{sep}"
         lines.append(head + t.text)
     return "\n".join(lines) + ("\n" if lines else "")
 
 
 def cues_to_md(cues: list[Cue], *, title: str, timestamps: bool = True, speakers: bool = True,
-               ui_lang: str = "ja") -> str:
+               ui_lang: str = "ja", names: dict | None = None) -> str:
     turns = merge_turns(cues)
-    names = sorted({t.speaker for t in turns if t.speaker is not None})
+    ids = sorted({t.speaker for t in turns if t.speaker is not None})
     out = [f"# {title}", ""]
-    if speakers and names:
-        who = "、".join(speaker_label(n, ui_lang) for n in names)
+    if speakers and ids:
+        who = "、".join(speaker_label(n, ui_lang, names) for n in ids)
         out.append(f"- 話者: {who}" if ui_lang == "ja" else f"- Speakers: {who}")
     out.append(f"- 字幕数: {len(cues)}" if ui_lang == "ja" else f"- Cues: {len(cues)}")
     out.append("")
     for t in turns:
         stamp = f"`{hms(t.start)}`" if timestamps else ""
         if speakers and t.speaker is not None:
-            out.append(f"## {speaker_label(t.speaker, ui_lang)} {stamp}".rstrip())
+            out.append(f"## {speaker_label(t.speaker, ui_lang, names)} {stamp}".rstrip())
             out += ["", t.text, ""]
         else:
             out.append(f"{stamp} {t.text}".strip())

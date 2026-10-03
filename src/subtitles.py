@@ -23,18 +23,38 @@ def add_cuda_dll_dirs() -> None:
     global _cuda_dll_registered
     if _cuda_dll_registered or sys.platform != "win32":
         return
+    dirs = []
     try:
         import nvidia
+        dirs += [sub / "bin" for sub in Path(list(nvidia.__path__)[0]).iterdir()]
     except ImportError:
-        return
-    base = Path(list(nvidia.__path__)[0])
-    for sub in base.iterdir():
-        bind = sub / "bin"
-        if bind.is_dir():
-            os.add_dll_directory(str(bind))
-            if str(bind) not in os.environ.get("PATH", ""):
-                os.environ["PATH"] = str(bind) + os.pathsep + os.environ.get("PATH", "")
-    _cuda_dll_registered = True
+        pass
+    try:                                    # アプリが取得した DLL の置き場（cudalibs.py）
+        from cudalibs import cuda_bin_dir
+        dirs.append(cuda_bin_dir())
+    except Exception:
+        pass
+    dirs = [d for d in dirs if d.is_dir()]
+    for bind in dirs:
+        os.add_dll_directory(str(bind))
+        if str(bind) not in os.environ.get("PATH", ""):
+            os.environ["PATH"] = str(bind) + os.pathsep + os.environ.get("PATH", "")
+    _cuda_dll_registered = bool(dirs)
+
+
+def cuda_libs_ready() -> bool:
+    """GPU で動かすのに必要な cuBLAS / cuDNN を、いま読み込めるか（pip の nvidia-*、取得済みの DLL、
+    システムの CUDA のどれでもよい）。読み込めなければ、GPU を指定しても CPU へ切り替わる。"""
+    if sys.platform != "win32":
+        return True                         # Windows 以外は、このアプリでは確かめない
+    add_cuda_dll_dirs()
+    try:
+        import ctypes
+        ctypes.WinDLL("cublas64_12.dll")
+        ctypes.WinDLL("cudnn64_9.dll")
+        return True
+    except OSError:
+        return False
 
 
 def format_timestamp(seconds: float) -> str:
@@ -229,7 +249,10 @@ def wrap_text(text: str, max_chars: int, lang: str | None = None) -> str:
 
 # ── 話者 ────────────────────────────────────────────────────────────────────────
 
-def speaker_label(index: int, lang: str = "ja") -> str:
+def speaker_label(index: int, lang: str = "ja", names: dict | None = None) -> str:
+    """話者の表示名。names（番号 -> 名前）に付けた名前があればそれ、無ければ「話者N」。"""
+    if names and names.get(index):
+        return names[index]
     return f"話者{index + 1}" if lang == "ja" else f"Speaker {index + 1}"
 
 
@@ -408,14 +431,14 @@ def cues_from_segments(segments, turns=None, *, max_chars: int = 0, max_lines: i
 
 
 def format_srt(cues, *, max_chars: int = 0, lang: str | None = None,
-               speaker_labels: bool = False, ui_lang: str = "ja") -> str:
+               speaker_labels: bool = False, ui_lang: str = "ja", names: dict | None = None) -> str:
     """Cue 列 -> SRT 文字列。max_chars>0 で日本語の文節改行、speaker_labels で話者名を前置。"""
     out = []
     for idx, c in enumerate(cues, start=1):
         text = wrap_text(c.text, max_chars, lang) if max_chars > 0 else c.text
         if speaker_labels and c.speaker is not None:
             sep = "：" if ui_lang == "ja" else ": "
-            text = f"{speaker_label(c.speaker, ui_lang)}{sep}{text}"
+            text = f"{speaker_label(c.speaker, ui_lang, names)}{sep}{text}"
         out.append(str(idx))
         out.append(f"{format_timestamp(c.start)} --> {format_timestamp(c.end)}")
         out.append(text)

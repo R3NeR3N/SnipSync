@@ -243,6 +243,10 @@ class PipelineParams:
     ui_lang: str = "ja"
 
 
+class Stopped(Exception):
+    """利用者の「停止」で、処理を途中でやめた（文字起こしの最中など）。"""
+
+
 @dataclass
 class PipelineResult:
     ok: bool                 # メインカット成功（完了ダイアログ可否の判定に使用）
@@ -308,7 +312,8 @@ def run_pipeline(
     tr,                      # (key: str, *args) -> str
     transcribe=None,         # DI用フック（既定 None→内部で faster_whisper を使用）
     model_cache=None,        # dict を渡すと WhisperModel を使い回す（バッチ処理用）
-    on_progress=None,        # (取得済みバイト, 全体バイト) -> None。AI モデルの取得中に呼ぶ。終わりは (None, None)
+    on_progress=None,        # (kind, done, total) -> None。kind は "model"（取得。バイト）/ "load"（読み込み中）/
+                             # "transcribe"（文字起こし。秒）。終わりは done=None
 ) -> PipelineResult:
     result = PipelineResult(ok=False, stopped=False, timeline_path=None, srt_path=None)
 
@@ -521,7 +526,9 @@ def run_pipeline(
                     if transcribe is None and not (model_cache and any(k[0] == params.model_size for k in model_cache)):
                         if needs_download(params.model_size):
                             on_log(tr("log_model_download", spec.source), "info")
-                        model_path = prepare_model(params.model_size, on_progress=on_progress, should_stop=should_stop)
+                        model_path = prepare_model(
+                            params.model_size, should_stop=should_stop,
+                            on_progress=(lambda d, t: on_progress("model", d, t)) if on_progress else None)
 
                     def _get_model(dev, ctype):
                         key = (params.model_size, dev, ctype)
@@ -530,7 +537,15 @@ def run_pipeline(
                         from faster_whisper import WhisperModel
                         if dev == "cuda":
                             add_cuda_dll_dirs()   # venv内CUDA DLLをロード可能に（Win）
-                        model = WhisperModel(model_path, device=dev, compute_type=ctype)
+                        if on_progress:
+                            on_progress("load", 0, 0)       # 大きなモデルの読み込みは数十秒かかる。止まって見えないように知らせる
+                        try:
+                            model = WhisperModel(model_path, device=dev, compute_type=ctype)
+                        finally:
+                            if on_progress:
+                                on_progress("load", None, None)
+                        if should_stop():                   # 読み込み中に停止が押されていたら、ここで止める
+                            raise Stopped()
                         if model_cache is not None:
                             model_cache[key] = model
                         return model
@@ -548,7 +563,22 @@ def run_pipeline(
                             if hot:
                                 kwargs["hotwords"] = hot
                             seg_iter, inf = model.transcribe(str(temp_wav), **kwargs)
-                        return list(seg_iter), inf   # ← list() でデコード完走（例外はここで出る）
+                        # セグメントを1つずつ取り出し、そのつど停止を確かめて、進み具合を知らせる。
+                        # （まとめて list() すると、長い音声では終わるまで「停止」が効かない）
+                        # 取り出しきる＝デコード完走なので、CUDA の実行時エラーもこの try 内で捕捉できる。
+                        total = float(getattr(inf, "duration", 0) or 0)
+                        got = []
+                        try:
+                            for seg in seg_iter:
+                                if should_stop():
+                                    raise Stopped()
+                                got.append(seg)
+                                if on_progress:
+                                    on_progress("transcribe", float(seg.end), total)
+                        finally:
+                            if on_progress:
+                                on_progress("transcribe", None, None)
+                        return got, inf
 
                     try:
                         if device == "cuda":
@@ -557,9 +587,12 @@ def run_pipeline(
                         else:
                             segments, info = _decode("cpu", compute_type)
                             on_log(tr("log_device", "cpu"), "muted")
-                    except Exception:
+                    except Stopped:
+                        raise
+                    except Exception as gpu_exc:
                         if device == "cuda":
-                            on_log(tr("log_gpu_fallback"), "warn")
+                            on_log(tr("log_gpu_fallback", str(gpu_exc).splitlines()[0][:160] if str(gpu_exc) else
+                                      type(gpu_exc).__name__), "warn")
                             device, compute_type = "cpu", "int8"   # ← device/compute_type を同時に CPU へ
                             segments, info = _decode("cpu", compute_type)
                             on_log(tr("log_device", "cpu"), "muted")
@@ -604,7 +637,7 @@ def run_pipeline(
                             on_log(tr("log_srt_done"), "success")
                             on_log(f"   {output_srt.name}", "success")
                         result.srt_path = output_srt
-                except DownloadCancelled:
+                except (DownloadCancelled, Stopped):
                     result.stopped = True
                     on_log(tr("log_stopped"), "warn")
                 except DownloadFailed as exc:

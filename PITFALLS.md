@@ -16,6 +16,13 @@
 
 ---
 
+## 2026-10-04 — GPU を選んでも CPU に切り替わる（EXE に cuBLAS・cuDNN が入っていない）／文字起こし中は「停止」が効かず、進み具合も見えなかった
+- やったこと/疑い: 実機（RTX 5070）で「GPU を使う」を入れて処理した。ログに「GPU を使えなかったため、CPU に切り替えました」。large-v3 を選ぶと、数分間ログが止まり、「停止」を押しても終わらなかった。
+- 実測: GPU 自体は使える。`ctranslate2.get_cuda_device_count()` は 1。失敗の理由は `Library cublas64_12.dll is not found or cannot be loaded`（cuBLAS が無い）。配布する EXE には、1GB 以上ある NVIDIA の DLL を入れていない（意図した設計）が、画面は「GPU がある」だけを見て、使えるかのように見せていた。cuBLAS・cuDNN を入れると、RTX 5070 でも動いた（large-v3-turbo・38 秒の音声で GPU 0.6 秒、CPU 8.7 秒）。kotoba に限らず、どのモデルでも同じ。
+- 「進まない」の正体: 取得は終わっていて（Hugging Face のキャッシュに 3.09GB がそろっていた）、そのあとの CPU での文字起こしが長く、しかも (1) 文字起こしの間はログも進捗も出ない、(2) `list(seg_iter)` で最後まで取り出していたため、終わるまで「停止」の判定に到達しない、の 2 つで、止まっているように見えた。
+- 回避策 / 正しい手順: (1) GPU 用の部品を、利用者の許可を得て初回だけ取得する（`src/cudalibs.py`。版・SHA-256 固定、公式の PyPI から、`%APPDATA%\SnipSync\cuda\bin` へ）。「GPU を使えるか」は、デバイスの有無ではなく DLL を読み込めるかで確かめる（`subtitles.cuda_libs_ready`）。(2) セグメントを 1 つずつ取り出し、そのつど `should_stop` を見て、秒単位の進み具合を画面に出す。(3) GPU が失敗したときのログに理由を付ける。
+- 関連: `src/cudalibs.py`、`src/subtitles.py`、`src/pipeline.py`（`_decode`）、`tests/test_cudalibs.py`
+
 ## 2026-10-04 — kotoba-whisper が 30 分経っても取得されず、「停止」も効かなかった（Xet 転送の停止＋取得が止められない作り）
 - やったこと/疑い: 実機で kotoba-whisper を選んで処理を開始した。ログは「ダウンロードします」で止まり、30 分以上そのまま。「停止」を押しても終わらなかった。
 - 実測: 保存先フォルダには `.cache/huggingface/trees/*.json`（ファイル一覧）だけがあり、本体（model.bin 1.5GB）は 0 バイト。同じ回線で `snapshot_download` を再現すると、6/7 ファイルで止まって進まない。環境変数 `HF_HUB_DISABLE_XET=1`（通常の HTTP 転送）にすると約 8MB/s で完走した。Xet 方式（huggingface_hub 1.x の既定）の転送が、この回線で固まる。
