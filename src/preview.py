@@ -8,7 +8,7 @@ from __future__ import annotations
 import subprocess
 import sys
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from autoeditor import AUDIO_ONLY_TIMEBASE, build_v1_export_cmd, is_audio_only, probe_fps
@@ -32,6 +32,8 @@ class CutPreview:
     regions: list
     stats: dict
     duration: float
+    chunks: list = field(default_factory=list)     # 再生用: [(開始フレーム, 終了フレーム, 速度)]
+    fps: float = 0.0                               # chunks のフレームレート（タイムベース）
 
 
 class PreviewError(Exception):
@@ -64,4 +66,5 @@ def compute_preview(path, cfg: CutSettings, ae_path, cache: dict | None = None) 
     if not chunks:
         raise PreviewError("no cut data")
     stats = preview_stats(chunks, fps)
-    return CutPreview(compute_peaks(samples, PEAK_BINS), chunk_regions(chunks, fps), stats, stats["original"])
+    return CutPreview(compute_peaks(samples, PEAK_BINS), chunk_regions(chunks, fps), stats, stats["original"],
+                      list(chunks), fps)

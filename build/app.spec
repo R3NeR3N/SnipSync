@@ -28,17 +28,20 @@ tr_datas, tr_binaries, tr_hiddenimports = collect_all('transformers')
 # 日本語字幕の文節改行（BudouX のモデル JSON）と話者分離（sherpa-onnx のネイティブ DLL）
 bx_datas, bx_binaries, bx_hiddenimports = collect_all('budoux')
 sh_datas, sh_binaries, sh_hiddenimports = collect_all('sherpa_onnx')
+# 編集後の音の再生（PortAudio の DLL は _sounddevice_data に入っている）
+sd_datas, sd_binaries, sd_hiddenimports = collect_all('sounddevice')
+sdd_datas, sdd_binaries, sdd_hiddenimports = collect_all('_sounddevice_data')
 
 all_datas = [
     (str(CTK_DIR), 'customtkinter'),
     (str(DND_DIR), 'tkinterdnd2'),
     # 同梱フォント（BIZ UD ゴシック, SIL OFL）。theme.asset_path() が sys._MEIPASS/assets/fonts から読む。
     (str(WORK_DIR / 'src' / 'assets'), 'assets'),
-] + fw_datas + ct_datas + tk_datas + av_datas + tr_datas + bx_datas + sh_datas
+] + fw_datas + ct_datas + tk_datas + av_datas + tr_datas + bx_datas + sh_datas + sd_datas + sdd_datas
 
 all_binaries = [
     (str(AE_BIN), '.'),
-] + fw_binaries + ct_binaries + tk_binaries + av_binaries + tr_binaries + bx_binaries + sh_binaries
+] + fw_binaries + ct_binaries + tk_binaries + av_binaries + tr_binaries + bx_binaries + sh_binaries + sd_binaries + sdd_binaries
 
 all_hiddenimports = [
     'customtkinter',
@@ -54,9 +57,9 @@ all_hiddenimports = [
     'tqdm',
     'numpy',
     'vad', 'audiocut', 'diarize', 'models', 'markers', 'transcript', 'waveform', 'aebin',
-    'theme', 'widgets', 'preview', 'subtitle_edit', 'subtitle_editor',
+    'theme', 'widgets', 'preview', 'subtitle_edit', 'subtitle_editor', 'player',
 ] + (fw_hiddenimports + ct_hiddenimports + tk_hiddenimports + av_hiddenimports + tr_hiddenimports
-      + bx_hiddenimports + sh_hiddenimports)
+      + bx_hiddenimports + sh_hiddenimports + sd_hiddenimports + sdd_hiddenimports)
 
 a = Analysis(
     [str(WORK_DIR / 'src' / 'app.py')],

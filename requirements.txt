@@ -41,3 +41,6 @@ typing_extensions==4.15.0
 budoux==0.9.3
 sherpa-onnx==1.13.8
 sherpa-onnx-core==1.13.8
+sounddevice==0.5.6
+cffi==2.1.1
+pycparser==3.0

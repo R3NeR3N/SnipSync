@@ -198,10 +198,12 @@ class CutMap(ctk.CTkFrame):
     HEIGHT = 132
     RULER = 8
 
-    def __init__(self, parent, text_fn, on_click=None):
+    def __init__(self, parent, text_fn, on_click=None, on_seek=None):
         super().__init__(parent, fg_color=T.WELL, corner_radius=T.R_STRIP)
         self._t = text_fn
-        self._on_click = on_click
+        self._on_click = on_click        # 何も選ばれていないとき（ドロップ領域）のクリック
+        self._on_seek = on_seek          # 結果が出ているときのクリック: 元の時刻（秒）を渡す
+        self._playhead: float | None = None
         self._state = "empty"
         self._error = ""
         self._peaks = None
@@ -233,6 +235,32 @@ class CutMap(ctk.CTkFrame):
         self._state, self._peaks, self._regions, self._duration, self._stale = "ready", peaks, regions, duration, False
         self.redraw()
 
+    def set_playhead(self, source_sec: float | None):
+        """再生位置の線。再生中に何度も呼ばれるので、全体を描き直さず線だけ動かす。"""
+        self._playhead = source_sec
+        if self._state != "ready" or self._duration <= 0:
+            return
+        w = self.canvas.winfo_width()
+        if source_sec is None:
+            self.canvas.delete("playhead")
+        elif self.canvas.find_withtag("playhead"):
+            x = self._playhead_x(w)
+            self.canvas.coords("playhead", x, 0, x, self._wave_bottom() + 6)
+        else:
+            self._draw_playhead(w)
+
+    def _playhead_x(self, w: int) -> int:
+        return min(w - 1, max(0, int(self._playhead / self._duration * w)))
+
+    def _wave_bottom(self) -> int:
+        return self.canvas.winfo_height() - 24
+
+    def _draw_playhead(self, w: int):
+        if self._playhead is None:
+            return
+        x = self._playhead_x(w)
+        self.canvas.create_line(x, 0, x, self._wave_bottom() + 6, fill=T.CHALK, width=2, tags="playhead")
+
     def set_stale(self, stale: bool):
         if self._state == "ready" and stale != self._stale:
             self._stale = stale
@@ -242,10 +270,17 @@ class CutMap(ctk.CTkFrame):
     def has_data(self) -> bool:
         return self._state == "ready"
 
+    @property
+    def is_stale(self) -> bool:
+        return self._stale
+
     # input
-    def _click(self, _e):
+    def _click(self, e):
         if self._state == "empty" and self._on_click:
             self._on_click()
+        elif self._state == "ready" and self._on_seek and self._duration > 0:
+            w = max(self.canvas.winfo_width(), 1)
+            self._on_seek(min(self._duration, max(0.0, e.x / w * self._duration)))
 
     def _kind_at(self, x: int):
         w = max(self.canvas.winfo_width(), 1)
@@ -258,6 +293,7 @@ class CutMap(ctk.CTkFrame):
     def _motion(self, e):
         if self._state == "ready":
             self._set_hover(e.x)
+            self.canvas.configure(cursor="hand2" if self._on_seek else "")
         elif self._state == "empty":
             self.canvas.configure(cursor="hand2")
 
@@ -323,6 +359,7 @@ class CutMap(ctk.CTkFrame):
             if x < w - 36:
                 c.create_text(x + 4, bottom + 16, text=fmt_time(t), fill=T.DUST, anchor="w", font=T.font(ctk, "mono_small"))
             t += step
+        self._draw_playhead(w)
         if self._hover_x is not None and 0 <= self._hover_x < w:
             x = self._hover_x
             c.create_line(x, 0, x, bottom + 6, fill=T.PENCIL, width=1)

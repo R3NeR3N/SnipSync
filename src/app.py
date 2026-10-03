@@ -34,6 +34,7 @@ from autoeditor import MEDIA_EXTS
 from diarize import sherpa_available
 from i18n import I18N
 from pipeline import PipelineParams, run_pipeline
+from player import PLAY_SR, RATES, EditedAudio, Player, PlayerError, sounddevice_available
 from presets import delete_preset, load_store, save_store, set_last_used, upsert_preset
 from preview import CutSettings, compute_preview
 from subtitle_editor import SubtitleEditor
@@ -41,6 +42,7 @@ from subtitles import (  # noqa: F401  (format_timestamp re-exported for tests)
     cuda_available,
     format_timestamp,
 )
+from vad import decode_mix
 from version import APP_VERSION  # noqa: F401  (re-exported for tests)
 
 EXPORT_KEYS = ("resolve", "premiere", "final-cut-pro", "media")
@@ -64,8 +66,8 @@ class SnipSyncApp(_Base):
         T.load_fonts(ctk, self)
         T.apply_icon(self)
         self.configure(fg_color=T.BENCH)
-        self.geometry("1020x940")
-        self.minsize(940, 820)
+        self.geometry("1020x990")
+        self.minsize(940, 860)
 
         self.lang = "ja"
         self.input_files: list[str] = []
@@ -84,6 +86,12 @@ class SnipSyncApp(_Base):
         self._preview_again = False
         self._preview_timer = None
         self._preview_cache: dict = {}
+        self._preview_result = None          # 最新の確認結果（再生が使う区間を持つ）
+        self.player = Player() if sounddevice_available() else None
+        self.play_rate = 1.0
+        self._play_cache: dict = {}          # 再生用に読み込んだ元の音（ファイルごと）
+        self._audio_loading = False
+        self._tick_job = None
 
         # 設定（プリセットに保存される）
         self.margin_var = tk.DoubleVar(value=0.2)
@@ -180,11 +188,12 @@ class SnipSyncApp(_Base):
         self.btn_clear = self.reg(W.Btn(top, "", self._clear_files, kind="ghost", height=30, width=56), "btn_clear")
         self.btn_clear.grid(row=0, column=2, padx=(T.S1, 0))
 
-        self.cutmap = W.CutMap(self.monitor, self.t, on_click=self._browse_file)
+        self.cutmap = W.CutMap(self.monitor, self.t, on_click=self._browse_file, on_seek=self._seek_source)
         self.cutmap.grid(row=1, column=0, sticky="ew", padx=T.S4)
+        self._build_transport(self.monitor)
 
         stats = ctk.CTkFrame(self.monitor, fg_color="transparent")
-        stats.grid(row=2, column=0, sticky="ew", padx=T.S4, pady=(T.S2, T.S3))
+        stats.grid(row=3, column=0, sticky="ew", padx=T.S4, pady=(T.S2, T.S3))
         stats.columnconfigure(1, weight=1)
         self.stats_time = W.label(stats, "", "mono_large")
         self.stats_time.grid(row=0, column=0, sticky="w")
@@ -196,6 +205,30 @@ class SnipSyncApp(_Base):
         self.btn_preview = W.Btn(stats, "", self._run_preview, height=32)
         self.btn_preview.grid(row=0, column=3)
         self.btn_preview.enable(False)       # ファイルを選ぶまでは押せない
+
+    def _build_transport(self, parent):
+        """編集後の音を聞く操作。カットマップの真下に置き、波形を見ながら押せるようにする。"""
+        self.transport = ctk.CTkFrame(parent, fg_color="transparent")
+        self.transport.grid(row=2, column=0, sticky="ew", padx=T.S4, pady=(T.S2, 0))
+        self.transport.columnconfigure(4, weight=1)
+        if self.player is None:
+            self.transport_note = W.caption(self.transport)
+            self.transport_note.grid(row=0, column=0, sticky="w")
+            return
+        self.btn_prev = self.reg(W.Btn(self.transport, "", self._play_prev, height=32), "tr_prev")
+        self.btn_prev.grid(row=0, column=0)
+        self.btn_play = W.Btn(self.transport, "", self._play_toggle, height=32, width=104)
+        self.btn_play.grid(row=0, column=1, padx=(T.S2, T.S2))
+        self.btn_next = self.reg(W.Btn(self.transport, "", self._play_next, height=32), "tr_next")
+        self.btn_next.grid(row=0, column=2)
+        self.play_time = W.label(self.transport, "", "mono", T.CHALK, anchor="w", width=130)
+        self.play_time.grid(row=0, column=3, padx=(T.S4, 0))
+        self.rate_lbl = self.reg(W.caption(self.transport), "tr_speed")
+        self.rate_lbl.grid(row=0, column=5, padx=(0, T.S2))
+        self.rate_choice = W.Choice(self.transport, {f"{r:g}": f"{r:g}×" for r in RATES},
+                                    command=self._on_rate, height=30)
+        self.rate_choice.grid(row=0, column=6)
+        self.rate_choice.set_key("1")
 
     def _build_settings(self):
         self.panel = ctk.CTkFrame(self, fg_color=T.PANEL, corner_radius=T.R_PANEL)
@@ -628,6 +661,9 @@ class SnipSyncApp(_Base):
     def _on_files_changed(self):
         self._preview_gen += 1                 # 計算中の確認は破棄する
         self._preview_cache.clear()
+        self._play_cache.clear()
+        self._preview_result = None
+        self._reset_player()
         self._update_file_header()
         has = bool(self.input_files)
         if not has:
@@ -657,6 +693,9 @@ class SnipSyncApp(_Base):
     def _mark_stale(self):
         """設定が変わった。結果が出ているなら、少し待って自動で更新する。"""
         self.cutmap.set_stale(True)
+        if self.player is not None and self.player.playing:
+            self.player.pause()                # 設定が変わった: 古い設定の音を流し続けない
+        self._update_transport()
         if getattr(self, "_preview_timer", None):
             self.after_cancel(self._preview_timer)
             self._preview_timer = None
@@ -673,6 +712,7 @@ class SnipSyncApp(_Base):
         else:
             self.stats_time.configure(text="")
             self.stats_text.configure(text="")
+        self._update_transport()
 
     def _run_preview(self):
         self._preview_timer = None
@@ -705,16 +745,150 @@ class SnipSyncApp(_Base):
         self._preview_busy = False
         current = gen == self._preview_gen
         if current:
+            self._reset_player()               # 新しい結果の区間で、次の再生時に組み立て直す
             if error is not None:
                 self.cutmap.set_error(error)
                 self._stats = None
+                self._preview_result = None
             else:
                 self._stats = result.stats
+                self._preview_result = result
                 self.cutmap.set_data(result.peaks, result.regions, result.duration)
         self.btn_preview.enable(bool(self.input_files))
         self._update_stats()
         if (self._preview_again or not current) and self.input_files:
             self._run_preview()
+
+    # ── 編集後の音を聞く ─────────────────────────────────────────────────────────────
+    def _transport_ready(self) -> bool:
+        return (self.player is not None and self._preview_result is not None and self.cutmap.has_data
+                and not self.cutmap.is_stale and bool(self.input_files))
+
+    def _update_transport(self):
+        if self.player is None:
+            self.transport_note.configure(text=self.t("tr_unavailable"))
+            return
+        ready = self._transport_ready() and not self._audio_loading
+        for b in (self.btn_prev, self.btn_play, self.btn_next):
+            b.enable(ready)
+        self.rate_choice.enable(ready)
+        if self._audio_loading:
+            label = self.t("tr_busy")
+        else:
+            label = self.t("tr_pause" if self.player.playing else "tr_play")
+        self.btn_play.configure(text=label)
+        self._update_clock()
+
+    def _update_clock(self):
+        if self.player is None:
+            return
+        if not self._transport_ready() or not self._stats:
+            self.play_time.configure(text="")
+            return
+        pos = self.player.position if self.player.loaded else 0.0
+        self.play_time.configure(text=f"{W.fmt_time(pos)} / {W.fmt_time(self._stats['result'])}")
+
+    def _reset_player(self):
+        if self.player is not None:
+            self.player.unload()
+        self.cutmap.set_playhead(None)
+        if self._tick_job is not None:
+            self.after_cancel(self._tick_job)
+            self._tick_job = None
+        if hasattr(self, "play_time"):
+            self._update_transport()
+
+    def _with_player(self, action):
+        """音の準備ができていれば action を実行する。まだなら、元の音を読み込み、編集後の音を組み立ててから実行する。"""
+        if not self._transport_ready() or self._audio_loading:
+            return
+        if self.player.loaded:
+            self._run_player(action)
+            return
+        self._audio_loading = True
+        self._update_transport()
+        result, path, gen = self._preview_result, self.input_files[0], self._preview_gen
+
+        def work():
+            try:
+                if self._play_cache.get("path") != path:
+                    self._play_cache.clear()
+                    self._play_cache["samples"] = decode_mix(path, PLAY_SR)
+                    self._play_cache["path"] = path
+                audio = EditedAudio.build(self._play_cache["samples"], result.chunks, result.fps, PLAY_SR)
+                self.after(0, lambda: self._audio_ready(gen, result, audio, action, None))
+            except Exception as exc:
+                self.after(0, lambda m=str(exc): self._audio_ready(gen, result, None, action, m))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _audio_ready(self, gen, result, audio, action, error):
+        self._audio_loading = False
+        if error is not None:
+            self._log(self.t("log_play_failed", error), "error")
+        elif gen == self._preview_gen and result is self._preview_result:     # 準備中に設定が変わっていなければ
+            self.player.load(audio, self.play_rate)
+            self._run_player(action)
+            return
+        self._update_transport()
+
+    def _run_player(self, action):
+        try:
+            action()
+        except PlayerError as exc:
+            self._log(self.t("log_play_failed", exc), "error")
+        self._update_transport()
+        self._sync_playhead()
+        if self.player.playing:
+            self._start_tick()
+
+    def _sync_playhead(self):
+        self.cutmap.set_playhead(self.player.source_position if self.player.loaded else None)
+
+    def _start_tick(self):
+        if self._tick_job is None:
+            self._tick_job = self.after(40, self._tick)
+
+    def _tick(self):
+        self._tick_job = None
+        self._sync_playhead()
+        if self.player.playing:
+            self._update_clock()
+            self._start_tick()
+        else:
+            self._update_transport()       # 末尾まで再生した: ボタンを「再生」に戻す
+
+    def _play_toggle(self):
+        self._with_player(self.player.toggle)
+
+    def _play_next(self):
+        self._with_player(self.player.next_cut)
+
+    def _play_prev(self):
+        self._with_player(self.player.prev_cut)
+
+    def _seek_source(self, source_sec: float):
+        self._with_player(lambda: self.player.seek_source(source_sec))
+
+    def _on_rate(self, key):
+        self.play_rate = float(key)
+        if self.player is None or not self.player.loaded:
+            return
+        self._audio_loading = True            # 変換中は操作を止める（長い音声では数秒かかる）
+        self._update_transport()
+
+        def work():
+            try:
+                self.player.set_rate(self.play_rate)
+            finally:
+                self.after(0, self._rate_done)
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _rate_done(self):
+        self._audio_loading = False
+        self._update_transport()
+        self._sync_playhead()
 
     # ── ログ ────────────────────────────────────────────────────────────────────────
     def _clear_log(self):
@@ -770,6 +944,8 @@ class SnipSyncApp(_Base):
         self._update_preset_menu()
 
     def _on_close(self):
+        if self.player is not None:
+            self.player.close()
         for win in self._open_editors():
             if not win._confirm_discard():
                 return

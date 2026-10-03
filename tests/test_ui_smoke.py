@@ -177,3 +177,118 @@ def test_cancelling_the_close_prompt_keeps_the_review_window_open(app, tmp_path,
     ed.destroy()
     app.review_win = None
 
+
+
+class _FakeStream:
+    def __init__(self, sr, callback, finished):
+        self.callback = callback
+
+    def start(self):
+        pass
+
+    def stop(self):
+        pass
+
+    def close(self):
+        pass
+
+
+def _prepare_result(app, monkeypatch):
+    """実ファイルなしで「確認結果が出ている」状態を作る。再生は音の出ない偽のストリームにする。"""
+    import threading
+    import types
+
+    import numpy as np
+
+    import player as pl
+    from preview import CutPreview
+
+    class InlineThread:
+        """テストは mainloop を回さない。スレッドから after() は呼べないので、その場で実行する。"""
+
+        def __init__(self, target=None, args=(), daemon=None):
+            self._target, self._args = target, args
+
+        def start(self):
+            self._target(*self._args)
+
+    import app as appmod
+    monkeypatch.setattr(appmod, "threading", types.SimpleNamespace(Thread=InlineThread, Event=threading.Event))
+    monkeypatch.setattr(app, "player", pl.Player(lambda sr, cb, fin: _FakeStream(sr, cb, fin)))
+    app.input_files = ["talk.wav"]
+    app._play_cache = {"path": "talk.wav", "samples": np.zeros(10 * pl.PLAY_SR, dtype=np.float32)}
+    chunks = [(0, 20, 1.0), (20, 50, 99999.0), (50, 100, 1.0)]
+    app._stats = {"original": 10.0, "result": 7.0, "cuts": 1, "saved_pct": 30.0}
+    app.cutmap.set_data(np.ones(10, dtype=np.float32), [(0, 2, "keep"), (2, 5, "cut"), (5, 10, "keep")], 10.0)
+    app._preview_result = CutPreview(None, [], app._stats, 10.0, chunks, 10.0)
+    app._update_transport()
+
+
+def _wait(app, cond, seconds=3.0):
+    import time
+    end = time.time() + seconds
+    while time.time() < end and not cond():
+        app.update()
+        time.sleep(0.02)
+    return cond()
+
+
+def test_transport_is_disabled_until_a_result_exists(app):
+    pump(app)
+    for b in (app.btn_prev, app.btn_play, app.btn_next):
+        assert b.cget("state") == "disabled"
+
+
+def test_transport_plays_pauses_and_follows_the_playhead(app, monkeypatch):
+    _prepare_result(app, monkeypatch)
+    assert app.btn_play.cget("state") == "normal"
+    app._play_toggle()                                              # 初回は音を組み立ててから再生する
+    assert _wait(app, lambda: app.player.playing)
+    assert app.btn_play.cget("text") == app.t("tr_pause")
+    app._play_next()                                                # 次のカット点（編集後 2.0 秒）
+    assert app.player.position == pytest.approx(2.0, abs=0.05)
+    assert app.cutmap.canvas.find_withtag("playhead")              # 再生位置の線が出ている
+    assert app.player.source_position == pytest.approx(5.0, abs=0.1)    # 削除を飛ばした分、元の時刻は 5 秒
+    app._play_toggle()
+    assert not app.player.playing and app.btn_play.cget("text") == app.t("tr_play")
+
+
+def test_clicking_the_cut_map_moves_the_playhead_without_starting(app, monkeypatch):
+    _prepare_result(app, monkeypatch)
+    app._seek_source(8.0)
+    assert _wait(app, lambda: app.player.loaded)
+    assert not app.player.playing
+    assert app.player.position == pytest.approx(5.0, abs=0.05)      # 元の 8 秒 = 編集後 2 + 3 = 5 秒
+
+
+def test_changing_a_setting_pauses_playback_and_disables_the_buttons_until_recomputed(app, monkeypatch):
+    _prepare_result(app, monkeypatch)
+    app._play_toggle()
+    assert _wait(app, lambda: app.player.playing)
+    app._mark_stale()
+    if app._preview_timer:
+        app.after_cancel(app._preview_timer)
+        app._preview_timer = None
+    assert not app.player.playing
+    assert app.btn_play.cget("state") == "disabled"
+
+
+def test_a_new_result_discards_the_loaded_audio(app, monkeypatch):
+    _prepare_result(app, monkeypatch)
+    app._seek_source(1.0)
+    assert _wait(app, lambda: app.player.loaded)
+    app._preview_gen += 0
+    app._reset_player()
+    assert not app.player.loaded and not app.cutmap.canvas.find_withtag("playhead")
+
+
+def test_rate_choice_applies_to_the_loaded_audio(app, monkeypatch):
+    _prepare_result(app, monkeypatch)
+    app._seek_source(1.0)
+    assert _wait(app, lambda: app.player.loaded)
+    app.rate_choice.set_key("2")
+    app._on_rate("2")
+    assert _wait(app, lambda: not app._audio_loading)
+    assert app.player.rate == 2.0
+    app.rate_choice.set_key("1")
+    app._on_rate("1")

@@ -24,6 +24,8 @@ dependencies = [
     "budoux>=0.7,<1",
     # 話者分離（onnxruntime のみで動く。PyTorch/トークン不要）
     "sherpa-onnx>=1.12,<2",
+    # 編集後の音の再生（PortAudio 同梱の Windows 用 wheel がある）
+    "sounddevice>=0.5,<1",
 ]
 
 [project.optional-dependencies]
