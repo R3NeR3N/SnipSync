@@ -17,6 +17,29 @@
 
 ---
 
+**Contents**
+
+- [About SnipSync](#about-snipsync)
+- [✨ Features](#-features)
+  - [Supported Export Formats](#supported-export-formats)
+  - [Supported Input Formats](#supported-input-formats)
+- [🚀 Installation](#-installation)
+  - [Option A: Run the Pre-built EXE (Recommended)](#option-a-run-the-pre-built-exe-recommended)
+  - [Option B: Run from Source](#option-b-run-from-source)
+  - [Option C: Build the EXE yourself (PyInstaller)](#option-c-build-the-exe-yourself-pyinstaller)
+- [⚙️ How to Use](#-how-to-use)
+  - [Quick start](#quick-start)
+  - [Settings](#settings)
+  - [Recipes](#recipes)
+  - [Importing into your editor](#importing-into-your-editor)
+  - [Notes](#notes)
+- [🖥️ Requirements](#-requirements)
+  - [Runtime (EXE users)](#runtime-exe-users)
+  - [Development (source users)](#development-source-users)
+- [📜 License](#-license)
+
+---
+
 ## About SnipSync
 
 **SnipSync** is a standalone desktop application for Windows that automates the most tedious parts of video editing. Drop in your footage, and SnipSync will:
