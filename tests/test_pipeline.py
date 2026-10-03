@@ -289,11 +289,14 @@ def test_pipeline_should_stop(temp_dirs, monkeypatch):
     assert not (out_dir / "input_temp_audio.wav").exists()
 
     # 3c. Stopped during transcription loop
-    call_count = 0
+    # （呼び出し回数ではなく状態で表す: 文字起こしが済んだ後、1つ目の字幕を書いたら停止）
+    stop_state = {"transcribed": False, "calls_after": 0}
+
     def stateful_should_stop():
-        nonlocal call_count
-        call_count += 1
-        return call_count >= 8
+        if not stop_state["transcribed"]:
+            return False
+        stop_state["calls_after"] += 1
+        return stop_state["calls_after"] >= 2
 
     segments = [
         DummySegment(0.5, 2.3, "Hello world"),
@@ -305,6 +308,7 @@ def test_pipeline_should_stop(temp_dirs, monkeypatch):
         language_probability = 0.99
 
     def mock_transcribe_stop(wav_path, model_size):
+        stop_state["transcribed"] = True
         return segments, DummyInfo()
 
     monkeypatch.setattr(subprocess, "Popen", make_mock_popen(

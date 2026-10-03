@@ -4,7 +4,11 @@ import os
 from pathlib import Path
 
 SCHEMA_VERSION = 1
-SETTING_KEYS = ("margin", "threshold", "export", "srt", "model", "output_dir", "gpu", "snap_srt")
+SETTING_KEYS = (
+    "margin", "threshold", "export", "srt", "model", "output_dir", "gpu", "snap_srt",
+    "cut_mode", "silence", "speed", "hotwords", "diarize", "speakers", "speaker_labels",
+    "markers", "line_chars", "txt", "md",
+)
 
 def _store_path() -> Path:
     base = os.environ.get("APPDATA")

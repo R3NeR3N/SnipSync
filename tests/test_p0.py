@@ -1,3 +1,4 @@
+import re
 import sys
 from pathlib import Path
 
@@ -18,8 +19,14 @@ def test_format_timestamp():
         assert format_timestamp(seconds) == expected
 
 def test_version_consistency():
-    # Verify APP_VERSION is "1.0.0"
-    assert APP_VERSION == "1.0.0"
+    # SemVer 2.0 の形式であること。現在は初期開発段階（MAJOR = 0）。1.0.0 へ上げるときは オーナーの判断で
+    # このアサーションと AGENTS.md §5 を更新する。
+    assert re.fullmatch(r"\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?", APP_VERSION), APP_VERSION
+    assert APP_VERSION.split(".")[0] == "0"
+
+    # pyproject.toml の version が APP_VERSION と一致していること（単一ソースからのずれを検出）
+    pyproject = (Path(__file__).parent.parent / "pyproject.toml").read_text(encoding="utf-8")
+    assert f'version = "{APP_VERSION}"' in pyproject
 
     # Verify I18N titles contain APP_VERSION
     assert f"v{APP_VERSION}" in I18N["ja"]["title"]

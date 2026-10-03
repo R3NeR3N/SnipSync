@@ -27,8 +27,7 @@ def test_build_cut_cmd():
         "--margin", "0.200s",
         "--edit", "audio:threshold=4.0%",
         "--export", "resolve",
-        "--output", "out.fcpxml",
-        "--no-open",
+        "--progress", "none", "--output", "out.fcpxml", "--no-open",
     ]
 
 
@@ -40,8 +39,7 @@ def test_build_extract_wav_cmd():
         "--edit", "audio:threshold=4.0%",
         "-vn", "-sn", "-dn",
         "--mix-audio-streams",
-        "--output", "tmp.wav",
-        "--no-open",
+        "--progress", "none", "--output", "tmp.wav", "--no-open",
     ]
 
 

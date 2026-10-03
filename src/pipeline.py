@@ -2,23 +2,43 @@ import shutil
 import subprocess
 import sys
 import traceback
-import xml.etree.ElementTree as ET
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
+import safexml
+from audiocut import render_cut_audio, write_wav
 from autoeditor import (
+    AUDIO_EXTS,
+    AUDIO_ONLY_TIMEBASE,
+    AUDIO_RENDER_EXTS,
+    EXPORT_MEDIA,
     build_cut_cmd,
+    build_cut_cmd_from_chunks,
     build_extract_wav_cmd,
+    build_extract_wav_cmd_from_chunks,
     build_v1_export_cmd,
+    exceeds_unlicensed_render_limit,
+    is_audio_only,
+    probe_duration,
     probe_fps,
+    probe_resolution,
 )
+from diarize import diarize, sherpa_available
+from markers import add_markers, cut_point_markers, speaker_turn_markers
+from models import get_spec, lang_hint, needs_download, prepare_model
 from subtitles import (
     add_cuda_dll_dirs,
-    build_cut_aligned_srt,
+    build_cut_aligned_cues,
+    chunks_to_boundaries,
+    cues_from_segments,
+    format_srt,
     format_timestamp,
-    parse_v1_boundaries,
+    normalize_turns,
     resolve_device,
+    tag_words,
 )
+from transcript import write_transcripts
+from vad import SAMPLE_RATE, decode_mix, detect_speech, read_v1_chunks, speech_to_chunks, write_v1
 
 CREATE_NEW_PROCESS_GROUP = 0x00000200 if sys.platform == "win32" else 0
 
@@ -118,7 +138,7 @@ def _reorder_fcpxml_tracks(timeline_path: Path, stem: str) -> bool:
     戻り値: 並べ替えた=True / 対象外（単トラック等）=False。
     """
     try:
-        tree = ET.parse(timeline_path)
+        tree = safexml.parse(timeline_path)
     except Exception:
         return False
     root = tree.getroot()
@@ -147,7 +167,7 @@ def _reorder_fcpxml_tracks(timeline_path: Path, stem: str) -> bool:
         return False
 
     # トラックごとの要素リストを初期化
-    track_lists: dict[str, list[ET.Element]] = {video_id: []}
+    track_lists: dict[str, list] = {video_id: []}
     for ref_id in wavs.values():
         track_lists[ref_id] = []
 
@@ -195,11 +215,23 @@ def _reorder_fcpxml_tracks(timeline_path: Path, stem: str) -> bool:
 class PipelineParams:
     margin: float
     threshold: float
-    export_key: str          # "resolve" | "premiere" | "final-cut-pro"
+    export_key: str          # "resolve" | "premiere" | "final-cut-pro" | "media"(カット済みメディアを書き出す)
     do_srt: bool
-    model_size: str          # "tiny" | "base" | "small" | "medium"
+    model_size: str          # models.MODELS のキー（tiny/base/small/medium/turbo/large-v3/kotoba-ja/distil-en）
     use_gpu: bool = False
     snap_srt: bool = True
+    cut_mode: str = "threshold"      # "threshold"(音量) | "vad"(音声区間検出)
+    silent_speed: float | None = None  # 無音を切らずにこの倍速にする（None=カット）
+    hotwords: str = ""               # 用語辞書（カンマ/改行区切り）。Whisper の hotwords に渡す
+    diarize: bool = False            # 話者分離
+    num_speakers: int = -1           # -1=自動
+    speaker_labels: bool = True      # 字幕に「話者1：」を前置する
+    markers: bool = False            # タイムラインにカット点/話者交代のマーカーを追加
+    line_chars: int = 0              # 字幕1行の全角文字数（0=整形しない）
+    txt: bool = False                # 文字起こしを .txt でも書き出す
+    md: bool = False                 # 文字起こしを .md でも書き出す
+    out_stem: str | None = None      # 出力ファイル名の幹（バッチで同名を避ける用）
+    ui_lang: str = "ja"
 
 
 @dataclass
@@ -208,11 +240,56 @@ class PipelineResult:
     stopped: bool            # 停止要求で中断したか
     timeline_path: Path | None
     srt_path: Path | None
+    cues: list = field(default_factory=list)          # 最終的な字幕（プレビュー/書き出し用）
+    extra_paths: list = field(default_factory=list)   # 追加で書いた .txt / .md
+    markers_added: int = 0
+
+
+def _output_ext(export_key: str, inp: Path) -> str:
+    if export_key == EXPORT_MEDIA:
+        suffix = inp.suffix.lower()
+        if suffix in AUDIO_EXTS:
+            # 同梱の auto-editor が書き出せない形式（mp3 / m4a / aac / wma）は WAV にする
+            return suffix if suffix in AUDIO_RENDER_EXTS else ".wav"
+        if suffix in (".mp4", ".mov", ".mkv", ".webm", ".m4v"):
+            return suffix
+        return ".mp4"        # avi/wmv/flv は互換性の高い mp4 へ
+    return {
+        "resolve": ".fcpxml",
+        "premiere": ".xml",
+        "final-cut-pro": ".fcpxml",
+    }.get(export_key, ".xml")
+
+
+def _hotwords(text: str) -> str | None:
+    words = [w.strip() for w in text.replace("\n", ",").replace("、", ",").split(",")]
+    words = [w for w in words if w]
+    return ", ".join(words) if words else None
+
+
+def _prepare_vad_cuts(inp, out_dir, name, params, *, on_log, tr, audio_only):
+    """VAD でカット区間を決め、v1 JSON を書く。戻り値 (json_path, fps)。失敗/発話なしは (None, None)。"""
+    fps = AUDIO_ONLY_TIMEBASE if audio_only else probe_fps(inp)
+    if not fps:
+        on_log(tr("log_vad_no_fps"), "warn")
+        return None, None
+    on_log(tr("log_vad_start"), "info")
+    samples = decode_mix(inp)
+    duration = probe_duration(inp) or len(samples) / SAMPLE_RATE
+    ranges = detect_speech(samples)
+    chunks = speech_to_chunks(ranges, duration, fps, margin=params.margin,
+                              silent_speed=params.silent_speed)
+    if not chunks:
+        on_log(tr("log_vad_none"), "warn")
+        return None, None
+    path = write_v1(out_dir / f"{name}_cuts_vad.json", inp, chunks)
+    on_log(tr("log_vad_done", len(ranges)), "muted")
+    return path, fps
 
 
 def run_pipeline(
     ae_path,                 # auto-editor 実行パス
-    inp: Path,               # 入力動画（解決済み絶対パス）
+    inp: Path,               # 入力動画/音声（解決済み絶対パス）
     out_dir: Path,           # 出力先（解決済み絶対パス）
     params: PipelineParams,
     *,
@@ -220,18 +297,17 @@ def run_pipeline(
     should_stop,             # () -> bool
     tr,                      # (key: str, *args) -> str
     transcribe=None,         # DI用フック（既定 None→内部で faster_whisper を使用）
+    model_cache=None,        # dict を渡すと WhisperModel を使い回す（バッチ処理用）
 ) -> PipelineResult:
     result = PipelineResult(ok=False, stopped=False, timeline_path=None, srt_path=None)
 
-    # Resolve output paths based on export_key
-    ext = {
-        "resolve": ".fcpxml",
-        "premiere": ".xml",
-        "final-cut-pro": ".fcpxml",
-    }.get(params.export_key, ".xml")
+    name = params.out_stem or inp.stem
+    ext = _output_ext(params.export_key, inp)
+    audio_only = is_audio_only(inp)
+    is_media = params.export_key == EXPORT_MEDIA
 
-    output_ae = out_dir / f"{inp.stem}_snipsynced{ext}"
-    output_srt = out_dir / f"{inp.stem}.srt"
+    output_ae = out_dir / f"{name}_snipsynced{ext}"
+    output_srt = out_dir / f"{name}.srt"
 
     # auto-editor は多トラック音声入力を分解し、入力ファイルの隣に {stem}_tracks
     # フォルダ（_1.wav/_2.wav...）を残す。--temp-dir では移動できず抑制フラグも無い
@@ -243,6 +319,59 @@ def run_pipeline(
     # fcpxml の参照アセットを入力隣に温存する必要があるとき True（finally で消さない）。
     tracks_keep_in_place = False
 
+    vad_json = None          # VAD 方式のとき、全 auto-editor 呼び出しで共有するカット区間
+    cut_tb = None
+    v1_json = output_ae.parent / f"{name}_cuts_v1.json"
+    chunks_cache: list | None = None
+    chunks_tb = None
+
+    def get_chunks():
+        """(chunks, tb)。VAD 方式は自前の区間、音量方式は auto-editor の v1 export。取れなければ ([], None)。
+
+        chunks はタイムラインの元になる区間そのもの。カット境界・字幕用音声・マーカーはすべてここから作る。
+        """
+        nonlocal chunks_cache, chunks_tb
+        if chunks_cache is not None:
+            return chunks_cache, chunks_tb
+        chunks_cache = []
+        try:
+            if vad_json is not None:
+                chunks_cache, chunks_tb = read_v1_chunks(vad_json), cut_tb
+            else:
+                fps = AUDIO_ONLY_TIMEBASE if audio_only else probe_fps(inp)
+                if fps:
+                    v1_cmd = build_v1_export_cmd(
+                        ae_path, inp, params.margin, params.threshold, v1_json, fps,
+                        silent_speed=params.silent_speed,
+                    )
+                    rc_v1, stopped_v1 = _run_streaming(
+                        v1_cmd, on_log=on_log, should_stop=should_stop,
+                    )
+                    if not stopped_v1 and rc_v1 == 0 and v1_json.exists():
+                        chunks_cache, chunks_tb = read_v1_chunks(v1_json), fps
+        except Exception:
+            on_log(tr("log_unexpected", traceback.format_exc()), "error")
+        finally:
+            try:
+                if v1_json.exists():
+                    v1_json.unlink()
+            except Exception:
+                pass
+        return chunks_cache, chunks_tb
+
+    def get_boundaries() -> list:
+        """タイムライン上のカット境界(秒)。"""
+        chunks, tb = get_chunks()
+        return chunks_to_boundaries(chunks, tb)
+
+    def render_audio(sr: int):
+        """カット後の音声を自前で組み立てる。作れなければ None。"""
+        chunks, tb = get_chunks()
+        if not chunks or not tb:
+            return None
+        audio = render_cut_audio(decode_mix(inp, sr), chunks, tb, sr)
+        return audio if len(audio) else None
+
     try:
         # 1. Auto-Editor Processing
         if should_stop():
@@ -250,9 +379,27 @@ def run_pipeline(
             on_log(tr("log_stopped"), "warn")
             return result
 
-        cmd = build_cut_cmd(ae_path, inp, params.margin, params.threshold, params.export_key, output_ae)
+        # 0. VAD 方式: 発話区間からカット区間を作る（失敗時は音量方式へ戻す）
+        if params.cut_mode == "vad":
+            try:
+                vad_json, cut_tb = _prepare_vad_cuts(
+                    inp, out_dir, name, params, on_log=on_log, tr=tr, audio_only=audio_only)
+            except Exception:
+                vad_json, cut_tb = None, None
+                on_log(tr("log_unexpected", traceback.format_exc()), "error")
+
+        # メディア書き出しだけ: ライセンスキー無しの auto-editor は大きい解像度のレンダリングを縮小する。
+        if is_media and not audio_only:
+            res = probe_resolution(inp)
+            if exceeds_unlicensed_render_limit(res):
+                on_log(tr("log_media_downscale", res[0], res[1]), "warn")
 
         try:
+            if vad_json is not None:
+                cmd = build_cut_cmd_from_chunks(ae_path, vad_json, params.export_key, output_ae, tb=cut_tb)
+            else:
+                cmd = build_cut_cmd(ae_path, inp, params.margin, params.threshold,
+                                    params.export_key, output_ae, silent_speed=params.silent_speed)
             rc, stopped = _run_streaming(cmd, on_log=on_log, should_stop=should_stop)
             if stopped:
                 result.stopped = True
@@ -302,30 +449,48 @@ def run_pipeline(
                 on_log(tr("log_unexpected", traceback.format_exc()), "error")
 
         # 2. Faster-Whisper Processing via Temp WAV
+        turns = None             # 話者分離の結果（タイムライン基準）
         if result.ok and params.do_srt and not result.stopped:
-            temp_wav = output_ae.parent / f"{inp.stem}_temp_audio.wav"
+            temp_wav = output_ae.parent / f"{name}_temp_audio.wav"
             temp_success = False
             srt_words = []
             srt_natural_segs = []
+            seg_tuples = []
+            detected_lang = lang_hint(params.model_size)
 
-            # 2a. Generate Temp WAV
+            # 2a. 字幕用のカット済み音声（16kHz mono）を作る。
+            #     まず chunks から自前で組み立てる（モノラルでも壊れず、auto-editor の追加実行も不要）。
+            #     組み立てられないときだけ、従来どおり auto-editor で WAV を書き出す。
             on_log(tr("log_srt_temp_start"), "info")
-            temp_cmd = build_extract_wav_cmd(ae_path, inp, params.margin, params.threshold, temp_wav)
             try:
-                rc_temp, stopped_temp = _run_streaming(temp_cmd, on_log=on_log, should_stop=should_stop)
-
-                if stopped_temp:
-                    result.stopped = True
-                    on_log(tr("log_stopped"), "warn")
-                elif rc_temp == 0:
-                    if temp_wav.exists():
-                        temp_success = True
-                    else:
-                        on_log(tr("log_wav_missing"), "error")
-                else:
-                    on_log(tr("log_error", rc_temp), "error")
+                built = render_audio(SAMPLE_RATE)
+                if built is not None:
+                    write_wav(temp_wav, built, SAMPLE_RATE)
+                    temp_success = True
             except Exception:
-                on_log(tr("log_unexpected", traceback.format_exc()), "error")
+                temp_success = False
+            if not temp_success and not should_stop():
+                if vad_json is not None:
+                    temp_cmd = build_extract_wav_cmd_from_chunks(ae_path, vad_json, temp_wav, tb=cut_tb)
+                else:
+                    temp_cmd = build_extract_wav_cmd(ae_path, inp, params.margin, params.threshold,
+                                                     temp_wav, silent_speed=params.silent_speed)
+                try:
+                    rc_temp, stopped_temp = _run_streaming(temp_cmd, on_log=on_log,
+                                                           should_stop=should_stop)
+
+                    if stopped_temp:
+                        result.stopped = True
+                        on_log(tr("log_stopped"), "warn")
+                    elif rc_temp == 0:
+                        if temp_wav.exists():
+                            temp_success = True
+                        else:
+                            on_log(tr("log_wav_missing"), "error")
+                    else:
+                        on_log(tr("log_error", rc_temp), "error")
+                except Exception:
+                    on_log(tr("log_unexpected", traceback.format_exc()), "error")
 
             if should_stop() and not result.stopped:
                 result.stopped = True
@@ -336,6 +501,23 @@ def run_pipeline(
                 on_log(tr("log_srt_analyze", params.model_size), "info")
                 try:
                     device, compute_type = resolve_device(params.use_gpu)
+                    want_words = params.snap_srt or params.diarize or params.line_chars > 0
+                    spec = get_spec(params.model_size)
+
+                    def _get_model(dev, ctype):
+                        key = (params.model_size, dev, ctype)
+                        if model_cache is not None and key in model_cache:
+                            return model_cache[key]
+                        from faster_whisper import WhisperModel
+                        if needs_download(params.model_size):
+                            on_log(tr("log_model_download", spec.source), "muted")
+                        if dev == "cuda":
+                            add_cuda_dll_dirs()   # venv内CUDA DLLをロード可能に（Win）
+                        model = WhisperModel(prepare_model(params.model_size),
+                                             device=dev, compute_type=ctype)
+                        if model_cache is not None:
+                            model_cache[key] = model
+                        return model
 
                     def _decode(dev, ctype):
                         # transcribe を呼び、ジェネレータをリスト化して“この場で”デコードを完走させる。
@@ -343,14 +525,13 @@ def run_pipeline(
                         if transcribe is not None:
                             seg_iter, inf = transcribe(temp_wav, params.model_size)
                         else:
-                            from faster_whisper import WhisperModel
-                            if dev == "cuda":
-                                add_cuda_dll_dirs()   # venv内CUDA DLLをロード可能に（Win）
-                            model = WhisperModel(params.model_size, device=dev, compute_type=ctype)
-                            seg_iter, inf = model.transcribe(
-                                str(temp_wav), beam_size=5, language=None,
-                                word_timestamps=params.snap_srt,
-                            )
+                            model = _get_model(dev, ctype)
+                            kwargs = dict(beam_size=5, language=None, word_timestamps=want_words)
+                            kwargs.update(spec.transcribe_kwargs)
+                            hot = _hotwords(params.hotwords)
+                            if hot:
+                                kwargs["hotwords"] = hot
+                            seg_iter, inf = model.transcribe(str(temp_wav), **kwargs)
                         return list(seg_iter), inf   # ← list() でデコード完走（例外はここで出る）
 
                     try:
@@ -370,12 +551,18 @@ def run_pipeline(
                             raise   # CPU でも失敗なら外側 except へ（log_unexpected）
 
                     on_log(tr("log_lang_detected", info.language, info.language_probability), "muted")
+                    detected_lang = getattr(info, "language", None) or detected_lang
 
                     srt_natural_segs = [(s.start, s.end) for s in segments]
                     srt_words = []
                     for s in segments:
                         for w in (getattr(s, "words", None) or []):
                             srt_words.append((w.start, w.end, w.word))
+                    seg_tuples = [
+                        (s.start, s.end, s.text,
+                         [(w.start, w.end, w.word) for w in (getattr(s, "words", None) or [])] or None)
+                        for s in segments
+                    ]
 
                     # SRT 書き込み（segments は確定済みリスト）
                     with open(output_srt, "w", encoding="utf-8") as srt_file:
@@ -399,6 +586,21 @@ def run_pipeline(
                 except Exception:
                     on_log(tr("log_unexpected", traceback.format_exc()), "error")
 
+            # 2b'. 話者分離（カット済み WAV＝タイムライン基準の音声に対して実行）
+            if params.diarize and temp_success and result.srt_path and not result.stopped:
+                try:
+                    if not sherpa_available():
+                        on_log(tr("log_diar_unavailable"), "warn")
+                    else:
+                        on_log(tr("log_speaker_start"), "info")
+                        turns_raw = diarize(decode_mix(temp_wav), num_speakers=params.num_speakers,
+                                            on_log=on_log)
+                        turns = normalize_turns(turns_raw)
+                        on_log(tr("log_speaker_done", len({t[2] for t in turns})), "muted")
+                except Exception:
+                    turns = None
+                    on_log(tr("log_speaker_fail", traceback.format_exc()), "warn")
+
             # 2c. Cleanup Temp WAV
             try:
                 if temp_wav.exists():
@@ -406,39 +608,71 @@ def run_pipeline(
             except Exception as e:
                 on_log(tr("log_cleanup_failed", str(e)), "warn")
 
-            # 2d. 字幕をカット境界で分割（カット整合字幕・トグルON時・全形式共通）
-            if params.snap_srt and result.srt_path and srt_words and not result.stopped:
-                v1_json = output_ae.parent / f"{inp.stem}_cuts_v1.json"
+            # 2d. 字幕の最終整形（カット境界で分割・話者付与・文節改行）。いずれも不要なら
+            #     上で書いた自然セグメントの SRT をそのまま使う。
+            if result.srt_path and not result.stopped:
                 try:
-                    fps = probe_fps(inp)
-                    boundaries = []
-                    if fps:
-                        v1_cmd = build_v1_export_cmd(
-                            ae_path, inp, params.margin, params.threshold, v1_json, fps,
-                        )
-                        rc_v1, stopped_v1 = _run_streaming(
-                            v1_cmd, on_log=on_log, should_stop=should_stop,
-                        )
-                        if not stopped_v1 and rc_v1 == 0 and v1_json.exists():
-                            boundaries = parse_v1_boundaries(v1_json, fps)
-                    if boundaries:
-                        srt = build_cut_aligned_srt(srt_words, srt_natural_segs, boundaries)
+                    cues = None
+                    aligned = False
+                    if params.snap_srt and srt_words:
+                        boundaries = get_boundaries()
+                        if boundaries:
+                            words = tag_words(srt_words, turns) if turns else srt_words
+                            cues = build_cut_aligned_cues(
+                                words, srt_natural_segs, boundaries,
+                                max_chars=params.line_chars, lang=detected_lang) or None
+                            if cues:
+                                aligned = True
+                                on_log(tr("log_srt_cut_aligned"), "muted")
+                    if cues is None:
+                        cues = cues_from_segments(seg_tuples, turns, max_chars=params.line_chars,
+                                                  lang=detected_lang)
+                    result.cues = cues
+                    if cues and (aligned or turns or params.line_chars > 0):
+                        srt = format_srt(cues, max_chars=params.line_chars, lang=detected_lang,
+                                         speaker_labels=bool(turns) and params.speaker_labels,
+                                         ui_lang=params.ui_lang)
                         if srt.strip():
                             result.srt_path.write_text(srt, encoding="utf-8")
-                            on_log(tr("log_srt_cut_aligned"), "muted")
                 except Exception:
                     on_log(tr("log_unexpected", traceback.format_exc()), "error")
-                finally:
-                    try:
-                        if v1_json.exists():
-                            v1_json.unlink()
-                    except Exception:
-                        pass
+
+        # 3. 文字起こしの書き出し（.txt / .md）
+        if result.cues and (params.txt or params.md) and not result.stopped:
+            try:
+                paths = write_transcripts(
+                    result.cues, out_dir / name, title=name, want_txt=params.txt, want_md=params.md,
+                    speakers=bool(turns) and params.speaker_labels, ui_lang=params.ui_lang)
+                result.extra_paths = paths
+                for p in paths:
+                    on_log(tr("log_transcript_written", p.name), "success")
+            except Exception:
+                on_log(tr("log_unexpected", traceback.format_exc()), "error")
+
+        # 4. タイムラインへのマーカー（カット点／話者交代）。タイムライン形式のときだけ。
+        if (params.markers and result.ok and not result.stopped and result.timeline_path
+                and result.timeline_path.suffix in (".fcpxml", ".xml")
+                and result.timeline_path.exists()):
+            try:
+                marks = cut_point_markers(get_boundaries(), tr("marker_cut"))
+                if turns and result.cues:
+                    marks += speaker_turn_markers(result.cues, params.ui_lang)
+                marks.sort(key=lambda m: m[0])
+                result.markers_added = add_markers(result.timeline_path, marks)
+                on_log(tr("log_markers_added", result.markers_added), "muted")
+            except Exception:
+                on_log(tr("log_unexpected", traceback.format_exc()), "error")
 
     except Exception:
         # Catch any unexpected top-level worker thread crashes
         on_log(tr("log_unexpected", traceback.format_exc()), "error")
     finally:
+        # VAD 方式で作った一時 JSON を消す。
+        try:
+            if vad_json is not None and Path(vad_json).exists():
+                Path(vad_json).unlink()
+        except Exception:
+            pass
         # 入力の隣に残る {stem}_tracks を掃除（本実行で出現した分のみ）。
         # fcpxml で出力先へ移動済み(relocate)なら、ここに残るのは字幕用 WAV 抽出が
         # 再生成したクラッタ → 削除してよい。fcpxml で温存判定(tracks_keep_in_place)の
