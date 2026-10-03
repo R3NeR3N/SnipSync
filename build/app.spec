@@ -81,6 +81,7 @@ exe = EXE(
     a.datas,
     [],
     name='SnipSync',
+    icon=str(WORK_DIR / 'src' / 'assets' / 'icon' / 'snipsync.ico'),     # エクスプローラー・タスクバーのアイコン
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

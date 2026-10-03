@@ -183,9 +183,11 @@ class Logo(tk.Canvas):
         s = size / 30
         def p(*pts):
             return [v * s for v in pts]
-        self.create_polygon(p(3, 9, 15, 9, 11, 21, 3, 21), outline=T.CHALK, fill="", width=2)
-        self.create_polygon(p(19, 9, 27, 9, 27, 21, 15, 21), outline=T.CHALK, fill="", width=2)
-        self.create_line(p(18, 5, 9, 25), fill=T.PENCIL, width=3, capstyle="round")
+        # アプリアイコン（scripts/make_icon.py）と同じ図形。2つのクリップを、黄色の線で切る。
+        self.create_polygon(p(3, 9, 15, 9, 11, 21, 3, 21), outline="", fill=T.CHALK)
+        self.create_polygon(p(19, 9, 27, 9, 27, 21, 15, 21), outline="", fill=T.CHALK)
+        self.create_line(p(18, 5, 9, 25), fill=bg, width=5.6 * s, capstyle="round")      # 切れ目の隙間
+        self.create_line(p(18, 5, 9, 25), fill=T.PENCIL, width=3 * s, capstyle="round")
 
 
 # ── the monitor strip: what will be cut ─────────────────────────────────────────────

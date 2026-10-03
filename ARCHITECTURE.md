@@ -16,6 +16,7 @@ SnipSync/
 │   ├── subtitle_edit.py    # 字幕の編集ロジック（CueEditor・書き出し文字列の生成。UI に依存しない）
 │   ├── subtitle_editor.py  # 字幕の確認・編集ウィンドウ（表 + 編集欄 + txt/md/srt タブ）
 │   ├── assets/fonts/       # 同梱フォント（BIZ UD ゴシック, SIL OFL）
+│   ├── assets/icon/        # アプリアイコン（.ico / .png）。scripts/make_icon.py で生成
 │   ├── pipeline.py         # 処理全体のオーケストレーション（run_pipeline）
 │   ├── aebin.py            # auto-editor 31.x バイナリの取得・SHA-256 検証・同梱版の解決
 │   ├── autoeditor.py       # auto-editor コマンド組み立て / fps・長さ・解像度の取得（PyAV 代替あり）
@@ -33,6 +34,7 @@ SnipSync/
 ├── tests/                  # pytest（subprocess / transcribe はモック）
 ├── build/app.spec          # PyInstaller（budoux / sherpa_onnx を collect_all、auto-editor は build/vendor、フォントは src/assets から同梱）
 ├── scripts/fetch_auto_editor.py  # 同梱用の auto-editor を取得（SHA-256 検証）
+├── scripts/make_icon.py    # アプリアイコンの生成（Pillow。実行時は不要）
 ├── docs/handoff/           # 設計・検証の引き継ぎ書
 ├── pyproject.toml          # 直接依存の単一ソース
 └── requirements.txt        # 再現用フルフリーズ

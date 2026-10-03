@@ -2,6 +2,7 @@ import shutil
 import subprocess
 import sys
 import traceback
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -230,6 +231,7 @@ class PipelineParams:
     line_chars: int = 0              # 字幕1行の全角文字数（0=整形しない）
     txt: bool = False                # 文字起こしを .txt でも書き出す
     md: bool = False                 # 文字起こしを .md でも書き出す
+    hold_subtitles: bool = False     # 字幕（.srt/.txt/.md）をここでは書かず、確認・編集してから呼び出し側が保存する
     out_stem: str | None = None      # 出力ファイル名の幹（バッチで同名を避ける用）
     ui_lang: str = "ja"
 
@@ -242,6 +244,7 @@ class PipelineResult:
     srt_path: Path | None
     cues: list = field(default_factory=list)          # 最終的な字幕（プレビュー/書き出し用）
     extra_paths: list = field(default_factory=list)   # 追加で書いた .txt / .md
+    pending_paths: dict = field(default_factory=dict)  # hold_subtitles のとき: まだ書いていない宛先（形式 -> パス）
     markers_added: int = 0
 
 
@@ -564,8 +567,9 @@ def run_pipeline(
                         for s in segments
                     ]
 
-                    # SRT 書き込み（segments は確定済みリスト）
-                    with open(output_srt, "w", encoding="utf-8") as srt_file:
+                    # SRT 書き込み（segments は確定済みリスト）。保留中はファイルを作らず、ログだけ出す。
+                    hold = params.hold_subtitles
+                    with (nullcontext() if hold else open(output_srt, "w", encoding="utf-8")) as srt_file:
                         for i, segment in enumerate(segments, start=1):
                             if should_stop():
                                 result.stopped = True
@@ -573,15 +577,19 @@ def run_pipeline(
                             start = format_timestamp(segment.start)
                             end = format_timestamp(segment.end)
                             text = segment.text.strip()
-                            srt_file.write(f"{i}\n{start} --> {end}\n{text}\n\n")
+                            if srt_file:
+                                srt_file.write(f"{i}\n{start} --> {end}\n{text}\n\n")
                             on_log(f"  [{start} -> {end}] {text}", "muted")
 
                     if should_stop() or result.stopped:
                         result.stopped = True
                         on_log(tr("log_stopped"), "warn")
                     else:
-                        on_log(tr("log_srt_done"), "success")
-                        on_log(f"   {output_srt.name}", "success")
+                        if hold:
+                            on_log(tr("log_srt_held"), "success")
+                        else:
+                            on_log(tr("log_srt_done"), "success")
+                            on_log(f"   {output_srt.name}", "success")
                         result.srt_path = output_srt
                 except Exception:
                     on_log(tr("log_unexpected", traceback.format_exc()), "error")
@@ -628,7 +636,7 @@ def run_pipeline(
                         cues = cues_from_segments(seg_tuples, turns, max_chars=params.line_chars,
                                                   lang=detected_lang)
                     result.cues = cues
-                    if cues and (aligned or turns or params.line_chars > 0):
+                    if cues and not params.hold_subtitles and (aligned or turns or params.line_chars > 0):
                         srt = format_srt(cues, max_chars=params.line_chars, lang=detected_lang,
                                          speaker_labels=bool(turns) and params.speaker_labels,
                                          ui_lang=params.ui_lang)
@@ -638,7 +646,14 @@ def run_pipeline(
                     on_log(tr("log_unexpected", traceback.format_exc()), "error")
 
         # 3. 文字起こしの書き出し（.txt / .md）
-        if result.cues and (params.txt or params.md) and not result.stopped:
+        if result.cues and params.hold_subtitles and not result.stopped:
+            # 保留: 書かない。確認後に保存する宛先だけ返す（呼び出し側が編集結果を書く）。
+            result.pending_paths = {"srt": output_srt}
+            if params.txt:
+                result.pending_paths["txt"] = out_dir / f"{name}.txt"
+            if params.md:
+                result.pending_paths["md"] = out_dir / f"{name}.md"
+        elif result.cues and (params.txt or params.md) and not result.stopped:
             try:
                 paths = write_transcripts(
                     result.cues, out_dir / name, title=name, want_txt=params.txt, want_md=params.md,

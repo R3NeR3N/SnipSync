@@ -25,17 +25,24 @@ def _hms(sec: float) -> str:
 
 
 class SubtitleEditor(ctk.CTkToplevel):
-    def __init__(self, app, cues=(), title: str = "", paths: dict | None = None):
+    def __init__(self, app, cues=(), title: str = "", paths: dict | None = None, *, pending: bool = False,
+                 on_closed=None):
+        """pending=True: 字幕ファイルはまだ無い（処理は保存前で止まっている）。最初の保存で paths へ書く。
+        on_closed(cues, saved, paths): 閉じたときに、編集後の字幕・保存したか・保存先を受け取る。"""
         super().__init__(app)
         self.app = app
         self.t = app.t
         self.editor = CueEditor(cues)
         self.stem = title
-        self.paths: dict[str, Path] = dict(paths or {})     # 上書き保存の宛先（形式 -> パス）
+        self.paths: dict[str, Path] = dict(paths or {})     # 保存先（形式 -> パス）
+        self.pending = pending
+        self.saved = False
+        self._on_closed = on_closed
         self._sel: int | None = None
         self._loading = False
         self._status_after = None
         self.configure(fg_color=T.BENCH)
+        T.apply_icon(self)
         self.geometry("980x720")
         self.minsize(820, 580)
         self.protocol("WM_DELETE_WINDOW", self._close)
@@ -43,6 +50,8 @@ class SubtitleEditor(ctk.CTkToplevel):
         self._build()
         self.bind("<Control-s>", lambda _e: self.save())
         self._refresh_all()
+        if self.pending and self.paths:
+            self.status.configure(text=self.t("ed_dest", ", ".join(p.name for p in self.paths.values())))
         self.after(50, self.lift)
 
     # ── 構築 ───────────────────────────────────────────────────────────────────────
@@ -224,9 +233,10 @@ class SubtitleEditor(ctk.CTkToplevel):
     def _update_chrome(self):
         self.count_lbl.configure(text=self.t("ed_count", len(self.editor)))
         dirty = self.editor.dirty
-        self.dirty_lbl.configure(text=self.t("ed_dirty") if dirty else "")
+        unsaved = dirty or self.pending
+        self.dirty_lbl.configure(text=self.t("ed_pending") if self.pending else (self.t("ed_dirty") if dirty else ""))
         name = f" — {self.stem}" if self.stem else ""
-        self.title(f"{'● ' if dirty else ''}{self.t('ed_title')}{name}")
+        self.title(f"{'● ' if unsaved else ''}{self.t('ed_title')}{name}")
         self.btn_save.enable(bool(len(self.editor)))
         self.btn_save_as.enable(bool(len(self.editor)))
         self.btn_copy.enable(bool(len(self.editor)))
@@ -352,10 +362,15 @@ class SubtitleEditor(ctk.CTkToplevel):
         except OSError as exc:
             messagebox.showerror(self.t("err_title"), str(exc), parent=self)
             return
-        self.editor.mark_saved()
-        self._update_chrome()
+        self._mark_saved()
         names = ", ".join(written)
         self.flash(self.t("ed_saved", names))
+
+    def _mark_saved(self):
+        self.editor.mark_saved()
+        self.pending = False
+        self.saved = True
+        self._update_chrome()
 
     def save_as(self):
         if not len(self.editor):
@@ -374,8 +389,7 @@ class SubtitleEditor(ctk.CTkToplevel):
             return
         self.paths = {format_for_path(path): Path(path)}
         self.stem = Path(path).stem
-        self.editor.mark_saved()
-        self._update_chrome()
+        self._mark_saved()
         self.flash(self.t("ed_saved", Path(path).name))
 
     def copy(self):
@@ -402,23 +416,31 @@ class SubtitleEditor(ctk.CTkToplevel):
         self.editor = CueEditor(cues)
         self.stem = title
         self.paths = dict(paths or {})
+        self.pending = False             # 別の字幕を読み込んだので、保存待ちだった字幕は破棄された
         self._refresh_all()
 
     # ── 閉じる ─────────────────────────────────────────────────────────────────────
     def _confirm_discard(self) -> bool:
         """未保存の変更があれば確認する。続けてよければ True。"""
-        if not self.editor.dirty:
+        waiting = self.pending and len(self.editor) > 0       # まだ一度も保存しておらず、書くものがある
+        if not self.editor.dirty and not waiting:
             return True
-        ans = messagebox.askyesnocancel(self.t("ed_close_title"), self.t("ed_close_ask"), parent=self)
+        if waiting:
+            ans = messagebox.askyesnocancel(self.t("ed_pending_title"), self.t("ed_pending_ask"), parent=self)
+        else:
+            ans = messagebox.askyesnocancel(self.t("ed_close_title"), self.t("ed_close_ask"), parent=self)
         if ans is None:
             return False
         if ans:
             self.save()
-            return not self.editor.dirty
+            return not (self.editor.dirty or (self.pending and len(self.editor) > 0))
         return True
 
     def _close(self):
         if self._confirm_discard():
+            callback, self._on_closed = self._on_closed, None
+            if callback:
+                callback(self.editor.cues, self.saved, dict(self.paths))
             self.destroy()
 
     # ── 言語の切り替え ──────────────────────────────────────────────────────────────

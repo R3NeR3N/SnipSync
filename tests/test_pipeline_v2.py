@@ -320,3 +320,29 @@ def test_line_chars_wraps_subtitles_even_without_cut_alignment(dirs, monkeypatch
     body = res.srt_path.read_text(encoding="utf-8")
     assert "\n" in body.split("-->")[1].strip().split("\n", 1)[1].strip()   # 本文が複数行に整形される
     assert "".join(body.split("\n")[2:3]) != text
+
+
+# ── 字幕を保存前に確認する（hold_subtitles） ──────────────────────────────────────
+
+def test_hold_subtitles_writes_no_subtitle_files_and_returns_destinations(dirs, monkeypatch):
+    inp, out = dirs
+    monkeypatch.setattr(pl, "probe_fps", lambda p: 10.0)
+    rec = Recorder(v1_chunks=[[0, 60, 1.0]])
+    params = base_params(do_srt=True, snap_srt=False, txt=True, md=True, hold_subtitles=True)
+    res, logs = run(dirs, monkeypatch, params, rec, transcribe=_transcribe_two_speakers)
+    assert res.ok and res.cues
+    assert not list(out.glob("*.srt")) and not list(out.glob("*.txt")) and not list(out.glob("*.md"))
+    assert list(out.glob("input_snipsynced.*"))                       # カット結果のタイムラインは書く
+    assert res.pending_paths == {"srt": out / "input.srt", "txt": out / "input.txt", "md": out / "input.md"}
+    assert any(m == "log_srt_held" for m, _ in logs) and not any(m.startswith("log_srt_done") for m, _ in logs)
+    assert res.extra_paths == []
+
+
+def test_without_hold_subtitles_files_are_written_as_before(dirs, monkeypatch):
+    inp, out = dirs
+    monkeypatch.setattr(pl, "probe_fps", lambda p: 10.0)
+    rec = Recorder(v1_chunks=[[0, 60, 1.0]])
+    res, _ = run(dirs, monkeypatch, base_params(do_srt=True, snap_srt=False, txt=True), rec,
+                 transcribe=_transcribe_two_speakers)
+    assert (out / "input.srt").exists() and (out / "input.txt").exists()
+    assert res.pending_paths == {}

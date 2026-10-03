@@ -141,3 +141,50 @@ def test_buttons_use_the_same_word_in_the_flow():
     assert "保存" in ja["ed_save"] and "保存" in ja["ed_saved"]
     en = I18N["en"]
     assert "Start" in en["btn_start"] and "Stop" in en["btn_stop"] and "Save" in en["ed_save"] and "Saved" in en["ed_saved"]
+
+
+# ── アプリアイコン ───────────────────────────────────────────────────────────────────
+def test_app_icon_is_bundled_with_all_standard_sizes():
+    ico = (SRC / "assets" / "icon" / "snipsync.ico").read_bytes()
+    reserved, kind, count = int.from_bytes(ico[0:2], "little"), int.from_bytes(ico[2:4], "little"), int.from_bytes(ico[4:6], "little")
+    assert (reserved, kind) == (0, 1)
+    sizes = {ico[6 + 16 * i] or 256 for i in range(count)}              # 幅（0 は 256）
+    assert {16, 24, 32, 48, 64, 128, 256} <= sizes
+    assert (SRC / "assets" / "icon" / "snipsync.png").read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+def test_icon_and_header_logo_are_drawn_from_the_same_shapes():
+    """アイコン（scripts/make_icon.py）とヘッダーのロゴ（widgets.Logo）は、同じ座標を使う。片方だけ直すと食い違う。"""
+    shapes = ("3, 9, 15, 9, 11, 21, 3, 21", "19, 9, 27, 9, 27, 21, 15, 21", "18, 5, 9, 25")
+    icon = (ROOT / "scripts" / "make_icon.py").read_text(encoding="utf-8")
+    logo = (SRC / "widgets.py").read_text(encoding="utf-8")
+    for s in shapes:
+        assert s in icon and s in logo, s
+
+
+def test_apply_icon_sets_the_bundled_ico_after_customtkinter_has_set_its_own():
+    """CustomTkinter は約 200 ms 後に既定アイコンを入れる。それより後（350 ms）に自分のアイコンで上書きする。"""
+    calls = {}
+
+    class Win:
+        def after(self, ms, fn):
+            calls["delay"] = ms
+            fn()
+
+        def iconbitmap(self, path):
+            calls["icon"] = Path(path)
+
+    T.apply_icon(Win())
+    assert calls["delay"] > 200
+    assert calls["icon"].name == "snipsync.ico" and calls["icon"].exists()
+
+
+def test_apply_icon_survives_a_platform_that_rejects_ico():
+    class Win:
+        def after(self, ms, fn):
+            fn()
+
+        def iconbitmap(self, path):
+            raise RuntimeError("bitmap not defined")
+
+    T.apply_icon(Win())          # 例外を外へ出さない

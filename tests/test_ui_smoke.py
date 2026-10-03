@@ -113,3 +113,67 @@ def test_the_original_cues_are_never_mutated_by_editing(app):
     ed.text.insert("1.0", "別の文")
     pump(app, 10)
     assert CUES[0].text == "あいう"
+
+
+def test_review_editor_writes_nothing_until_saved_and_reports_the_outcome(app, tmp_path):
+    from subtitle_editor import SubtitleEditor
+
+    dest = {"srt": tmp_path / "talk.srt", "txt": tmp_path / "talk.txt"}
+    reported = {}
+    ed = SubtitleEditor(app, list(CUES), "talk", dest, pending=True,
+                        on_closed=lambda cues, saved, paths: reported.update(cues=cues, saved=saved, paths=paths))
+    app.review_win = ed
+    pump(app, 10)
+    assert ed.pending and not any(p.exists() for p in dest.values())
+    assert ed.title().startswith("●")                                   # まだ保存していない印
+
+    ed.tree.selection_set("1")
+    ed._on_select()
+    pump(app)
+    ed.text.delete("1.0", "end")
+    ed.text.insert("1.0", "確認で直した")
+    pump(app, 10)
+    ed.save()
+    pump(app, 5)
+    assert dest["srt"].exists() and dest["txt"].exists() and not ed.pending
+    assert "確認で直した" in dest["srt"].read_text(encoding="utf-8")
+    assert "確認で直した" in dest["txt"].read_text(encoding="utf-8")
+
+    ed._close()
+    assert reported["saved"] is True and reported["cues"][1].text == "確認で直した"
+    assert set(reported["paths"]) == {"srt", "txt"}
+    app.review_win = None
+
+
+def test_review_editor_closed_without_saving_reports_not_saved(app, tmp_path, monkeypatch):
+    from tkinter import messagebox
+
+    from subtitle_editor import SubtitleEditor
+
+    dest = {"srt": tmp_path / "talk.srt"}
+    reported = {}
+    ed = SubtitleEditor(app, list(CUES), "talk", dest, pending=True,
+                        on_closed=lambda cues, saved, paths: reported.update(saved=saved))
+    app.review_win = ed
+    pump(app, 10)
+    monkeypatch.setattr(messagebox, "askyesnocancel", lambda *a, **k: False)    # 「保存せず閉じる」
+    ed._close()
+    assert reported == {"saved": False} and not dest["srt"].exists()
+    app.review_win = None
+
+
+def test_cancelling_the_close_prompt_keeps_the_review_window_open(app, tmp_path, monkeypatch):
+    from tkinter import messagebox
+
+    from subtitle_editor import SubtitleEditor
+
+    ed = SubtitleEditor(app, list(CUES), "talk", {"srt": tmp_path / "talk.srt"}, pending=True)
+    app.review_win = ed
+    pump(app, 10)
+    monkeypatch.setattr(messagebox, "askyesnocancel", lambda *a, **k: None)
+    ed._close()
+    assert ed.winfo_exists()
+    ed.pending = False
+    ed.destroy()
+    app.review_win = None
+

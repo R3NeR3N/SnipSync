@@ -62,9 +62,10 @@ class SnipSyncApp(_Base):
         super().__init__()
         ctk.set_appearance_mode("dark")
         T.load_fonts(ctk, self)
+        T.apply_icon(self)
         self.configure(fg_color=T.BENCH)
-        self.geometry("1020x900")
-        self.minsize(940, 780)
+        self.geometry("1020x940")
+        self.minsize(940, 820)
 
         self.lang = "ja"
         self.input_files: list[str] = []
@@ -74,6 +75,7 @@ class SnipSyncApp(_Base):
         self.last_paths: dict = {}
         self.last_out_dir: Path | None = None
         self.editor_win = None
+        self.review_win = None               # 処理中に開く、保存前の確認ウィンドウ
         self.running = False
         self.stop_requested = False
         self._reg: list = []                 # (widget, i18n key): 言語切り替えで文言を差し替える
@@ -100,6 +102,7 @@ class SnipSyncApp(_Base):
         self.glossary_var = tk.StringVar(value="")
         self.txt_var = tk.BooleanVar(value=False)
         self.md_var = tk.BooleanVar(value=False)
+        self.review_var = tk.BooleanVar(value=True)      # 字幕を保存する前に確認・編集する（無人の一括処理ではオフ）
         self.markers_var = tk.BooleanVar(value=False)
         self.speaker_labels = True           # 画面には出さない（既定どおり話者名を付ける）。プリセットには残す
 
@@ -315,6 +318,10 @@ class SnipSyncApp(_Base):
             self.glossary_entry = W.entry(p, self.glossary_var, width=380)
             return self.glossary_entry
         self._field(left, "f_glossary", glossary).pack(anchor="w", fill="x", pady=(T.S3, 0))
+        def review(p):
+            self.review_switch = self.reg(W.switch(p, "", self.review_var), "f_review")
+            return self.review_switch
+        self._field(left, None, review, "cap_review").pack(anchor="w", fill="x", pady=(T.S3, 0))
 
         def snap(p):
             self.snap_switch = self.reg(W.switch(p, "", self.snap_var), "f_snap")
@@ -432,8 +439,8 @@ class SnipSyncApp(_Base):
         self._update_stats()
         self.legend.relabel()
         self.cutmap.redraw()
-        if self.editor_win is not None and self._editor_alive():
-            self.editor_win.relabel()
+        for win in self._open_editors():
+            win.relabel()
 
     # ── 設定の収集・反映 ──────────────────────────────────────────────────────────────
     def line_chars(self) -> int:
@@ -456,7 +463,7 @@ class SnipSyncApp(_Base):
             "silence": self.silence, "speed": self._speed(), "hotwords": self.glossary_var.get(),
             "diarize": self.diarize_var.get(), "speakers": self.speakers, "speaker_labels": self.speaker_labels,
             "markers": self.markers_var.get(), "line_chars": self.line_chars(), "txt": self.txt_var.get(),
-            "md": self.md_var.get(),
+            "md": self.md_var.get(), "review": self.review_var.get(),
         }
 
     def _apply_settings(self, s: dict):
@@ -504,6 +511,8 @@ class SnipSyncApp(_Base):
             self.txt_var.set(s["txt"])
         if "md" in s:
             self.md_var.set(s["md"])
+        if "review" in s:
+            self.review_var.set(bool(s["review"]))
         for row in (self.threshold_row, self.margin_row, self.chars_row):
             row.update_label()
         self._update_export_caption()
@@ -520,6 +529,7 @@ class SnipSyncApp(_Base):
             num_speakers=-1 if self.speakers == "auto" else int(self.speakers),
             speaker_labels=self.speaker_labels, markers=self.markers_var.get() and self.export_key != "media",
             line_chars=self.line_chars(), txt=self.txt_var.get(), md=self.md_var.get(), ui_lang=self.lang,
+            hold_subtitles=self.review_var.get() and self.srt_var.get(),
         )
 
     # ── 部品の状態 ───────────────────────────────────────────────────────────────────
@@ -539,6 +549,7 @@ class SnipSyncApp(_Base):
         sw(self.speakers_menu, diar)
         sw(self.txt_switch, srt_on)
         sw(self.md_switch, srt_on)
+        sw(self.review_switch, srt_on)
         sw(self.markers_switch, self.export_key != "media")
         vad = self.cut_mode == "vad"
         sw(self.threshold_row.slider, not vad)
@@ -759,8 +770,9 @@ class SnipSyncApp(_Base):
         self._update_preset_menu()
 
     def _on_close(self):
-        if self.editor_win is not None and self._editor_alive() and not self.editor_win._confirm_discard():
-            return
+        for win in self._open_editors():
+            if not win._confirm_discard():
+                return
         try:
             store = load_store()
             set_last_used(store, self._collect_settings())
@@ -814,6 +826,8 @@ class SnipSyncApp(_Base):
             result = run_pipeline(ae_path, inp, out_dir, dataclasses.replace(params, out_stem=stem),
                                   on_log=self._log, should_stop=lambda: self.stop_requested, tr=self.t,
                                   model_cache=model_cache)
+            if result.pending_paths and not result.stopped:
+                self._review_and_wait(result, inp.stem if stem is None else stem)
             if result.ok and not result.stopped:
                 finished += 1
                 last_out, last_result = out_dir, result
@@ -832,6 +846,37 @@ class SnipSyncApp(_Base):
         if finished and not self.stop_requested:
             self._log(self.t("log_batch_done", finished) if total > 1 else self.t("log_done_all"), "success")
         self.after(0, self._reset_ui)
+
+    def _review_and_wait(self, result, title: str):
+        """字幕を保存する前に確認・編集ウィンドウを開き、閉じるまで処理を止める（ワーカースレッドで呼ぶ）。
+
+        保存した宛先だけを result に反映する。保存しなかった字幕はファイルにならない。
+        """
+        done = threading.Event()
+        outcome: dict = {}
+
+        def finished(cues, saved, paths):
+            outcome.update(cues=cues, saved=saved, paths=paths)
+            done.set()
+
+        self._log(self.t("log_review_wait"), "info")
+        self.after(0, lambda: self._open_review(result, title, finished))
+        while not done.wait(0.2):
+            if self.stop_requested:       # 停止しても窓は残り、保存はできる
+                return
+        result.cues = outcome["cues"]
+        written = outcome["paths"] if outcome["saved"] else {}
+        result.srt_path = written.get("srt")
+        result.extra_paths = [p for k, p in written.items() if k != "srt"]
+        if outcome["saved"]:
+            self._log(self.t("log_review_saved", ", ".join(p.name for p in written.values())), "success")
+        else:
+            self._log(self.t("log_review_discarded"), "warn")
+
+    def _open_review(self, result, title: str, on_closed):
+        self.review_win = SubtitleEditor(self, result.cues, title, result.pending_paths, pending=True,
+                                         on_closed=on_closed)
+        self.review_win.focus()
 
     def _stop_process(self):
         self.stop_requested = True
@@ -853,10 +898,18 @@ class SnipSyncApp(_Base):
 
     # ── 字幕の確認・編集 ──────────────────────────────────────────────────────────────
     def _editor_alive(self) -> bool:
-        try:
-            return bool(self.editor_win and self.editor_win.winfo_exists())
-        except tk.TclError:
-            return False
+        return self.editor_win in self._open_editors()
+
+    def _open_editors(self) -> list:
+        """開いている字幕ウィンドウ（処理後に開いたものと、保存前の確認用）。"""
+        alive = []
+        for win in (self.editor_win, self.review_win):
+            try:
+                if win is not None and win.winfo_exists():
+                    alive.append(win)
+            except tk.TclError:
+                pass
+        return alive
 
     def _open_editor(self):
         if self._editor_alive():
@@ -867,6 +920,12 @@ class SnipSyncApp(_Base):
 
 
 def main():
+    if sys.platform == "win32":
+        try:    # Python から起動しても、タスクバーに python.exe ではなく SnipSync のアイコンを出す
+            import ctypes
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("R3NeR3N.SnipSync")
+        except Exception:
+            pass
     app = SnipSyncApp()
     if not WHISPER_AVAILABLE:
         app._log(app.t("log_whisper_unavailable"), "warn")

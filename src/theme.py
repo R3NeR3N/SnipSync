@@ -68,6 +68,22 @@ def asset_path(rel: str) -> Path:
     return base / rel
 
 
+ICON = "assets/icon/snipsync.ico"
+
+
+def apply_icon(window) -> None:
+    """ウィンドウとタスクバーのアイコンを SnipSync のものにする。
+
+    CustomTkinter は起動直後（約 200 ms 後）に自分の既定アイコンを設定し直すので、それより後に上書きする。
+    """
+    def _set():
+        try:
+            window.iconbitmap(str(asset_path(ICON)))
+        except Exception:
+            pass          # .ico を扱えない環境では既定のまま
+    window.after(350, _set)
+
+
 def load_fonts(ctk, root) -> None:
     """Register the bundled fonts for this process only, then pick the family names that exist.
 
