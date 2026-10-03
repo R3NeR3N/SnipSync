@@ -210,7 +210,9 @@ def test_needs_download_reflects_local_dir(tmp_path, monkeypatch):
     (d / "model.bin").write_bytes(b"x")
     (d / "config.json").write_text("{}", encoding="utf-8")
     assert needs_download("kotoba-ja") is False
-    assert needs_download("small") is False       # 名前指定のモデルは faster-whisper 側が管理
+    # 名前指定のモデルは Hugging Face のキャッシュに揃っているかで決まる（ここでは偽の確認に差し替える）
+    monkeypatch.setattr("models._hf_cached", lambda repo: True)
+    assert needs_download("small") is False
 
 
 # ── i18n ──────────────────────────────────────────────────────────────────────

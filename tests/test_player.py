@@ -85,7 +85,7 @@ def test_time_mapping_both_ways():
 def test_stretch_changes_length_by_the_rate_and_keeps_pitch_family():
     pytest.importorskip("av")
     x = (0.3 * np.sin(2 * np.pi * 440 * np.arange(SR * 4 * 24) / (SR * 24))).astype(np.float32)
-    for rate in (0.5, 1.5, 2.0):
+    for rate in (0.5, 1.5, 2.0, 3.0, 4.0):
         y = pl.stretch(x, SR * 24, rate)
         assert len(y) == pytest.approx(len(x) / rate, rel=0.03)
     assert pl.stretch(x, SR * 24, 1.0) is x

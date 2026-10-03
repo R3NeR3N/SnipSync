@@ -19,7 +19,7 @@ from audiocut import render_cut_audio
 from autoeditor import CUT_SPEED
 
 PLAY_SR = 24000                       # 聞いて確かめるための音質。16 kHz（VAD 用）より自然で、長尺でもメモリを食わない
-RATES = (0.5, 0.75, 1.0, 1.25, 1.5, 2.0)
+RATES = (0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0)
 PREV_CUT_GRACE = 0.6                  # カット点の直後（この秒数以内）で「前へ」を押したら、その1つ前へ戻る
 
 

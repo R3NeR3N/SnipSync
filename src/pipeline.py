@@ -26,7 +26,14 @@ from autoeditor import (
 )
 from diarize import diarize, sherpa_available
 from markers import add_markers, cut_point_markers, speaker_turn_markers
-from models import get_spec, lang_hint, needs_download, prepare_model
+from models import (
+    DownloadCancelled,
+    DownloadFailed,
+    get_spec,
+    lang_hint,
+    needs_download,
+    prepare_model,
+)
 from subtitles import (
     add_cuda_dll_dirs,
     build_cut_aligned_cues,
@@ -301,6 +308,7 @@ def run_pipeline(
     tr,                      # (key: str, *args) -> str
     transcribe=None,         # DI用フック（既定 None→内部で faster_whisper を使用）
     model_cache=None,        # dict を渡すと WhisperModel を使い回す（バッチ処理用）
+    on_progress=None,        # (取得済みバイト, 全体バイト) -> None。AI モデルの取得中に呼ぶ。終わりは (None, None)
 ) -> PipelineResult:
     result = PipelineResult(ok=False, stopped=False, timeline_path=None, srt_path=None)
 
@@ -507,17 +515,22 @@ def run_pipeline(
                     want_words = params.snap_srt or params.diarize or params.line_chars > 0
                     spec = get_spec(params.model_size)
 
+                    # モデルの取得は、デコードの試行（GPU 失敗時の CPU やり直し）より前に1回だけ行う。
+                    # 取得の停止や失敗が「GPU の失敗」と取り違えられ、同じ取得をやり直さないようにするため。
+                    model_path = params.model_size
+                    if transcribe is None and not (model_cache and any(k[0] == params.model_size for k in model_cache)):
+                        if needs_download(params.model_size):
+                            on_log(tr("log_model_download", spec.source), "info")
+                        model_path = prepare_model(params.model_size, on_progress=on_progress, should_stop=should_stop)
+
                     def _get_model(dev, ctype):
                         key = (params.model_size, dev, ctype)
                         if model_cache is not None and key in model_cache:
                             return model_cache[key]
                         from faster_whisper import WhisperModel
-                        if needs_download(params.model_size):
-                            on_log(tr("log_model_download", spec.source), "muted")
                         if dev == "cuda":
                             add_cuda_dll_dirs()   # venv内CUDA DLLをロード可能に（Win）
-                        model = WhisperModel(prepare_model(params.model_size),
-                                             device=dev, compute_type=ctype)
+                        model = WhisperModel(model_path, device=dev, compute_type=ctype)
                         if model_cache is not None:
                             model_cache[key] = model
                         return model
@@ -591,6 +604,12 @@ def run_pipeline(
                             on_log(tr("log_srt_done"), "success")
                             on_log(f"   {output_srt.name}", "success")
                         result.srt_path = output_srt
+                except DownloadCancelled:
+                    result.stopped = True
+                    on_log(tr("log_stopped"), "warn")
+                except DownloadFailed as exc:
+                    on_log(tr("log_model_failed", tr("log_model_stalled") if str(exc) == "stalled" else str(exc)),
+                           "error")
                 except Exception:
                     on_log(tr("log_unexpected", traceback.format_exc()), "error")
 

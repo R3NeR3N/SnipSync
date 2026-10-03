@@ -7,6 +7,7 @@ import os
 import re
 import sys
 import threading
+import time
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox
@@ -14,6 +15,7 @@ from tkinter import filedialog, messagebox
 import customtkinter as ctk
 
 os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")   # モデル取得時の利用統計を送らない（faster_whisper より前）
+os.environ.setdefault("HF_HUB_DISABLE_XET", "1")         # Xet 方式の転送は 1.5GB で止まり続けることがある（models.py 参照）
 
 try:
     from tkinterdnd2 import DND_FILES, TkinterDnD
@@ -33,6 +35,7 @@ from aebin import get_auto_editor_path
 from autoeditor import MEDIA_EXTS
 from diarize import sherpa_available
 from i18n import I18N
+from models import model_folder, models_dir
 from pipeline import PipelineParams, run_pipeline
 from player import PLAY_SR, RATES, EditedAudio, Player, PlayerError, sounddevice_available
 from presets import delete_preset, load_store, save_store, set_last_used, upsert_preset
@@ -92,6 +95,7 @@ class SnipSyncApp(_Base):
         self._play_cache: dict = {}          # 再生用に読み込んだ元の音（ファイルごと）
         self._audio_loading = False
         self._tick_job = None
+        self._dl_samples: list = []          # モデル取得の速さを出すための直近の記録
 
         # 設定（プリセットに保存される）
         self.margin_var = tk.DoubleVar(value=0.2)
@@ -340,8 +344,12 @@ class SnipSyncApp(_Base):
             return self.srt_switch
         self._field(left, None, srt).pack(anchor="w", fill="x")
         def model(p):
-            self.model_menu = W.menu(p, [""], command=self._on_model, width=380)
-            return self.model_menu
+            row = ctk.CTkFrame(p, fg_color="transparent")
+            self.model_menu = W.menu(row, [""], command=self._on_model, width=290)
+            self.model_menu.pack(side="left")
+            self.btn_model_folder = self.reg(W.Btn(row, "", self._open_model_folder, height=32), "btn_model_folder")
+            self.btn_model_folder.pack(side="left", padx=(T.S2, 0))
+            return row
         self._field(left, "f_model", model, "cap_model").pack(anchor="w", fill="x", pady=(T.S3, 0))
         def gpu(p):
             self.gpu_switch = self.reg(W.switch(p, "", self.gpu_var), "f_gpu")
@@ -434,8 +442,15 @@ class SnipSyncApp(_Base):
         head.columnconfigure(0, weight=1)
         self.log_title = self.reg(W.label(head, "", "label", T.DUST), "log_header")
         self.log_title.grid(row=0, column=0, sticky="w")
+        self.dl_text = W.caption(head)
+        self.dl_text.grid(row=0, column=1, padx=(0, T.S3))
+        self.dl_bar = ctk.CTkProgressBar(head, mode="determinate", width=200, height=8, corner_radius=4,
+                                         fg_color=T.EDGE, progress_color=T.PENCIL)
+        self.dl_bar.grid(row=0, column=2, padx=(0, T.S4))
+        self.dl_text.grid_remove()
+        self.dl_bar.grid_remove()
         self.btn_log_clear = self.reg(W.Btn(head, "", self._clear_log, kind="ghost", height=26), "btn_log_clear")
-        self.btn_log_clear.grid(row=0, column=1)
+        self.btn_log_clear.grid(row=0, column=3)
         self.console = ctk.CTkTextbox(box, height=120, corner_radius=T.R_PANEL, fg_color=T.WELL, text_color=T.CHALK,
                                       font=T.font(ctk, "mono_small"), wrap="word", state="disabled", border_width=0,
                                       scrollbar_button_color=T.EDGE, scrollbar_button_hover_color=T.RAISED)
@@ -1001,7 +1016,7 @@ class SnipSyncApp(_Base):
                       "info")
             result = run_pipeline(ae_path, inp, out_dir, dataclasses.replace(params, out_stem=stem),
                                   on_log=self._log, should_stop=lambda: self.stop_requested, tr=self.t,
-                                  model_cache=model_cache)
+                                  model_cache=model_cache, on_progress=self._model_progress_threadsafe)
             if result.pending_paths and not result.stopped:
                 self._review_and_wait(result, inp.stem if stem is None else stem)
             if result.ok and not result.stopped:
@@ -1054,6 +1069,41 @@ class SnipSyncApp(_Base):
                                          on_closed=on_closed)
         self.review_win.focus()
 
+    # ── AI モデルの取得 ──────────────────────────────────────────────────────────────
+    def _model_progress_threadsafe(self, done, total):
+        self.after(0, lambda: self._on_model_progress(done, total))
+
+    def _on_model_progress(self, done, total):
+        """取得中だけ、ログの上に進捗バーと「取得済み / 全体（速さ）」を出す。done=None は終了。"""
+        if done is None:
+            self._dl_samples = []
+            self.dl_text.grid_remove()
+            self.dl_bar.grid_remove()
+            return
+        now = time.monotonic()
+        self._dl_samples = [x for x in [*self._dl_samples, (now, done)] if now - x[0] <= 4.0]
+        t0, b0 = self._dl_samples[0]
+        speed = (done - b0) / (now - t0) / 1e6 if now - t0 > 0.5 else 0.0
+        if total:
+            self.dl_bar.set(min(1.0, done / total))
+            text = self.t("model_progress", done / 1e6, total / 1e6, done / total * 100, speed)
+        else:
+            self.dl_bar.set(0)
+            text = self.t("model_progress_wait")
+        self.dl_text.configure(text=text)
+        self.dl_text.grid()
+        self.dl_bar.grid()
+
+    def _open_model_folder(self):
+        """選んでいるモデルの保存先を開く。まだ無ければ、いちばん近い既存のフォルダを開く。"""
+        target = model_folder(self.model_key)
+        if not target.exists():
+            target = next((q for q in target.parents if q.exists()), None)
+            if target is None or target == Path(target.anchor):
+                target = models_dir()
+                target.mkdir(parents=True, exist_ok=True)
+        os.startfile(str(target))
+
     def _stop_process(self):
         self.stop_requested = True
         self._log(self.t("log_stop_requested"), "warn")
@@ -1067,6 +1117,7 @@ class SnipSyncApp(_Base):
         self.progress.stop()
         self.progress.configure(mode="determinate")
         self.progress.set(0)
+        self._on_model_progress(None, None)
 
     def _open_output(self):
         if self.last_out_dir:

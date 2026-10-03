@@ -292,3 +292,41 @@ def test_rate_choice_applies_to_the_loaded_audio(app, monkeypatch):
     assert app.player.rate == 2.0
     app.rate_choice.set_key("1")
     app._on_rate("1")
+
+
+def test_speed_choices_go_up_to_four_times(app):
+    from player import RATES
+    assert RATES[-1] == 4.0 and 3.0 in RATES
+    assert {"3", "4"} <= set(app.rate_choice._choices)
+
+
+def test_model_download_progress_shows_a_bar_and_hides_it_at_the_end(app):
+    assert not app.dl_bar.winfo_manager()
+    app._on_model_progress(0, 0)
+    app._on_model_progress(300_000_000, 1_500_000_000)
+    pump(app, 3)
+    assert app.dl_bar.winfo_manager() and app.dl_bar.get() == pytest.approx(0.2)
+    text = app.dl_text.cget("text")
+    assert "300" in text and "1500" in text and "20%" in text
+    app._on_model_progress(None, None)
+    pump(app, 3)
+    assert not app.dl_bar.winfo_manager() and not app.dl_text.winfo_manager()
+
+
+def test_open_model_folder_opens_the_folder_of_the_selected_model(app, tmp_path, monkeypatch):
+    import os
+    opened = []
+    monkeypatch.setattr(os, "startfile", lambda p: opened.append(Path(p)), raising=False)
+    app.model_key = "kotoba-ja"
+    (tmp_path / "SnipSync" / "models").mkdir(parents=True, exist_ok=True)
+    import models
+    monkeypatch.setattr(models, "models_dir", lambda: tmp_path / "SnipSync" / "models")
+    import app as appmod
+    monkeypatch.setattr(appmod, "models_dir", models.models_dir)
+    monkeypatch.setattr(appmod, "model_folder", lambda key: tmp_path / "SnipSync" / "models" / "kotoba")
+    app._open_model_folder()
+    assert opened == [tmp_path / "SnipSync" / "models"]        # まだ無いので、いちばん近い既存のフォルダ
+    (tmp_path / "SnipSync" / "models" / "kotoba").mkdir()
+    app._open_model_folder()
+    assert opened[-1] == tmp_path / "SnipSync" / "models" / "kotoba"
+    app.model_key = "small"

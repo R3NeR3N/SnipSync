@@ -16,6 +16,13 @@
 
 ---
 
+## 2026-10-04 — kotoba-whisper が 30 分経っても取得されず、「停止」も効かなかった（Xet 転送の停止＋取得が止められない作り）
+- やったこと/疑い: 実機で kotoba-whisper を選んで処理を開始した。ログは「ダウンロードします」で止まり、30 分以上そのまま。「停止」を押しても終わらなかった。
+- 実測: 保存先フォルダには `.cache/huggingface/trees/*.json`（ファイル一覧）だけがあり、本体（model.bin 1.5GB）は 0 バイト。同じ回線で `snapshot_download` を再現すると、6/7 ファイルで止まって進まない。環境変数 `HF_HUB_DISABLE_XET=1`（通常の HTTP 転送）にすると約 8MB/s で完走した。Xet 方式（huggingface_hub 1.x の既定）の転送が、この回線で固まる。
+- 原因: (1) Xet 転送が進捗 0 のまま止まる。(2) 取得を `snapshot_download` の同期呼び出しで行っていたため、固まるとワーカースレッドごと戻らず、「停止」の判定（`should_stop`）に到達しない。(3) 画面に取得の進捗が無く、固まっているのか遅いのか区別できなかった。
+- 回避策 / 正しい手順: `HF_HUB_DISABLE_XET=1` を、huggingface_hub を最初に import するより前（`app.py` の先頭と `models.py`）に設定する。取得は別スレッドで行い、本体は 0.2 秒ごとに `should_stop` と無進捗時間（120 秒）を見る。停止は固まった転送を放置して即座に戻り、進捗クラスの更新で打ち切る。進捗は tqdm_class で受ける。
+- 関連: `src/models.py` `download_model`、`src/pipeline.py`（取得はデコード試行の前に 1 回だけ行う。取得の停止を「GPU の失敗」と取り違えて取得をやり直さないため）、`tests/test_model_download.py`
+
 ## 2026-10-03 — `.gitignore` の `build/` が PyInstaller の設定（app.spec・フック）まで除外していた
 - やったこと/疑い: 動作確認を終えてコミットする前に、`git ls-files build` で追跡対象を確認した。
 - 何が起きたか: 結果が**空**。`build/app.spec` と `build/build_hooks/hook-tkinterdnd2.py` が一度も git に入っておらず、リリース用ワークフロー（`pyinstaller build/app.spec`）は GitHub 上でビルドに必要なファイルを持たない状態だった。手元ではファイルがあるため気付けない。
