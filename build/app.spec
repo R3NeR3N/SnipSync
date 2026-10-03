@@ -32,6 +32,8 @@ sh_datas, sh_binaries, sh_hiddenimports = collect_all('sherpa_onnx')
 all_datas = [
     (str(CTK_DIR), 'customtkinter'),
     (str(DND_DIR), 'tkinterdnd2'),
+    # 同梱フォント（BIZ UD ゴシック, SIL OFL）。theme.asset_path() が sys._MEIPASS/assets/fonts から読む。
+    (str(WORK_DIR / 'src' / 'assets'), 'assets'),
 ] + fw_datas + ct_datas + tk_datas + av_datas + tr_datas + bx_datas + sh_datas
 
 all_binaries = [
@@ -52,6 +54,7 @@ all_hiddenimports = [
     'tqdm',
     'numpy',
     'vad', 'audiocut', 'diarize', 'models', 'markers', 'transcript', 'waveform', 'aebin',
+    'theme', 'widgets', 'preview', 'subtitle_edit', 'subtitle_editor',
 ] + (fw_hiddenimports + ct_hiddenimports + tk_hiddenimports + av_hiddenimports + tr_hiddenimports
       + bx_hiddenimports + sh_hiddenimports)
 

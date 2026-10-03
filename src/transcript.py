@@ -7,7 +7,7 @@ def hms(seconds: float) -> str:
     return f"{total // 3600:02d}:{total % 3600 // 60:02d}:{total % 60:02d}"
 
 
-def _join(a: str, b: str) -> str:
+def join_text(a: str, b: str) -> str:
     """日本語など CJK の続きは詰め、空白区切りの言語は半角スペースで繋ぐ。"""
     if not a:
         return b
@@ -22,7 +22,7 @@ def merge_turns(cues: list[Cue]) -> list[Cue]:
     for c in cues:
         text = " ".join(c.text.split("\n")).strip()
         if turns and c.speaker is not None and turns[-1].speaker == c.speaker:
-            turns[-1].text = _join(turns[-1].text, text)
+            turns[-1].text = join_text(turns[-1].text, text)
             turns[-1].end = c.end
         else:
             turns.append(Cue(c.start, c.end, text, c.speaker))

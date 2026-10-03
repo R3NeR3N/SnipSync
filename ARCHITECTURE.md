@@ -10,7 +10,12 @@
 ```
 SnipSync/
 ├── src/                    # flat 配置（パッケージ化は未実施）
-│   ├── app.py              # UI（CustomTkinter）+ 波形/字幕プレビュー窓 + バッチ実行
+│   ├── app.py              # メインウィンドウ（モニター・設定タブ・実行・ログ）+ バッチ実行
+│   ├── widgets.py          # 部品（Btn / Choice / CutMap / Legend ほか）。色・書体は theme から
+│   ├── preview.py          # カットマップ用の計算（auto-editor の区間を取得。UI に依存しない）
+│   ├── subtitle_edit.py    # 字幕の編集ロジック（CueEditor・書き出し文字列の生成。UI に依存しない）
+│   ├── subtitle_editor.py  # 字幕の確認・編集ウィンドウ（表 + 編集欄 + txt/md/srt タブ）
+│   ├── assets/fonts/       # 同梱フォント（BIZ UD ゴシック, SIL OFL）
 │   ├── pipeline.py         # 処理全体のオーケストレーション（run_pipeline）
 │   ├── aebin.py            # auto-editor 31.x バイナリの取得・SHA-256 検証・同梱版の解決
 │   ├── autoeditor.py       # auto-editor コマンド組み立て / fps・長さ・解像度の取得（PyAV 代替あり）
@@ -22,10 +27,11 @@ SnipSync/
 │   ├── models.py           # Whisper モデル登録（kotoba の alignment_heads 補正を含む）
 │   ├── markers.py          # FCPXML / xmeml へのマーカー挿入
 │   ├── transcript.py       # .txt / .md 生成・SRT 読み込み
-│   ├── waveform.py         # 波形ピーク・カット統計（描画は app.py）
-│   ├── i18n.py / presets.py / theme.py / version.py
+│   ├── waveform.py         # 波形ピーク・カット統計（描画は widgets.CutMap）
+│   ├── theme.py            # デザイントークン（色・書体・角丸・間隔。理由は DESIGN.md）
+│   ├── i18n.py / presets.py / version.py
 ├── tests/                  # pytest（subprocess / transcribe はモック）
-├── build/app.spec          # PyInstaller（budoux / sherpa_onnx を collect_all、auto-editor は build/vendor から同梱）
+├── build/app.spec          # PyInstaller（budoux / sherpa_onnx を collect_all、auto-editor は build/vendor、フォントは src/assets から同梱）
 ├── scripts/fetch_auto_editor.py  # 同梱用の auto-editor を取得（SHA-256 検証）
 ├── docs/handoff/           # 設計・検証の引き継ぎ書
 ├── pyproject.toml          # 直接依存の単一ソース

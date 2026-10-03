@@ -219,7 +219,7 @@ def test_i18n_ja_en_have_identical_keys():
     assert set(I18N["ja"]) == set(I18N["en"])
 
 
-@pytest.mark.parametrize("key", ["cut_mode_options", "silence_options"])
+@pytest.mark.parametrize("key", ["method_options", "silence_options", "export_options", "model_options"])
 def test_i18n_option_dicts_have_same_keys(key):
     from i18n import I18N
     assert set(I18N["ja"][key]) == set(I18N["en"][key])
