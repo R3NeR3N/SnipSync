@@ -180,6 +180,8 @@ class SubtitleEditor(ctk.CTkToplevel):
         self.speaker_var = tk.StringVar()
         self.speaker_menu = W.menu(tools, [""], command=self._on_speaker, width=120, variable=self.speaker_var)
         self.speaker_menu.pack(side="left", padx=(0, T.S2))
+        self.name_lbl = W.caption(tools, self.t("ed_name"))
+        self.name_lbl.pack(side="left", padx=(0, T.S2))
         self.name_var = tk.StringVar()
         self.name_entry = W.entry(tools, self.name_var, width=110, placeholder=self.t("ed_name_placeholder"))
         self.name_entry.pack(side="left", padx=(0, T.S4))
@@ -342,6 +344,11 @@ class SubtitleEditor(ctk.CTkToplevel):
         self.name_entry.configure(state="normal" if usable else "disabled",
                                   placeholder_text=self._speaker_name(spk) if usable else self.t("ed_name_placeholder"))
         self.name_var.set(self.editor.names.get(spk, "") if usable else "")
+        try:                                   # 入力欄が空のとき、薄い「話者N」を出し直す（CTkEntry は設定だけでは描き直さない）
+            self.name_entry._deactivate_placeholder()
+            self.name_entry._activate_placeholder()
+        except Exception:
+            pass
 
     def _on_text_modified(self, _e=None):
         tb = self.text._textbox
@@ -532,6 +539,7 @@ class SubtitleEditor(ctk.CTkToplevel):
         self.time_note.configure(text=self.t("ed_time_note"))
         self.speaker_lbl.configure(text=self.t("ed_speaker"))
         self.split_hint.configure(text=self.t("ed_split_hint"))
+        self.name_lbl.configure(text=self.t("ed_name"))
         self.preview_note.configure(text=self.t("ed_preview_note"))
         self._empty_label.configure(text=self.t("ed_empty"))
         self._empty_btn.configure(text=self.t("ed_open"))
