@@ -95,31 +95,37 @@ Pythonのインストール不要。SnipSyncは単一の `.exe` ファイルと�
 #### 前提
 
 - Windows 10 / 11（64bit）
-- [uv](https://docs.astral.sh/uv/)（Python の管理も任せられます）。FFmpeg は**不要**です。
+- [Python](https://www.python.org/downloads/) 3.10 以上（インストーラーで **Add python.exe to PATH** にチェックを入れてください）
+- [Git](https://git-scm.com/downloads)（または GitHub からリポジトリを ZIP でダウンロードして展開）
+- FFmpeg は**不要**です。
 
-#### 手順（PowerShell）
+#### 手順（PowerShell またはコマンドプロンプト）
 
-```powershell
+```bash
 git clone https://github.com/R3NeR3N/SnipSync.git
 cd SnipSync
-uv venv .venv --python 3.13
-uv pip install --python .venv\Scripts\python.exe -e ".[dev]"
+python -m venv .venv
+.venv\Scripts\python.exe -m pip install -e .
 .venv\Scripts\python.exe src\app.py
 ```
 
-初回の実行時に、auto-editor 31.7.2（約45MB）を公式の GitHub リリースから取得し、SHA-256 を照合してから使います。
+`python -m venv .venv` は `SnipSync` フォルダの中に独立した環境を作るので、PC 全体には何もインストールされません。消すときは `.venv` フォルダを削除するだけです。
+
+初めてファイルを処理するとき、SnipSync が auto-editor 31.7.2（約45MB）を公式の GitHub リリースから取得し、SHA-256 を照合してから使います。
 
 ---
 
 ### 方法C: EXEを自分でビルドする（PyInstaller）
 
-```powershell
-uv pip install --python .venv\Scripts\python.exe -e ".[build]"
-.venv\Scripts\python.exe scripts\fetch_auto_editor.py   # auto-editor を同梱用に取得（SHA-256 検証つき）
+上の手順のあと、同じ `SnipSync` フォルダで実行します。
+
+```bash
+.venv\Scripts\python.exe -m pip install -e ".[build]"
+.venv\Scripts\python.exe scripts\fetch_auto_editor.py
 .venv\Scripts\python.exe -m PyInstaller build\app.spec
 ```
 
-単体実行ファイルは `dist\SnipSync.exe` に出力されます。
+`fetch_auto_editor.py` は、EXE に同梱するための auto-editor を取得します（SHA-256 検証つき）。出力は `dist\SnipSync.exe` です。
 
 ---
 
@@ -127,10 +133,33 @@ uv pip install --python .venv\Scripts\python.exe -e ".[build]"
 
 ### まずはこれだけ
 
-1. `SnipSync.exe` を**起動**します。
-2. 動画・音声ファイル（複数・フォルダも可）をドロップゾーンに**ドロップ**します（クリックして選んでもOK）。
-3. **出力形式**を選び、**▶ 処理を開始する** を押します。
-4. できたファイルを編集ソフトに取り込みます（[編集ソフトへの取り込み](#編集ソフトへの取り込み)）。
+```mermaid
+flowchart LR
+    A["① ファイルをドロップ<br/>(動画・音声・フォルダ)"] --> B["② 設定を確認"] --> C["③ ▶ 処理を開始する"] --> D["④ 編集ソフトへ取り込む"]
+```
+
+> スクリーンショットは、合成音声2人分の短いサンプル録音を処理したときの画面です。画面は日本語／英語に対応しています（右上の「言語」で切り替え）。
+
+#### 1. メイン画面
+
+<p align="center"><img src="docs/images/main_ja.png" width="640" alt="番号つきで説明した SnipSync のメイン画面"></p>
+
+| # | 場所 | 内容 |
+|:-:|---|---|
+| ① | ドロップゾーン | 動画・音声ファイル（複数・フォルダも可）をここにドロップします。クリックして選んでもOK |
+| ② | カットの設定 | **無音マージン**、**音量閾値**、**カット方式**（音量／音声区間検出）、**無音の扱い**（カット／倍速） |
+| ③ | 出力形式 | DaVinci Resolve / Premiere Pro / Final Cut Pro、または「カット済みメディア」（書き出し済みの動画・音声） |
+| ④ | 字幕自動生成 | 字幕のオン／オフと AI モデルの選択。精度重視なら `large-v3-turbo` を推奨 |
+| ⑤ | 字幕の詳細・オプション | カット境界での分割、1行の文字数、**話者の分離**、`.txt` / `.md` の書き出し、マーカー、用語辞書、出力先 |
+| ⑥ | **▶ 処理を開始する** | 全部を実行します。**■ 停止** で中断できます |
+| ⑦ | 波形プレビュー | 処理する*前*に、どこが切られるかを確認します |
+| ⑧ | 字幕プレビュー | 字幕全文を読む・コピー・保存します |
+
+#### 2. 開始してログを見る
+
+<p align="center"><img src="docs/images/result_ja.png" width="640" alt="処理後のメイン画面（ログ表示）"></p>
+
+下の**ログ**に、カット、音声認識（認識したテキスト付き）、話者分離、書き出したファイルが順に表示されます。終わると、出力フォルダを開くか聞かれます。
 
 出力は、入力ファイルと同じフォルダ（または指定したフォルダ）に作られます。
 
@@ -140,6 +169,32 @@ uv pip install --python .venv\Scripts\python.exe -e ".[build]"
 | `<名前>_snipsynced.mp4` / `.wav` … | 出力形式が「カット済みメディア」のときの、カット済み動画／音声 |
 | `<名前>.srt` | 字幕 |
 | `<名前>.txt` / `<名前>.md` | 字幕全文（チェックを入れたとき） |
+
+#### 3. （任意）切られる場所を確認する — 波形プレビュー
+
+<p align="center"><img src="docs/images/waveform_ja.png" width="760" alt="削除される部分を赤く表示した波形プレビュー"></p>
+
+| # | 表示内容 |
+|:-:|---|
+| ① | 処理前 → 処理後の長さ、短縮率、カット数 |
+| ② | **赤** = 削除される部分、**橙** = 倍速になる部分。それ以外は残ります |
+| ③ | マージン・しきい値・カット方式を変えたら **再計算** を押します |
+
+#### 4. （任意）字幕全文を読む — 字幕プレビュー
+
+<p align="center"><img src="docs/images/text_ja.png" width="640" alt="話者ラベルつきの字幕全文を表示した字幕プレビュー"></p>
+
+| # | できること |
+|:-:|---|
+| ① | `.txt` / `.md` / `.srt` の表示を切り替えます |
+| ② | 時刻を含める／隠します |
+| ③ | 文章をクリップボードに**コピー**します |
+| ④ | ファイルとして**保存…** します |
+| ⑤ | **SRTを開く…** — 既存の `.srt` を読み込んで、読んだり `.txt` / `.md` に変換したりできます |
+
+#### 5. 編集ソフトへ取り込む
+
+下の「[編集ソフトへの取り込み](#編集ソフトへの取り込み)」を参照してください。
 
 ### 設定項目
 
@@ -160,11 +215,6 @@ uv pip install --python .venv\Scripts\python.exe -e ".[build]"
 | **マーカーを追加** | すべてのカット点と話者交代をタイムラインにマーカーとして追加します（実験的。下の注意を参照） |
 | **用語辞書** | カンマ区切りで、Whisper に優先してほしい語（人名・製品名など）を書きます |
 | **プリセット** | 設定一式を保存・呼び出し。起動時には前回の設定が復元されます |
-
-### 実行前に確認する
-
-- **〰 波形プレビュー** — 削除される部分を赤（倍速になる部分は橙）で波形に重ねて表示し、処理後の長さも出します。マージン・しきい値・カット方式を変えたら **再計算** を押します。
-- **📄 字幕プレビュー** — 字幕全文を `.txt` / `.md` / `.srt` の形で表示します。コピー、保存ができ、既存の `.srt` を開いて読んだり別形式で書き出したりもできます。
 
 ### 用途別の手順
 

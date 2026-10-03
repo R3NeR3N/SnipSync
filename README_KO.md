@@ -95,31 +95,37 @@ Python을 설치할 필요가 없습니다. SnipSync는 단일 `.exe` 파일로 
 #### 사전 준비
 
 - Windows 10 / 11 (64비트)
-- [uv](https://docs.astral.sh/uv/) (Python 관리도 맡길 수 있습니다). FFmpeg 는 **필요 없습니다**.
+- [Python](https://www.python.org/downloads/) 3.10 이상 (설치 프로그램에서 **Add python.exe to PATH** 를 체크하세요)
+- [Git](https://git-scm.com/downloads) (또는 GitHub 에서 저장소를 ZIP 으로 받아 압축 해제)
+- FFmpeg 는 **필요 없습니다**.
 
-#### 순서 (PowerShell)
+#### 순서 (PowerShell 또는 명령 프롬프트)
 
-```powershell
+```bash
 git clone https://github.com/R3NeR3N/SnipSync.git
 cd SnipSync
-uv venv .venv --python 3.13
-uv pip install --python .venv\Scripts\python.exe -e ".[dev]"
+python -m venv .venv
+.venv\Scripts\python.exe -m pip install -e .
 .venv\Scripts\python.exe src\app.py
 ```
 
-처음 실행하면 공식 GitHub 릴리스에서 auto-editor 31.7.2 (약 45MB)를 받아 SHA-256 을 확인한 뒤 사용합니다.
+`python -m venv .venv` 는 `SnipSync` 폴더 안에 독립된 환경을 만들기 때문에 PC 전체에는 아무것도 설치되지 않습니다. 지울 때는 `.venv` 폴더를 삭제하면 됩니다.
+
+처음 파일을 처리할 때 SnipSync 가 공식 GitHub 릴리스에서 auto-editor 31.7.2 (약 45MB)를 받아 SHA-256 을 확인한 뒤 사용합니다.
 
 ---
 
 ### 방법 C: EXE 직접 빌드 (PyInstaller)
 
-```powershell
-uv pip install --python .venv\Scripts\python.exe -e ".[build]"
-.venv\Scripts\python.exe scripts\fetch_auto_editor.py   # auto-editor 를 번들용으로 받기 (SHA-256 검증)
+위 순서를 마친 뒤 같은 `SnipSync` 폴더에서 실행합니다.
+
+```bash
+.venv\Scripts\python.exe -m pip install -e ".[build]"
+.venv\Scripts\python.exe scripts\fetch_auto_editor.py
 .venv\Scripts\python.exe -m PyInstaller build\app.spec
 ```
 
-단일 실행 파일은 `dist\SnipSync.exe` 에 만들어집니다.
+`fetch_auto_editor.py` 는 EXE 에 번들할 auto-editor 를 받아 옵니다(SHA-256 검증). 결과는 `dist\SnipSync.exe` 에 만들어집니다.
 
 ---
 
@@ -127,19 +133,68 @@ uv pip install --python .venv\Scripts\python.exe -e ".[build]"
 
 ### 빠른 시작
 
-1. `SnipSync.exe` 를 **실행**합니다.
-2. 영상/오디오 파일(여러 개·폴더 가능)을 드롭 영역에 **끌어다 놓습니다** (클릭해서 선택해도 됩니다).
-3. **내보내기 형식**을 고르고 **▶ 처리 시작** 을 누릅니다.
-4. 만들어진 파일을 편집 소프트웨어로 가져옵니다 ([편집 소프트웨어로 가져오기](#편집-소프트웨어로-가져오기)).
+```mermaid
+flowchart LR
+    A["① 파일 끌어놓기<br/>(영상 / 오디오 / 폴더)"] --> B["② 설정 확인"] --> C["③ ▶ Start Processing 클릭"] --> D["④ 편집 소프트웨어로 가져오기"]
+```
+
+> 스크린샷은 합성 음성 2명으로 만든 짧은 샘플 녹음을 처리한 화면입니다. 앱 화면은 일본어/영어를 지원하며(오른쪽 위 **Language** 메뉴로 전환) 스크린샷은 영어 화면입니다. 아래 괄호 안은 화면의 영어 이름입니다.
+
+#### 1. 메인 화면
+
+<p align="center"><img src="docs/images/main_en.png" width="640" alt="번호로 설명한 SnipSync 메인 화면"></p>
+
+| # | 위치 | 설명 |
+|:-:|---|---|
+| ① | 드롭 영역 | 영상/오디오 파일(여러 개, 폴더도 가능)을 여기에 끌어다 놓습니다. 클릭해서 선택해도 됩니다 |
+| ② | 컷 설정 | **무음 마진**(Silence Margin), **볼륨 임계값**(Volume Threshold), **컷 방식**(Cut Method: 볼륨/음성 구간 감지), **무음 처리**(Silence: 컷/배속) |
+| ③ | 내보내기 형식(Export Format) | DaVinci Resolve / Premiere Pro / Final Cut Pro, 또는 *Cut media*(렌더링된 영상/오디오) |
+| ④ | 자막(Subtitles) | 자막 켜기/끄기와 AI 모델 선택. 정확도가 중요하면 `large-v3-turbo` 권장 |
+| ⑤ | 자막 세부 설정·옵션 | 컷 경계에서 분할, 한 줄 글자 수, **화자 분리**(Separate speakers), `.txt` / `.md` 저장, 마커, 용어 사전, 출력 폴더 |
+| ⑥ | **▶ Start Processing** | 전체를 실행합니다. **■ Stop** 으로 중단할 수 있습니다 |
+| ⑦ | Waveform Preview(파형 미리보기) | 처리하기 *전에* 어디가 잘리는지 확인 |
+| ⑧ | Subtitle Preview(자막 미리보기) | 자막 전문을 읽고, 복사하고, 저장 |
+
+#### 2. 시작하고 로그 보기
+
+<p align="center"><img src="docs/images/result_en.png" width="640" alt="처리 후의 메인 화면(로그 표시)"></p>
+
+아래 **Log**(로그)에 컷, 음성 인식(인식된 텍스트 포함), 화자 분리, 저장된 파일이 차례로 표시됩니다. 끝나면 출력 폴더를 열지 묻습니다.
 
 결과는 입력 파일과 같은 폴더(또는 지정한 폴더)에 만들어집니다.
 
 | 파일 | 내용 |
 |---|---|
 | `<이름>_snipsynced.fcpxml` / `.xml` | 컷이 적용된 타임라인 (멀티트랙 오디오는 `<이름>_tracks` 폴더도 생성. `.fcpxml` 옆에 두세요) |
-| `<이름>_snipsynced.mp4` / `.wav` … | 내보내기 형식이 “컷 미디어”일 때의 영상/오디오 |
+| `<이름>_snipsynced.mp4` / `.wav` … | 내보내기 형식이 *Cut media* 일 때의 영상/오디오 |
 | `<이름>.srt` | 자막 |
 | `<이름>.txt` / `<이름>.md` | 자막 전문 (체크했을 때) |
+
+#### 3. (선택) 잘리는 곳 확인 — 파형 미리보기
+
+<p align="center"><img src="docs/images/waveform_en.png" width="760" alt="삭제되는 부분을 빨간색으로 표시한 파형 미리보기"></p>
+
+| # | 표시 내용 |
+|:-:|---|
+| ① | 처리 전 → 후의 길이, 단축률, 컷 수 |
+| ② | **빨강** = 삭제되는 부분, **주황** = 배속 구간. 나머지는 남습니다 |
+| ③ | 마진·임계값·컷 방식을 바꿨다면 **Recalculate**(다시 계산)를 누르세요 |
+
+#### 4. (선택) 자막 전문 읽기 — 자막 미리보기
+
+<p align="center"><img src="docs/images/text_en.png" width="640" alt="화자 표시가 있는 자막 미리보기 창"></p>
+
+| # | 기능 |
+|:-:|---|
+| ① | `.txt`, `.md`, `.srt` 보기 전환 |
+| ② | 시각 표시 켜기/끄기(Include timestamps) |
+| ③ | 클립보드로 **Copy**(복사) |
+| ④ | 파일로 **Save…**(저장) |
+| ⑤ | **Open SRT…** — 기존 `.srt` 를 불러와 읽거나 `.txt` / `.md` 로 변환 |
+
+#### 5. 편집 소프트웨어로 가져오기
+
+아래의 [편집 소프트웨어로 가져오기](#편집-소프트웨어로-가져오기)를 참고하세요.
 
 ### 설정 항목
 
@@ -160,11 +215,6 @@ uv pip install --python .venv\Scripts\python.exe -e ".[build]"
 | **마커 추가** | 모든 컷 지점과 화자 전환을 타임라인에 마커로 추가 (실험적, 아래 참고) |
 | **용어 사전** | 쉼표로 구분해 Whisper 가 우선했으면 하는 단어(이름, 제품명 등)를 입력 |
 | **프리셋** | 설정 전체를 저장/불러오기. 실행 시 마지막 설정이 복원됩니다 |
-
-### 처리 전에 미리 보기
-
-- **〰 파형 미리보기** — 삭제될 부분을 파형 위에 빨간색(배속 구간은 주황색)으로 표시하고 처리 후 길이도 보여 줍니다. 마진·임계값·컷 방식을 바꿨다면 **다시 계산** 을 누르세요.
-- **📄 자막 미리보기** — 자막 전문을 `.txt` / `.md` / `.srt` 형태로 보여 줍니다. 복사·저장이 가능하고, 기존 `.srt` 를 열어 보거나 다른 형식으로 저장할 수도 있습니다.
 
 ### 용도별 방법
 

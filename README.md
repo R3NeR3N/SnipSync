@@ -95,31 +95,37 @@ No Python installation required. SnipSync ships as a single `.exe` file.
 #### Prerequisites
 
 - Windows 10 / 11 (64-bit)
-- [uv](https://docs.astral.sh/uv/) (it manages Python for you). FFmpeg is **not** required.
+- [Python](https://www.python.org/downloads/) 3.10 or later (tick **Add python.exe to PATH** in the installer)
+- [Git](https://git-scm.com/downloads) (or download the repository as a ZIP from GitHub and unzip it)
+- FFmpeg is **not** required.
 
-#### Steps (PowerShell)
+#### Steps (PowerShell or Command Prompt)
 
-```powershell
+```bash
 git clone https://github.com/R3NeR3N/SnipSync.git
 cd SnipSync
-uv venv .venv --python 3.13
-uv pip install --python .venv\Scripts\python.exe -e ".[dev]"
+python -m venv .venv
+.venv\Scripts\python.exe -m pip install -e .
 .venv\Scripts\python.exe src\app.py
 ```
 
-The first run downloads auto-editor 31.7.2 (about 45 MB) from its official GitHub release and verifies its SHA-256 before using it.
+`python -m venv .venv` creates an isolated environment inside the `SnipSync` folder, so nothing is installed system-wide. To remove it, just delete the `.venv` folder.
+
+The first time you process a file, SnipSync downloads auto-editor 31.7.2 (about 45 MB) from its official GitHub release and verifies its SHA-256 before using it.
 
 ---
 
 ### Option C: Build the EXE yourself (PyInstaller)
 
-```powershell
-uv pip install --python .venv\Scripts\python.exe -e ".[build]"
-.venv\Scripts\python.exe scripts\fetch_auto_editor.py   # bundles auto-editor (SHA-256 verified)
+Run these in the same `SnipSync` folder (after the steps above):
+
+```bash
+.venv\Scripts\python.exe -m pip install -e ".[build]"
+.venv\Scripts\python.exe scripts\fetch_auto_editor.py
 .venv\Scripts\python.exe -m PyInstaller build\app.spec
 ```
 
-The standalone executable is written to `dist\SnipSync.exe`.
+`fetch_auto_editor.py` downloads auto-editor (SHA-256 verified) so that it can be bundled into the EXE. The result is written to `dist\SnipSync.exe`.
 
 ---
 
@@ -127,10 +133,33 @@ The standalone executable is written to `dist\SnipSync.exe`.
 
 ### Quick start
 
-1. **Launch** `SnipSync.exe`.
-2. **Drop** one or more video/audio files (or a folder) onto the drop zone, or click it to browse.
-3. Pick an **Export Format**, then click **▶ Start Processing**.
-4. Import the generated files into your editor (see [Importing into your editor](#importing-into-your-editor)).
+```mermaid
+flowchart LR
+    A["① Drop files<br/>(video / audio / folder)"] --> B["② Check the settings"] --> C["③ Click ▶ Start Processing"] --> D["④ Import the results<br/>into your editor"]
+```
+
+> The screenshots use a short sample recording of two synthesized voices. SnipSync's screen is available in Japanese and English (switch with the **Language** menu at the top right); the screenshots show the English screen.
+
+#### 1. The main window
+
+<p align="center"><img src="docs/images/main_en.png" width="640" alt="SnipSync main window with numbered callouts"></p>
+
+| # | Where | What it is |
+|:-:|---|---|
+| ① | Drop zone | Drop one or more video/audio files (or a whole folder) here, or click to browse |
+| ② | Cut settings | **Silence Margin**, **Volume Threshold**, **Cut Method** (volume or voice detection) and **Silence** (cut it out, or speed it up) |
+| ③ | Export Format | DaVinci Resolve / Premiere Pro / Final Cut Pro, or *Cut media* (a rendered video/audio file) |
+| ④ | Subtitles | Turn subtitles on and pick the AI model. `large-v3-turbo` is recommended |
+| ⑤ | Subtitle details and extras | Split at cut boundaries, line length, **speaker separation**, `.txt` / `.md` export, timeline markers, glossary, output folder |
+| ⑥ | **▶ Start Processing** | Runs everything. **■ Stop** cancels |
+| ⑦ | Waveform Preview | See what will be cut *before* you process |
+| ⑧ | Subtitle Preview | Read, copy and save the whole transcript |
+
+#### 2. Press Start and watch the log
+
+<p align="center"><img src="docs/images/result_en.png" width="640" alt="SnipSync main window after processing, showing the log"></p>
+
+The **Log** at the bottom shows each step: cutting, speech recognition (with the recognised text), speaker separation, and the files written. When it finishes, SnipSync offers to open the output folder.
 
 Outputs are written next to each input file (or to the folder you choose):
 
@@ -140,6 +169,32 @@ Outputs are written next to each input file (or to the folder you choose):
 | `<name>_snipsynced.mp4` / `.wav` … | Cut media, when the export format is *Cut media* |
 | `<name>.srt` | Subtitles |
 | `<name>.txt` / `<name>.md` | Whole transcript, if you ticked them |
+
+#### 3. (Optional) Check what will be cut — Waveform Preview
+
+<p align="center"><img src="docs/images/waveform_en.png" width="760" alt="Waveform preview with removed parts in red"></p>
+
+| # | What it shows |
+|:-:|---|
+| ① | Length before → after, the saving, and the number of cuts |
+| ② | **Red** = removed, **orange** = sped up. Everything else is kept |
+| ③ | **Recalculate** after you change the margin, threshold or cut method |
+
+#### 4. (Optional) Read the whole transcript — Subtitle Preview
+
+<p align="center"><img src="docs/images/text_en.png" width="640" alt="Subtitle preview window showing the transcript with speaker labels"></p>
+
+| # | What it does |
+|:-:|---|
+| ① | Switch between `.txt`, `.md` and `.srt` views |
+| ② | Include or hide the timestamps |
+| ③ | **Copy** the text to the clipboard |
+| ④ | **Save…** it as a file |
+| ⑤ | **Open SRT…** — load any existing `.srt` to read it or convert it to `.txt` / `.md` |
+
+#### 5. Import the results into your editor
+
+See [Importing into your editor](#importing-into-your-editor) below.
 
 ### Settings
 
@@ -160,11 +215,6 @@ Outputs are written next to each input file (or to the folder you choose):
 | **Add markers** | Adds markers for every cut and every speaker change to the timeline *(experimental — see notes)* |
 | **Glossary** | Comma-separated terms (names, product names) that Whisper should prefer |
 | **Preset** | Save and load a whole set of settings. Your last settings are restored on launch |
-
-### Preview before you commit
-
-- **〰 Waveform Preview** — shows the waveform with the parts that will be removed in red (sped-up parts in orange), plus the new length. Change the margin/threshold or cut method, then press **Recalculate**.
-- **📄 Subtitle Preview** — shows the whole transcript as `.txt`, `.md` or `.srt`. You can copy it, save it, or open any existing `.srt` file to read or export it.
 
 ### Recipes
 

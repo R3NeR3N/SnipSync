@@ -95,31 +95,37 @@
 #### 前提
 
 - Windows 10 / 11（64 位）
-- [uv](https://docs.astral.sh/uv/)（可同时管理 Python）。**不需要** FFmpeg。
+- [Python](https://www.python.org/downloads/) 3.10 或更高版本（安装时请勾选 **Add python.exe to PATH**）
+- [Git](https://git-scm.com/downloads)（或从 GitHub 下载仓库 ZIP 并解压）
+- **不需要** FFmpeg。
 
-#### 步骤（PowerShell）
+#### 步骤（PowerShell 或命令提示符）
 
-```powershell
+```bash
 git clone https://github.com/R3NeR3N/SnipSync.git
 cd SnipSync
-uv venv .venv --python 3.13
-uv pip install --python .venv\Scripts\python.exe -e ".[dev]"
+python -m venv .venv
+.venv\Scripts\python.exe -m pip install -e .
 .venv\Scripts\python.exe src\app.py
 ```
 
-首次运行时，会从官方 GitHub Release 下载 auto-editor 31.7.2（约 45MB），并在校验 SHA-256 后使用。
+`python -m venv .venv` 会在 `SnipSync` 文件夹内创建独立环境，不会向系统全局安装任何东西。要清除时，删除 `.venv` 文件夹即可。
+
+首次处理文件时，SnipSync 会从官方 GitHub Release 下载 auto-editor 31.7.2（约 45MB），校验 SHA-256 后再使用。
 
 ---
 
 ### 方式 C：自行构建 EXE（PyInstaller）
 
-```powershell
-uv pip install --python .venv\Scripts\python.exe -e ".[build]"
-.venv\Scripts\python.exe scripts\fetch_auto_editor.py   # 获取并内置 auto-editor（已校验 SHA-256）
+完成上述步骤后，在同一个 `SnipSync` 文件夹中运行：
+
+```bash
+.venv\Scripts\python.exe -m pip install -e ".[build]"
+.venv\Scripts\python.exe scripts\fetch_auto_editor.py
 .venv\Scripts\python.exe -m PyInstaller build\app.spec
 ```
 
-独立可执行文件将输出到 `dist\SnipSync.exe`。
+`fetch_auto_editor.py` 会下载要内置到 EXE 的 auto-editor（已校验 SHA-256）。输出文件为 `dist\SnipSync.exe`。
 
 ---
 
@@ -127,19 +133,68 @@ uv pip install --python .venv\Scripts\python.exe -e ".[build]"
 
 ### 快速开始
 
-1. **启动** `SnipSync.exe`。
-2. 将一个或多个视频/音频文件（或文件夹）**拖入**投放区，也可点击选择。
-3. 选择**导出格式**，点击 **▶ 开始处理**。
-4. 将生成的文件导入剪辑软件（见[导入剪辑软件](#导入剪辑软件)）。
+```mermaid
+flowchart LR
+    A["① 拖入文件<br/>(视频 / 音频 / 文件夹)"] --> B["② 确认设置"] --> C["③ 点击 ▶ Start Processing"] --> D["④ 导入剪辑软件"]
+```
 
-输出文件保存在输入文件所在文件夹（或你指定的文件夹）。
+> 截图使用的是由两个合成语音组成的简短示例录音。应用界面支持日语和英语（右上角 **Language** 菜单切换），截图为英语界面，下文括号内为界面上的英文名称。
+
+#### 1. 主界面
+
+<p align="center"><img src="docs/images/main_en.png" width="640" alt="带编号标注的 SnipSync 主界面"></p>
+
+| # | 位置 | 说明 |
+|:-:|---|---|
+| ① | 投放区 | 将一个或多个视频/音频文件（或整个文件夹）拖到这里，也可点击选择 |
+| ② | 剪切设置 | **静音余量**（Silence Margin）、**音量阈值**（Volume Threshold）、**剪切方式**（Cut Method：音量/语音检测）、**静音处理**（Silence：剪掉/加速） |
+| ③ | 导出格式（Export Format） | DaVinci Resolve / Premiere Pro / Final Cut Pro，或 *Cut media*（已渲染的视频/音频） |
+| ④ | 字幕（Subtitles） | 开关字幕并选择 AI 模型。追求精度推荐 `large-v3-turbo` |
+| ⑤ | 字幕细节与选项 | 按剪切点拆分、每行字数、**说话人分离**（Separate speakers）、`.txt` / `.md` 导出、标记、术语表、输出文件夹 |
+| ⑥ | **▶ Start Processing** | 执行全部处理。**■ Stop** 可中断 |
+| ⑦ | Waveform Preview（波形预览） | 处理*之前*先看哪些部分会被剪掉 |
+| ⑧ | Subtitle Preview（字幕预览） | 阅读、复制、保存完整文字稿 |
+
+#### 2. 点击开始并查看日志
+
+<p align="center"><img src="docs/images/result_en.png" width="640" alt="处理完成后的主界面（显示日志）"></p>
+
+底部的 **Log**（日志）会依次显示剪切、语音识别（含识别出的文字）、说话人分离以及写出的文件。处理完成后，会询问是否打开输出文件夹。
+
+输出文件保存在输入文件所在文件夹（或你指定的文件夹）：
 
 | 文件 | 内容 |
 |---|---|
 | `<名称>_snipsynced.fcpxml` / `.xml` | 剪切后的时间线（多音轨时还会有 `<名称>_tracks` 文件夹，请保持在 `.fcpxml` 旁边） |
-| `<名称>_snipsynced.mp4` / `.wav` … | 导出格式为“剪切后的媒体”时的视频/音频 |
+| `<名称>_snipsynced.mp4` / `.wav` … | 导出格式为 *Cut media* 时的视频/音频 |
 | `<名称>.srt` | 字幕 |
 | `<名称>.txt` / `<名称>.md` | 完整文字稿（勾选时） |
+
+#### 3.（可选）查看将被剪掉的位置 — 波形预览
+
+<p align="center"><img src="docs/images/waveform_en.png" width="760" alt="用红色标出删除部分的波形预览"></p>
+
+| # | 显示内容 |
+|:-:|---|
+| ① | 处理前 → 处理后的时长、缩短比例和剪切数量 |
+| ② | **红色** = 删除的部分，**橙色** = 加速的部分，其余保留 |
+| ③ | 修改余量、阈值或剪切方式后，点击 **Recalculate**（重新计算） |
+
+#### 4.（可选）阅读完整文字稿 — 字幕预览
+
+<p align="center"><img src="docs/images/text_en.png" width="640" alt="带说话人标注的字幕预览窗口"></p>
+
+| # | 作用 |
+|:-:|---|
+| ① | 在 `.txt`、`.md`、`.srt` 视图之间切换 |
+| ② | 显示或隐藏时间戳（Include timestamps） |
+| ③ | **Copy**（复制）到剪贴板 |
+| ④ | **Save…**（保存）为文件 |
+| ⑤ | **Open SRT…** — 载入已有的 `.srt` 阅读，或转换为 `.txt` / `.md` |
+
+#### 5. 导入剪辑软件
+
+请参阅下方的[导入剪辑软件](#导入剪辑软件)。
 
 ### 设置项
 
@@ -160,11 +215,6 @@ uv pip install --python .venv\Scripts\python.exe -e ".[build]"
 | **添加标记** | 在时间线上为每个剪切点和说话人切换添加标记（实验性，见下方说明） |
 | **术语表** | 用逗号分隔，填写希望 Whisper 优先识别的词（人名、产品名等） |
 | **预设** | 保存/载入整套设置。启动时会恢复上次的设置 |
-
-### 处理前先预览
-
-- **〰 波形预览** — 在波形上用红色显示将被删除的部分（加速部分为橙色），并显示处理后的时长。修改余量/阈值/剪切方式后，点击**重新计算**。
-- **📄 字幕预览** — 以 `.txt` / `.md` / `.srt` 形式显示完整文字稿，可复制、保存，也可打开已有的 `.srt` 查看或转换格式。
 
 ### 常见用法
 

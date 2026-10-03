@@ -232,3 +232,23 @@ def test_presets_keep_new_settings():
     assert set(store["presets"]["p"]) == set(SETTING_KEYS)
     for k in ("cut_mode", "silence", "speed", "hotwords", "diarize", "speakers", "markers", "line_chars"):
         assert k in SETTING_KEYS
+
+
+def test_every_logged_message_has_a_placeholder_for_each_argument_passed():
+    """tr("key", arg) に渡した引数が、文言の {} に入らず捨てられていないこと（完了ログからファイル名が消えていた不具合の再発防止）。"""
+    import re
+
+    from i18n import I18N
+    src = Path(__file__).parent.parent / "src"
+    bad = []
+    for f in src.glob("*.py"):
+        for m in re.finditer(r'(?:tr|self\.t)\(\s*"(\w+)"\s*((?:,[^()]*(?:\([^()]*\))?[^()]*?)*)\)', f.read_text(encoding="utf-8")):
+            key, rest = m.group(1), m.group(2)
+            if key not in I18N["ja"] or not rest.strip():
+                continue
+            nargs = len([a for a in re.split(r",(?![^()]*\))", rest) if a.strip()])
+            for lang in ("ja", "en"):
+                text = I18N[lang][key]
+                if isinstance(text, str) and text.count("{") < nargs:
+                    bad.append((f.name, key, lang))
+    assert not bad, bad
