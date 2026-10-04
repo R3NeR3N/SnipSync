@@ -1,3 +1,4 @@
+import re
 import shutil
 import subprocess
 import sys
@@ -293,6 +294,16 @@ def _hotwords(text: str) -> str | None:
     words = [w.strip() for w in text.replace("\n", ",").replace("、", ",").split(",")]
     words = [w for w in words if w]
     return ", ".join(words) if words else None
+
+
+def run_folder_name(model_key, when, *, with_model: bool = True) -> str:
+    """処理 1 回ぶんの出力フォルダー名。「日時_モデル名」（例: 2026-10-04_190357_large-v3）。
+
+    日時を先頭に置くので、フォルダーの一覧が、処理した順に並ぶ。字幕を作らない（モデルを使わない）ときは、日時だけ。
+    """
+    stamp = when.strftime("%Y-%m-%d_%H%M%S")
+    safe = re.sub(r'[\\/:*?"<>|\s]+', "-", str(model_key or "")).strip("-.")
+    return f"{stamp}_{safe}" if (with_model and safe) else stamp
 
 
 def _prepare_vad_cuts(inp, out_dir, name, params, *, on_log, tr, audio_only):

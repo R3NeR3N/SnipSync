@@ -43,6 +43,7 @@ TIPS = {
         # ── 書き出し ──
         "tip_export": "書き出すもの。DaVinci Resolve・Premiere Pro・Final Cut Pro は、カット済みのタイムライン。「動画・音声」は、カット済みの動画・音声そのものです。",
         "tip_folder": "書き出し先。変えなければ、元のファイルと同じフォルダに書きます。",
+        "tip_run_folder": "オンなら、保存先の中に「日時_モデル名」のフォルダー（例: 2026-10-04_190357_large-v3）を作り、その中へ書き出します。処理のたびに別のフォルダーになるので、前の結果を上書きしません。オフなら、保存先へ直接書きます。",
         "tip_txt": "字幕を、時刻つきの読みやすい文章（.txt）でも書き出します。会議の議事録などに使えます。",
         "tip_md": "字幕を、見出しつきの Markdown（.md）でも書き出します。ノートアプリや議事録に貼り付けやすい形です。",
         "tip_markers": "タイムラインに、カット点と話者交代の目印（マーカー）を入れます。試験的な機能で、「動画・音声」には入りません。",
@@ -115,6 +116,7 @@ TIPS = {
         "tip_speakers": "Splits subtitles by speaker and adds Speaker 1: labels. If you know the number of speakers, set it for steadier results.",
         "tip_export": "What to write. DaVinci Resolve, Premiere Pro and Final Cut Pro get the cut timeline. Video / audio writes the cut media itself.",
         "tip_folder": "Where files are written. If unchanged, the same folder as the source file.",
+        "tip_run_folder": "On: creates a \"date_model\" folder (e.g. 2026-10-04_190357_large-v3) inside the save folder and writes there. Each run gets its own folder, so earlier results are never overwritten. Off: writes straight into the save folder.",
         "tip_txt": "Also write subtitles as readable text with times (.txt). Handy for meeting minutes.",
         "tip_md": "Also write subtitles as Markdown with headings (.md). Easy to paste into notes or minutes.",
         "tip_markers": "Adds markers for cut points and speaker changes to the timeline. Experimental; not added to video / audio output.",

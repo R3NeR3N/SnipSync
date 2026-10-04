@@ -515,3 +515,16 @@ def test_refinement_can_be_turned_off_and_failure_to_detect_is_harmless(dirs, mo
     rec2 = Recorder(v1_chunks=[[0, 60, 1.0]])
     res2, _ = run(dirs, monkeypatch, base_params(do_srt=True, snap_srt=False), rec2, transcribe=_one_cue_transcribe)
     assert res2.ok and res2.cues[0].start == 0.5                      # 補正を省くだけで、字幕づくりは続く
+
+
+def test_run_folder_name_is_date_first_then_model():
+    from datetime import datetime
+
+    from pipeline import run_folder_name
+    when = datetime(2026, 10, 4, 19, 3, 57)
+    assert run_folder_name("large-v3", when) == "2026-10-04_190357_large-v3"
+    assert run_folder_name("kotoba-ja", when) == "2026-10-04_190357_kotoba-ja"
+    assert run_folder_name("large-v3", when, with_model=False) == "2026-10-04_190357"    # 字幕なし: モデルは使わない
+    assert run_folder_name("", when) == "2026-10-04_190357"
+    assert run_folder_name('a/b:c*? "d"', when) == "2026-10-04_190357_a-b-c-d"          # Windows で使えない文字は除く
+    assert run_folder_name("x", datetime(2026, 1, 2, 3, 4, 5)) < run_folder_name("x", when)   # 並べると、処理した順

@@ -7,7 +7,7 @@ SCHEMA_VERSION = 1
 SETTING_KEYS = (
     "margin", "threshold", "export", "srt", "model", "output_dir", "gpu", "snap_srt",
     "cut_mode", "silence", "speed", "hotwords", "diarize", "speakers", "speaker_labels",
-    "markers", "line_chars", "txt", "md",
+    "markers", "line_chars", "txt", "md", "run_folder",
 )
 
 def _store_path() -> Path:

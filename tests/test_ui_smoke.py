@@ -428,7 +428,7 @@ def _prepare_start(app, monkeypatch, tmp_path, *, libs_ready, answer):
     asked = []
     monkeypatch.setattr(appmod.messagebox, "askyesnocancel", lambda *a, **k: asked.append(a) or answer)
     started = []
-    monkeypatch.setattr(app, "_worker", lambda files, params, fetch=False: started.append((params, fetch)))
+    monkeypatch.setattr(app, "_worker", lambda files, params, fetch=False, run_folder=False: started.append((params, fetch)))
 
     class InlineThread:
         def __init__(self, target=None, args=(), daemon=None):
@@ -763,3 +763,64 @@ def test_speaker_names_can_be_hidden_from_the_output_and_the_switch_follows_the_
     ed.editor.set_speakers(list(range(len(ed.editor))), None)           # 話者を全部外すと、効くものが無いので押せない
     ed._refresh_all()
     assert str(ed.sp_switch.cget("state")) == "disabled"
+
+
+def _run_worker(app, monkeypatch, tmp_path, *, run_folder, out_dir):
+    import types
+
+    import app as appmod
+
+    media = tmp_path / "talk.wav"
+    media.write_bytes(b"x")
+    seen = []
+    done = types.SimpleNamespace(pending_paths={}, stopped=False, ok=True, cues=[], timeline_path=None,
+                                 srt_path=None, extra_paths=[])
+    monkeypatch.setattr(appmod, "get_auto_editor_path", lambda *_a, **_k: Path("ae.exe"))
+    monkeypatch.setattr(appmod, "run_pipeline", lambda ae, inp, out, params, **kw: seen.append(out) or done)
+    app.output_dir = str(out_dir) if out_dir else ""
+    app.stop_requested = False
+    params = app._build_params()
+    app._worker([media.resolve()], params, False, run_folder)
+    return seen, params
+
+
+def test_each_run_writes_into_its_own_dated_model_folder(app, monkeypatch, tmp_path):
+    import re
+    out = tmp_path / "out"
+    out.mkdir()
+    app.srt_var.set(True)
+    app.model_key = "large-v3"
+    seen, _ = _run_worker(app, monkeypatch, tmp_path, run_folder=True, out_dir=out)
+    assert len(seen) == 1 and seen[0].parent == out.resolve()
+    assert re.fullmatch(r"\d{4}-\d\d-\d\d_\d{6}_large-v3", seen[0].name)
+    assert seen[0].is_dir()                                         # 処理に渡す前に作っている
+    assert app.last_out_dir == seen[0]                              # 「出力フォルダを開く」は、そのフォルダーを開く
+
+
+def test_run_folder_off_writes_straight_into_the_save_folder_and_default_is_on(app, monkeypatch, tmp_path):
+    assert app.run_folder_var.get() is True                          # 既定はオン
+    out = tmp_path / "out"
+    out.mkdir()
+    seen, _ = _run_worker(app, monkeypatch, tmp_path, run_folder=False, out_dir=out)
+    assert seen == [out.resolve()] and list(out.iterdir()) == []
+
+
+def test_run_folder_without_subtitles_is_the_date_only_and_follows_the_input_folder(app, monkeypatch, tmp_path):
+    import re
+    app.srt_var.set(False)
+    seen, _ = _run_worker(app, monkeypatch, tmp_path, run_folder=True, out_dir=None)
+    assert seen[0].parent == tmp_path.resolve()                      # 保存先が未設定なら、入力ファイルの隣
+    assert re.fullmatch(r"\d{4}-\d\d-\d\d_\d{6}", seen[0].name)
+    app.srt_var.set(True)
+
+
+def test_run_folder_setting_is_saved_in_presets_and_restored(app):
+    from presets import SETTING_KEYS
+    assert "run_folder" in SETTING_KEYS
+    app.run_folder_var.set(False)
+    saved = app._collect_settings()
+    assert saved["run_folder"] is False
+    app.run_folder_var.set(True)
+    app._apply_settings(saved)
+    assert app.run_folder_var.get() is False
+    app.run_folder_var.set(True)

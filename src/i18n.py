@@ -104,6 +104,7 @@ I18N = {
         "extra_md": ".md（文字起こし）",
         "extra_markers": "マーカー（実験的）",
         "f_folder": "保存先",
+        "f_run_folder": "処理ごとに日時のフォルダーを作る",
         "folder_default": "入力ファイルと同じフォルダ",
         "btn_change": "変更…",
         # ── プリセット ──
@@ -330,6 +331,7 @@ I18N = {
         "extra_md": ".md transcript",
         "extra_markers": "Markers (experimental)",
         "f_folder": "Save to",
+        "f_run_folder": "Make a dated folder for each run",
         "folder_default": "Same folder as the input file",
         "btn_change": "Change…",
         # ── Presets ──

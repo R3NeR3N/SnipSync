@@ -9,6 +9,7 @@ import sys
 import threading
 import time
 import tkinter as tk
+from datetime import datetime
 from pathlib import Path
 from tkinter import filedialog, messagebox
 
@@ -38,7 +39,7 @@ from diarize import sherpa_available
 from i18n import I18N
 from markers import add_speaker_markers
 from models import model_folder, models_dir
-from pipeline import PipelineParams, run_pipeline
+from pipeline import PipelineParams, run_folder_name, run_pipeline
 from player import PLAY_SR, RATES, EditedAudio, Player, PlayerError, sounddevice_available
 from presets import delete_preset, load_store, save_store, set_last_used, upsert_preset
 from preview import CutSettings, compute_preview
@@ -119,6 +120,7 @@ class SnipSyncApp(_Base):
         self.md_var = tk.BooleanVar(value=False)
         self.review_var = tk.BooleanVar(value=True)      # 字幕を保存する前に確認・編集する（無人の一括処理ではオフ）
         self.markers_var = tk.BooleanVar(value=False)
+        self.run_folder_var = tk.BooleanVar(value=True)    # 処理ごとに「日時_モデル名」のフォルダーを作って、その中へ書く
         self.speaker_labels = True           # 画面には出さない（既定どおり話者名を付ける）。プリセットには残す
 
         self._build()
@@ -424,12 +426,17 @@ class SnipSyncApp(_Base):
         self.export_cap = W.caption(box, wraplength=430)
         self.export_cap.grid(row=2, column=0, sticky="w", pady=(T.S1, 0))
         def folder(p):
-            row = ctk.CTkFrame(p, fg_color="transparent")
+            col = ctk.CTkFrame(p, fg_color="transparent")
+            row = ctk.CTkFrame(col, fg_color="transparent")
+            row.pack(anchor="w")
             self.folder_lbl = W.label(row, "", "mono_small", T.DUST, anchor="w", width=300)
             self.folder_lbl.pack(side="left")
             self.btn_change = self.reg(W.Btn(row, "", self._browse_outdir, height=30), "btn_change")
             self.btn_change.pack(side="left", padx=(T.S2, 0))
-            return row
+            self.run_folder_switch = self.reg(W.switch(col, "", self.run_folder_var), "f_run_folder")
+            self.run_folder_switch.pack(anchor="w", pady=(T.S2, 0))
+            self._tip(self.run_folder_switch, "tip_run_folder")
+            return col
         self._field(left, "f_folder", folder, tip="tip_folder").pack(anchor="w", fill="x", pady=(T.S4, 0))
 
         def extra(p):
@@ -542,7 +549,7 @@ class SnipSyncApp(_Base):
             "silence": self.silence, "speed": self._speed(), "hotwords": self.glossary_var.get(),
             "diarize": self.diarize_var.get(), "speakers": self.speakers, "speaker_labels": self.speaker_labels,
             "markers": self.markers_var.get(), "line_chars": self.line_chars(), "txt": self.txt_var.get(),
-            "md": self.md_var.get(), "review": self.review_var.get(),
+            "md": self.md_var.get(), "review": self.review_var.get(), "run_folder": self.run_folder_var.get(),
         }
 
     def _apply_settings(self, s: dict):
@@ -592,6 +599,8 @@ class SnipSyncApp(_Base):
             self.md_var.set(s["md"])
         if "review" in s:
             self.review_var.set(bool(s["review"]))
+        if "run_folder" in s:
+            self.run_folder_var.set(bool(s["run_folder"]))
         for row in (self.threshold_row, self.margin_row, self.chars_row):
             row.update_label()
         self._update_export_caption()
@@ -1033,9 +1042,10 @@ class SnipSyncApp(_Base):
         self.btn_stop.enable(True)
         self.progress.configure(mode="indeterminate")
         self.progress.start()
-        threading.Thread(target=self._worker, args=(files, params, fetch_gpu_libs), daemon=True).start()
+        run_folder = self.run_folder_var.get()      # 画面の値は、この（画面の）スレッドで読む
+        threading.Thread(target=self._worker, args=(files, params, fetch_gpu_libs, run_folder), daemon=True).start()
 
-    def _worker(self, files, params, fetch_gpu_libs=False):
+    def _worker(self, files, params, fetch_gpu_libs=False, run_folder=False):
         if fetch_gpu_libs:
             params = self._fetch_gpu_libs(params)
             if self.stop_requested:
@@ -1050,6 +1060,7 @@ class SnipSyncApp(_Base):
             self.after(0, self._reset_ui)
             return
         shared_out = Path(self.output_dir).resolve() if self.output_dir else None
+        run_name = run_folder_name(params.model_size, datetime.now(), with_model=params.do_srt) if run_folder else None
         stems = [f.stem for f in files]
         model_cache: dict = {}           # バッチ中は Whisper モデルを読み込み直さない
         finished, last_out, last_result = 0, None, None
@@ -1058,6 +1069,10 @@ class SnipSyncApp(_Base):
             if self.stop_requested:
                 break
             out_dir = shared_out or inp.parent
+            if run_name:                        # 1 回の処理（一括も）は、同じフォルダーへ。前の結果は、上書きしない
+                out_dir = out_dir / run_name
+                out_dir.mkdir(parents=True, exist_ok=True)
+                self._log(self.t("log_outdir", out_dir), "muted")
             stem = f"{inp.stem}_{idx}" if (shared_out and stems.count(inp.stem) > 1) else None
             self._log(self.t("log_batch_item", idx, total, inp.name) if total > 1 else self.t("log_input", inp.name),
                       "info")

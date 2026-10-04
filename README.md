@@ -198,7 +198,7 @@ flowchart LR
 
 The **Log** at the bottom shows each step: cutting, speech recognition (with the recognised text), speaker separation, and the files written. When it finishes, SnipSync offers to open the output folder.
 
-Outputs are written next to each input file (or to the folder you choose). Files appear at two moments.
+Outputs are written next to each input file (or to the folder you choose). With **Make a dated folder for each run** on (the default), they go into a `date_model` folder inside it (for example `2026-10-04_190357_large-v3`). Files appear at two moments.
 
 **① After you press Start processing, while processing runs**
 
@@ -260,6 +260,7 @@ See [Importing into your editor](#importing-into-your-editor) below.
 | **Cut Method** | *Volume threshold*, or *Voice detection (VAD)* — cuts everything that is not a human voice, so it usually copes better with background noise |
 | **Silence** | *Cut out* removes silence; *Speed up* keeps it but plays it at the speed you set (default ×8) |
 | **Export Format** | DaVinci Resolve, Premiere Pro, Final Cut Pro, or *Cut media* (a rendered video/audio file) |
+| **Make a dated folder for each run** | On by default. Creates a `date_model` folder (for example `2026-10-04_190357_large-v3`) inside the save folder and writes everything there. Each run gets its own folder, so earlier results are never overwritten. When you process several files at once, they all go into the same folder. If subtitles are off, the name is the date only. A `.fcpxml` stores the location of its audio (`_tracks`) as an absolute path, so do not move the folder after importing. If you did, choose **Yes** in Resolve's dialog and point it at the `_tracks` folder |
 | **Subtitles** | Generate `.srt` with Whisper |
 | **AI Model Size** | `tiny`/`base`/`small` are fast; **`large-v3-turbo` is the recommended accurate model**; `kotoba-whisper` is Japanese-specialised but experimental (its word timing is coarse); `distil-large-v3` is English only |
 | **Use GPU (CUDA)** | Optional. Needs an NVIDIA GPU. The first time, it asks before downloading the components (about 1.4 GB) |
