@@ -36,6 +36,7 @@ from aebin import get_auto_editor_path
 from autoeditor import MEDIA_EXTS
 from diarize import sherpa_available
 from i18n import I18N
+from markers import add_speaker_markers
 from models import model_folder, models_dir
 from pipeline import PipelineParams, run_pipeline
 from player import PLAY_SR, RATES, EditedAudio, Player, PlayerError, sounddevice_available
@@ -1092,8 +1093,8 @@ class SnipSyncApp(_Base):
         done = threading.Event()
         outcome: dict = {}
 
-        def finished(cues, saved, paths):
-            outcome.update(cues=cues, saved=saved, paths=paths)
+        def finished(cues, saved, paths, info):
+            outcome.update(cues=cues, saved=saved, paths=paths, info=info)
             done.set()
 
         self._log(self.t("log_review_wait"), "info")
@@ -1109,6 +1110,21 @@ class SnipSyncApp(_Base):
             self._log(self.t("log_review_saved", ", ".join(p.name for p in written.values())), "success")
         else:
             self._log(self.t("log_review_discarded"), "warn")
+        self._add_speaker_markers(result, outcome)
+
+    def _add_speaker_markers(self, result, outcome):
+        """保存した字幕（編集後）から、話者交代のマーカーをタイムラインへ入れる。"""
+        if not result.speaker_markers_pending:
+            return
+        result.speaker_markers_pending = False
+        if not outcome["saved"]:
+            self._log(self.t("log_markers_speaker_skipped"), "muted")
+            return
+        info = outcome["info"]
+        count = add_speaker_markers(result.timeline_path, info["saved_cues"] or [], self.lang, info["names"])
+        result.markers_added += count
+        if count:
+            self._log(self.t("log_markers_speaker_added", count), "success")
 
     def _open_review(self, result, title: str, on_closed):
         self.review_win = SubtitleEditor(self, result.cues, title, result.pending_paths, pending=True,

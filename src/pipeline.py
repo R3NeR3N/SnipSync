@@ -257,6 +257,7 @@ class PipelineResult:
     extra_paths: list = field(default_factory=list)   # 追加で書いた .txt / .md
     pending_paths: dict = field(default_factory=dict)  # hold_subtitles のとき: まだ書いていない宛先（形式 -> パス）
     markers_added: int = 0
+    speaker_markers_pending: bool = False   # hold_subtitles のとき: 話者交代のマーカーは、確認・編集後の字幕で入れる
 
 
 def _output_ext(export_key: str, inp: Path) -> str:
@@ -724,7 +725,11 @@ def run_pipeline(
                 and result.timeline_path.exists()):
             try:
                 marks = cut_point_markers(get_boundaries(), tr("marker_cut"))
-                if turns and result.cues:
+                if result.pending_paths:
+                    # 字幕は確認・編集のあとに保存される。話者交代のマーカーは、編集後の字幕から入れる
+                    # （いま入れると、確認画面で話者を直しても、マーカーが古いままになる）。
+                    result.speaker_markers_pending = True
+                elif turns and result.cues:
                     marks += speaker_turn_markers(result.cues, params.ui_lang)
                 marks.sort(key=lambda m: m[0])
                 result.markers_added = add_markers(result.timeline_path, marks)

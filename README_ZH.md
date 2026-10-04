@@ -114,12 +114,16 @@
 |---|---|---|
 | Whisper 模型 | 首次用该模型生成字幕时 | `tiny` 0.08GB · `base` 0.15GB · `small` 0.49GB · `medium` 1.5GB · `large-v3-turbo` 1.6GB · `large-v3` 3.1GB · `distil-large-v3` 1.5GB · `kotoba-whisper` 1.5GB |
 | 说话人分离模型 | 首次开启 **分离说话人** 时 | 约 35MB |
+| GPU 组件（cuBLAS、cuDNN） | 开启 **Use the GPU** 并开始处理，且允许下载时（仅限 NVIDIA GPU） | 约 1.4GB（解压后约 2.1GB） |
 
 > **💡 保存位置与删除方法**
 > - Whisper 模型：`C:\Users\<用户名>\.cache\huggingface\hub`
 > - kotoba-whisper、说话人分离模型、预设：`%APPDATA%\SnipSync`
+> - GPU 组件：`%APPDATA%\SnipSync\cuda`（可用 **Use the GPU** 旁边的 **Parts folder** 按钮打开）
 >
 > 删除 `SnipSync.exe` 不会删除这些文件。如需释放磁盘空间，请手动删除上述文件夹。
+>
+> GPU 组件是 SnipSync 专用的副本，没有装进 Windows 或其他应用，所以**删除也没有问题**，不会影响其他应用。下次使用 GPU 时，SnipSync 会再次询问是否下载（使用 CPU 则不需要这些组件）。
 
 ---
 
@@ -218,7 +222,7 @@ flowchart LR
 - 不保存就关闭，则不会生成字幕文件（时间线或媒体在 ① 时已经存在）。
 - 关闭窗口后，处理会继续。处理完最后一个文件时，主窗口的日志会显示 "Processing finished"。
 - 关闭 **Review before saving** 后，字幕文件在 ① 时生成。之后仍可用 **Review subtitles** 重新打开、修改并再次保存（覆盖同一文件）。
-- 时间线中的说话人切换标记，是根据 ① 时的字幕生成的。在确认窗口中修改说话人，不会改变标记。
+- 说话人切换标记（开启标记选项时）会在保存字幕后立即添加，使用**你修改后的说话人和说话人名称**。剪切点标记在 ① 时已经写入时间线。不保存就关闭，则不会添加说话人切换标记。关闭 **Review before saving** 时，则根据 ① 时的字幕生成。
 
 #### 3.（可选）查看将被剪掉的位置 — 波形预览
 
@@ -257,7 +261,7 @@ flowchart LR
 | **导出格式** | DaVinci Resolve / Premiere Pro / Final Cut Pro / “剪切后的媒体”（已渲染的视频/音频） |
 | **字幕生成** | 使用 Whisper 生成 `.srt` |
 | **AI 模型** | `tiny`/`base`/`small` 速度快；**追求精度推荐 `large-v3-turbo`**；`kotoba-whisper` 专为日语优化但属实验性（单词时间较粗）；`distil-large-v3` 仅限英语 |
-| **使用 GPU (CUDA)** | 可选。需要 NVIDIA GPU 及 CUDA 12、cuDNN 9 |
+| **使用 GPU (CUDA)** | 可选。需要 NVIDIA GPU。首次使用时会先询问是否下载组件（约 1.4GB） |
 | **按剪切点拆分字幕** | 在每个剪切点开始新字幕，使字幕与片段对齐 |
 | **每行字幕字数** | 日语按词组换行（BudouX），每条字幕不超过 2 行。`0` 为关闭（默认 `20`） |
 | **分离说话人** | 标注说话人（`说话人1：…`），说话人变化时拆分字幕。若已知人数，请设置**说话人数** |
@@ -302,7 +306,7 @@ flowchart LR
 - **内存：** 最低 4GB；使用 `medium` 及以上模型建议 8GB 以上
 - **磁盘：** 视所选 Whisper 模型而定，约 0.1–3GB（仅首次）
 - **网络：** 仅首次下载（Whisper 模型、说话人分离模型）时需要
-- **GPU：**（可选）系统 PATH 中已安装 CUDA 12 和 cuDNN 9 的 NVIDIA GPU。EXE 不包含 GPU 库。
+- **GPU：**（可选）NVIDIA GPU。所需组件（cuBLAS、cuDNN）不包含在 EXE 中，首次使用时经你允许后下载。
 
 ### 开发环境（源码用户）
 

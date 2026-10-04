@@ -439,3 +439,40 @@ def test_failed_timeline_export_is_left_for_the_user_to_inspect(dirs, monkeypatc
     monkeypatch.setattr(subprocess, "Popen", make_mock_popen(stdout_lines=["x"], returncode=1, write_output=write_partial))
     res, _ = run_pipeline_with(inp, out, base_params(export_key="premiere"))
     assert not res.ok and list(out.glob("*_snipsynced.*"))
+
+
+# ── 話者交代のマーカーは、保存前の確認があるときは、編集後の字幕から入れる ─────────────────
+
+def test_speaker_markers_are_deferred_to_after_the_review_when_subtitles_are_held(dirs, monkeypatch):
+    inp, out = dirs
+    monkeypatch.setattr(pl, "probe_fps", lambda p: 10.0)
+    monkeypatch.setattr(pl, "decode_mix", lambda p, sr=16000: np.zeros(20 * sr, dtype=np.float32))
+    monkeypatch.setattr(pl, "sherpa_available", lambda: True)
+    monkeypatch.setattr(pl, "diarize", lambda samples, **k: [(0.0, 2.5, 5), (2.5, 6.0, 9)])
+    rec = Recorder(v1_chunks=[[0, 30, 1.0], [30, 40, 99999.0], [40, 90, 1.0]], xml=True)
+    params = base_params(do_srt=True, snap_srt=False, diarize=True, markers=True, hold_subtitles=True)
+    res, _ = run(dirs, monkeypatch, params, rec, transcribe=_transcribe_two_speakers)
+    assert res.ok and res.speaker_markers_pending and res.pending_paths
+    xml = (out / "input_snipsynced.xml").read_text(encoding="utf-8")
+    assert xml.count("<marker>") == res.markers_added == 1             # カット点だけ。話者交代は、まだ入れない
+    assert "話者" not in xml
+
+
+def test_speaker_markers_are_still_added_at_once_without_a_review(dirs, monkeypatch):
+    """確認を使わない（従来どおり）なら、処理の中で入れる。"""
+    monkeypatch.setattr(pl, "probe_fps", lambda p: 10.0)
+    monkeypatch.setattr(pl, "decode_mix", lambda p, sr=16000: np.zeros(20 * sr, dtype=np.float32))
+    monkeypatch.setattr(pl, "sherpa_available", lambda: True)
+    monkeypatch.setattr(pl, "diarize", lambda samples, **k: [(0.0, 2.5, 5), (2.5, 6.0, 9)])
+    rec = Recorder(v1_chunks=[[0, 60, 1.0]], xml=True)
+    res, _ = run(dirs, monkeypatch, base_params(do_srt=True, snap_srt=False, diarize=True, markers=True), rec,
+                 transcribe=_transcribe_two_speakers)
+    assert not res.speaker_markers_pending and res.markers_added == 2
+
+
+def test_no_deferred_markers_when_the_option_is_off(dirs, monkeypatch):
+    monkeypatch.setattr(pl, "probe_fps", lambda p: 10.0)
+    rec = Recorder(v1_chunks=[[0, 60, 1.0]], xml=True)
+    res, _ = run(dirs, monkeypatch, base_params(do_srt=True, snap_srt=False, hold_subtitles=True), rec,
+                 transcribe=_transcribe_two_speakers)
+    assert not res.speaker_markers_pending

@@ -121,7 +121,7 @@ def test_review_editor_writes_nothing_until_saved_and_reports_the_outcome(app, t
     dest = {"srt": tmp_path / "talk.srt", "txt": tmp_path / "talk.txt"}
     reported = {}
     ed = SubtitleEditor(app, list(CUES), "talk", dest, pending=True,
-                        on_closed=lambda cues, saved, paths: reported.update(cues=cues, saved=saved, paths=paths))
+                        on_closed=lambda cues, saved, paths, info: reported.update(cues=cues, saved=saved, paths=paths, info=info))
     app.review_win = ed
     pump(app, 10)
     assert ed.pending and not any(p.exists() for p in dest.values())
@@ -153,7 +153,7 @@ def test_review_editor_closed_without_saving_reports_not_saved(app, tmp_path, mo
     dest = {"srt": tmp_path / "talk.srt"}
     reported = {}
     ed = SubtitleEditor(app, list(CUES), "talk", dest, pending=True,
-                        on_closed=lambda cues, saved, paths: reported.update(saved=saved))
+                        on_closed=lambda cues, saved, paths, info: reported.update(saved=saved))
     app.review_win = ed
     pump(app, 10)
     monkeypatch.setattr(messagebox, "askyesnocancel", lambda *a, **k: False)    # 「保存せず閉じる」
@@ -669,3 +669,76 @@ def test_tooltip_wrapping_keeps_words_whole_and_punctuation_off_line_starts():
     assert not any(ln.endswith("GP") or ln.startswith("PU") for ln in lines)         # 英単語は途中で切らない
     assert W.wrap_text("短い", measure, 260) == "短い"
     assert W.wrap_text("a\nb", measure, 260) == "a\nb"
+
+
+# ── 編集後の字幕から、話者交代のマーカーを入れる ───────────────────────────────────────
+def _timeline(tmp_path):
+    xml = tmp_path / "talk_snipsynced.xml"
+    xml.write_text('<?xml version="1.0"?><xmeml version="5"><sequence><name>s</name><duration>300</duration>'
+                   '<rate><timebase>30</timebase><ntsc>FALSE</ntsc></rate><media><video/></media></sequence></xmeml>',
+                   encoding="utf-8")
+    return xml
+
+
+def test_speaker_markers_come_from_the_saved_edited_subtitles_with_custom_names(app, tmp_path):
+    from pipeline import PipelineResult
+    from subtitles import Cue
+    xml = _timeline(tmp_path)
+    result = PipelineResult(ok=True, stopped=False, timeline_path=xml, srt_path=None, speaker_markers_pending=True)
+    saved = [Cue(0.0, 2.0, "a", 1), Cue(2.0, 4.0, "b", 0)]          # 確認画面で話者を直した結果
+    app._add_speaker_markers(result, {"saved": True, "info": {"saved_cues": saved, "names": {1: "山田"}}})
+    text = xml.read_text(encoding="utf-8")
+    assert text.count("<marker>") == 2 and "山田" in text and "話者1" in text
+    assert result.markers_added == 2 and result.speaker_markers_pending is False
+
+
+def test_no_speaker_markers_when_the_subtitles_were_not_saved(app, tmp_path):
+    from pipeline import PipelineResult
+    xml = _timeline(tmp_path)
+    result = PipelineResult(ok=True, stopped=False, timeline_path=xml, srt_path=None, speaker_markers_pending=True)
+    app._add_speaker_markers(result, {"saved": False, "info": {"saved_cues": None, "names": {}}})
+    assert "<marker>" not in xml.read_text(encoding="utf-8") and result.speaker_markers_pending is False
+
+
+def test_nothing_happens_when_no_markers_were_deferred(app, tmp_path):
+    from pipeline import PipelineResult
+    xml = _timeline(tmp_path)
+    result = PipelineResult(ok=True, stopped=False, timeline_path=xml, srt_path=None)
+    app._add_speaker_markers(result, {"saved": True, "info": {"saved_cues": list(CUES), "names": {}}})
+    assert "<marker>" not in xml.read_text(encoding="utf-8")
+
+
+def test_review_window_reports_the_cues_as_of_the_last_save(app, tmp_path):
+    from subtitle_editor import SubtitleEditor
+    got = {}
+    ed = SubtitleEditor(app, list(CUES), "talk", {"srt": tmp_path / "a.srt"}, pending=True,
+                        on_closed=lambda cues, saved, paths, info: got.update(cues=cues, info=info, saved=saved))
+    app.review_win = ed
+    pump(app, 10)
+    ed.editor.set_speakers([0, 1, 2], 2)
+    ed.editor.rename_speaker(2, "鈴木")
+    ed.save()
+    ed.editor.set_speakers([0], 0)                                  # 保存したあとの変更は、保存した字幕には入らない
+    monkey_answer = ed.editor.dirty
+    assert monkey_answer
+    ed.editor.mark_saved()                                          # 確認ダイアログを出さずに閉じるため
+    ed._close()
+    assert got["saved"] is True
+    assert [c.speaker for c in got["info"]["saved_cues"]] == [2, 2, 2] and got["info"]["names"] == {2: "鈴木"}
+    assert [c.speaker for c in got["cues"]][0] == 0                 # 画面上の最終状態
+    app.review_win = None
+
+
+def test_review_window_reports_no_saved_cues_when_nothing_was_saved(app, tmp_path, monkeypatch):
+    from tkinter import messagebox
+
+    from subtitle_editor import SubtitleEditor
+    got = {}
+    ed = SubtitleEditor(app, list(CUES), "talk", {"srt": tmp_path / "a.srt"}, pending=True,
+                        on_closed=lambda cues, saved, paths, info: got.update(info=info, saved=saved))
+    app.review_win = ed
+    pump(app, 10)
+    monkeypatch.setattr(messagebox, "askyesnocancel", lambda *a, **k: False)
+    ed._close()
+    assert got["saved"] is False and got["info"]["saved_cues"] is None and got["info"]["names"] == {}
+    app.review_win = None

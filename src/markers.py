@@ -40,12 +40,12 @@ def cut_point_markers(boundaries, label: str = "カット") -> list[tuple[float,
     return [(b, f"{label} {i}") for i, b in enumerate(inner, start=1)]
 
 
-def speaker_turn_markers(cues, ui_lang: str = "ja") -> list[tuple[float, str]]:
-    """話者が切り替わる字幕の開始時刻をマーカー化する（最初の発話も含む）。"""
+def speaker_turn_markers(cues, ui_lang: str = "ja", names: dict | None = None) -> list[tuple[float, str]]:
+    """話者が切り替わる字幕の開始時刻をマーカー化する（最初の発話も含む）。names は話者番号 -> 表示名。"""
     out, prev = [], object()
     for c in cues:
         if c.speaker is not None and c.speaker != prev:
-            out.append((c.start, speaker_label(c.speaker, ui_lang)))
+            out.append((c.start, speaker_label(c.speaker, ui_lang, names)))
         prev = c.speaker
     return out
 
@@ -122,6 +122,11 @@ def add_xmeml_markers(path, markers) -> int:
     if markers:
         tree.write(path, encoding="utf-8", xml_declaration=True)
     return len(markers)
+
+
+def add_speaker_markers(path, cues, ui_lang: str = "ja", names: dict | None = None) -> int:
+    """字幕（編集後のもの）から話者交代のマーカーを作って、すでにあるタイムラインへ追加する。件数を返す。"""
+    return add_markers(path, speaker_turn_markers(cues, ui_lang, names))
 
 
 def add_markers(path, markers) -> int:

@@ -114,12 +114,16 @@ No Python installation required. SnipSync ships as a single `.exe` file.
 |---|---|---|
 | Whisper model | The first time you generate subtitles with that model | `tiny` 0.08 GB · `base` 0.15 GB · `small` 0.49 GB · `medium` 1.5 GB · `large-v3-turbo` 1.6 GB · `large-v3` 3.1 GB · `distil-large-v3` 1.5 GB · `kotoba-whisper` 1.5 GB |
 | Speaker-separation models | The first time you turn on **Separate speakers** | about 35 MB |
+| GPU components (cuBLAS, cuDNN) | When you start with **Use the GPU** on and allow the download (NVIDIA GPUs only) | about 1.4 GB (about 2.1 GB once unpacked) |
 
 > **💡 Where things are stored (and how to remove them)**
 > - Whisper models: `C:\Users\<YourUsername>\.cache\huggingface\hub`
 > - kotoba-whisper, speaker-separation models, presets: `%APPDATA%\SnipSync`
+> - GPU components: `%APPDATA%\SnipSync\cuda` (open it with the **Parts folder** button next to **Use the GPU**)
 >
 > Deleting `SnipSync.exe` does not remove them. To free disk space, delete those folders manually.
+>
+> The GPU components are SnipSync's own copy. They are not installed into Windows or any other app, so **deleting them is safe**. Other apps are not affected. SnipSync simply asks again the next time you use the GPU (the CPU works without them).
 
 ---
 
@@ -218,7 +222,7 @@ While **Review before saving** is on (the default), processing pauses at the sub
 - If you close the window without saving, no subtitle files are written (the timeline or media already exists from ①).
 - Closing the window lets processing continue. After the last file, the main window log shows "Processing finished".
 - With **Review before saving** off, the subtitle files are written at ①. You can still reopen them later with **Review subtitles**, edit, and save again (the same files are overwritten).
-- Speaker-change markers in the timeline are built from the subtitles at ①. Fixing a speaker in the review window does not change the markers.
+- Speaker-change markers (when the markers option is on) are added right after you save the subtitles, using the speakers and speaker names **as you edited them**. Cut-point markers are already in the timeline at ①. If you close without saving, no speaker-change markers are added. With **Review before saving** off, they come from the subtitles at ①.
 
 #### 3. (Optional) Check what will be cut — Waveform Preview
 
@@ -257,7 +261,7 @@ See [Importing into your editor](#importing-into-your-editor) below.
 | **Export Format** | DaVinci Resolve, Premiere Pro, Final Cut Pro, or *Cut media* (a rendered video/audio file) |
 | **Subtitles** | Generate `.srt` with Whisper |
 | **AI Model Size** | `tiny`/`base`/`small` are fast; **`large-v3-turbo` is the recommended accurate model**; `kotoba-whisper` is Japanese-specialised but experimental (its word timing is coarse); `distil-large-v3` is English only |
-| **Use GPU (CUDA)** | Optional. Needs an NVIDIA GPU with CUDA 12 and cuDNN 9 |
+| **Use GPU (CUDA)** | Optional. Needs an NVIDIA GPU. The first time, it asks before downloading the components (about 1.4 GB) |
 | **Split subtitles at cut boundaries** | Starts a new subtitle at every cut, so subtitles line up with your clips |
 | **Chars per subtitle line** | Wraps Japanese at natural phrase boundaries (BudouX) and keeps each subtitle to 2 lines. `0` turns it off (default `20`) |
 | **Separate speakers** | Labels who is speaking (`Speaker 1: …`) and starts a new subtitle when the speaker changes. Set **Speakers** if you know how many people there are |
@@ -302,7 +306,7 @@ Menu names can differ slightly between versions.
 - **RAM:** 4 GB minimum; 8 GB+ recommended for `medium` and larger models
 - **Disk:** about 0.1–3 GB for the Whisper model you choose (first run only)
 - **Internet:** Only for first-run downloads (Whisper models, speaker-separation models)
-- **GPU:** (Optional) NVIDIA GPU with CUDA 12 and cuDNN 9 on your system PATH. GPU libraries are NOT bundled in the EXE.
+- **GPU:** (Optional) NVIDIA GPU. The components it needs (cuBLAS, cuDNN) are not bundled in the EXE; they are downloaded on first use, with your permission.
 
 ### Development (source users)
 

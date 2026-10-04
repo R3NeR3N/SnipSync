@@ -28,7 +28,8 @@ class SubtitleEditor(ctk.CTkToplevel):
     def __init__(self, app, cues=(), title: str = "", paths: dict | None = None, *, pending: bool = False,
                  on_closed=None):
         """pending=True: 字幕ファイルはまだ無い（処理は保存前で止まっている）。最初の保存で paths へ書く。
-        on_closed(cues, saved, paths): 閉じたときに、編集後の字幕・保存したか・保存先を受け取る。"""
+        on_closed(cues, saved, paths, info): 閉じたときに、編集後の字幕・保存したか・保存先を受け取る。
+        info["saved_cues"] / info["names"] は、最後に保存した時点の字幕と話者名（保存していなければ None / {}）。"""
         super().__init__(app)
         self.app = app
         self.t = app.t
@@ -37,6 +38,8 @@ class SubtitleEditor(ctk.CTkToplevel):
         self.paths: dict[str, Path] = dict(paths or {})     # 保存先（形式 -> パス）
         self.pending = pending
         self.saved = False
+        self.saved_cues = None                              # 最後に保存した時点の字幕（ファイルの中身と同じ）
+        self.saved_names: dict = {}
         self._on_closed = on_closed
         self._sel: int | None = None          # 1件だけ選んでいるときの番号
         self._sels: list[int] = []            # 選んでいる件（複数のことがある）
@@ -565,6 +568,7 @@ class SubtitleEditor(ctk.CTkToplevel):
 
     def _mark_saved(self):
         self.editor.mark_saved()
+        self.saved_cues, self.saved_names = self.editor.cues, dict(self.editor.names)
         self.pending = False
         self.saved = True
         self._update_chrome()
@@ -637,7 +641,8 @@ class SubtitleEditor(ctk.CTkToplevel):
         if self._confirm_discard():
             callback, self._on_closed = self._on_closed, None
             if callback:
-                callback(self.editor.cues, self.saved, dict(self.paths))
+                callback(self.editor.cues, self.saved, dict(self.paths),
+                         {"saved_cues": self.saved_cues, "names": dict(self.saved_names)})
             self.destroy()
 
     # ── 言語の切り替え ──────────────────────────────────────────────────────────────

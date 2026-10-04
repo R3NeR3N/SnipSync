@@ -114,12 +114,16 @@ Python을 설치할 필요가 없습니다. SnipSync는 단일 `.exe` 파일로 
 |---|---|---|
 | Whisper 모델 | 해당 모델로 처음 자막을 만들 때 | `tiny` 0.08GB · `base` 0.15GB · `small` 0.49GB · `medium` 1.5GB · `large-v3-turbo` 1.6GB · `large-v3` 3.1GB · `distil-large-v3` 1.5GB · `kotoba-whisper` 1.5GB |
 | 화자 분리 모델 | **화자 분리** 를 처음 켤 때 | 약 35MB |
+| GPU 부품(cuBLAS, cuDNN) | **Use the GPU** 를 켜고 처리를 시작해 다운로드를 허용했을 때(NVIDIA GPU 전용) | 약 1.4GB(풀어 놓으면 약 2.1GB) |
 
 > **💡 저장 위치와 삭제 방법**
 > - Whisper 모델: `C:\Users\<사용자명>\.cache\huggingface\hub`
 > - kotoba-whisper, 화자 분리 모델, 프리셋: `%APPDATA%\SnipSync`
+> - GPU 부품: `%APPDATA%\SnipSync\cuda` (**Use the GPU** 옆의 **Parts folder** 버튼으로 열 수 있습니다)
 >
 > `SnipSync.exe` 를 삭제해도 이 파일들은 남습니다. 디스크 공간이 필요하면 위 폴더를 직접 삭제하세요.
+>
+> GPU 부품은 SnipSync 전용 사본입니다. Windows 나 다른 앱에 설치하지 않았으므로 **지워도 문제없고**, 다른 앱에 영향도 없습니다. 다음에 GPU 를 쓸 때 SnipSync 가 내려받아도 되는지 다시 묻습니다(CPU 라면 이 부품이 필요 없습니다).
 
 ---
 
@@ -218,7 +222,7 @@ flowchart LR
 - 저장하지 않고 닫으면 자막 파일은 만들어지지 않습니다(타임라인이나 영상은 ① 시점에 이미 있습니다).
 - 창을 닫으면 처리가 이어집니다. 마지막 파일에서는 메인 화면 로그에 "Processing finished" 가 표시됩니다.
 - **Review before saving** 을 끄면 자막 파일은 ① 시점에 만들어집니다. 나중에 **Review subtitles** 로 다시 열어 고치고 저장할 수도 있습니다(같은 파일을 덮어씁니다).
-- 타임라인에 넣는 화자 전환 마커는 ① 시점의 자막으로 만듭니다. 확인 창에서 화자를 고쳐도 마커는 바뀌지 않습니다.
+- 화자 전환 마커(마커 옵션을 켰을 때)는 자막을 저장한 직후에, **고친 뒤의 화자와 화자 이름**으로 추가됩니다. 컷 지점 마커는 ① 시점에 이미 타임라인에 들어 있습니다. 저장하지 않고 닫으면 화자 전환 마커는 들어가지 않습니다. **Review before saving** 을 끄면 ① 시점의 자막으로 만듭니다.
 
 #### 3. (선택) 잘리는 곳 확인 — 파형 미리보기
 
@@ -257,7 +261,7 @@ flowchart LR
 | **내보내기 형식** | DaVinci Resolve / Premiere Pro / Final Cut Pro / “컷 미디어”(렌더링된 영상·오디오) |
 | **자막 생성** | Whisper 로 `.srt` 생성 |
 | **AI 모델** | `tiny`/`base`/`small` 은 빠름. **정확도가 중요하면 `large-v3-turbo` 권장**. `kotoba-whisper` 는 일본어 특화지만 실험적(단어 시각이 거침). `distil-large-v3` 는 영어 전용 |
-| **GPU 사용 (CUDA)** | 선택 사항. NVIDIA GPU 와 CUDA 12, cuDNN 9 필요 |
+| **GPU 사용 (CUDA)** | 선택 사항. NVIDIA GPU 가 필요합니다. 처음에는 부품(약 1.4GB)을 내려받아도 되는지 먼저 묻습니다 |
 | **컷 경계에서 자막 분할** | 컷마다 새 자막을 시작해 클립과 자막 위치를 맞춤 |
 | **자막 한 줄 글자 수** | 일본어를 문절 단위로 줄바꿈(BudouX)하고 자막 하나를 2줄 이내로 맞춤. `0` 이면 끔 (기본 `20`) |
 | **화자 분리** | 누가 말하는지 `화자1: …` 처럼 표시하고, 화자가 바뀌면 자막을 나눔. 인원을 알면 **화자 수** 를 지정하세요 |
@@ -302,7 +306,7 @@ flowchart LR
 - **RAM:** 최소 4GB. `medium` 이상 모델은 8GB 이상 권장
 - **디스크:** 선택한 Whisper 모델에 따라 약 0.1–3GB (처음에만)
 - **인터넷:** 처음 다운로드(Whisper 모델, 화자 분리 모델)할 때만 필요
-- **GPU:** (선택) 시스템 PATH 에 CUDA 12 와 cuDNN 9 이 설치된 NVIDIA GPU. GPU 라이브러리는 EXE 에 포함되지 않습니다.
+- **GPU:** (선택) NVIDIA GPU. 필요한 부품(cuBLAS, cuDNN)은 EXE 에 포함되지 않으며, 처음 사용할 때 허락을 받은 뒤 내려받습니다.
 
 ### 개발 환경 (소스 사용자)
 

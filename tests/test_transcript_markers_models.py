@@ -254,3 +254,34 @@ def test_every_logged_message_has_a_placeholder_for_each_argument_passed():
                 if isinstance(text, str) and text.count("{") < nargs:
                     bad.append((f.name, key, lang))
     assert not bad, bad
+
+
+# ── 話者名つきのマーカーと、あとから足す話者交代のマーカー ───────────────────────────────
+def test_speaker_turn_markers_use_custom_names():
+    from markers import speaker_turn_markers
+    from subtitles import Cue
+    cues = [Cue(0, 1, "a", 0), Cue(1, 2, "b", 0), Cue(2, 3, "c", 1)]
+    assert speaker_turn_markers(cues, "ja", {0: "山田"}) == [(0, "山田"), (2, "話者2")]
+    assert speaker_turn_markers(cues, "en") == [(0, "Speaker 1"), (2, "Speaker 2")]
+
+
+def test_add_speaker_markers_to_an_existing_timeline_keeps_the_cut_markers(tmp_path):
+    from markers import add_markers, add_speaker_markers
+    from subtitles import Cue
+    xml = tmp_path / "t.xml"
+    xml.write_text('<?xml version="1.0"?><xmeml version="5"><sequence><name>s</name><duration>300</duration>'
+                   '<rate><timebase>30</timebase><ntsc>FALSE</ntsc></rate><media><video/></media></sequence></xmeml>',
+                   encoding="utf-8")
+    assert add_markers(xml, [(1.0, "カット 1")]) == 1
+    cues = [Cue(0.0, 2.0, "a", 0), Cue(2.0, 4.0, "b", 1)]
+    assert add_speaker_markers(xml, cues, "ja", {1: "佐藤"}) == 2
+    text = xml.read_text(encoding="utf-8")
+    assert text.count("<marker>") == 3 and "カット 1" in text and "話者1" in text and "佐藤" in text
+
+
+def test_add_speaker_markers_without_speakers_adds_nothing(tmp_path):
+    from markers import add_speaker_markers
+    from subtitles import Cue
+    xml = tmp_path / "t.xml"
+    xml.write_text("<xmeml/>", encoding="utf-8")
+    assert add_speaker_markers(xml, [Cue(0, 1, "a", None)], "ja") == 0
