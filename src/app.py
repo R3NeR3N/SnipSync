@@ -37,7 +37,7 @@ from aebin import get_auto_editor_path
 from autoeditor import MEDIA_EXTS
 from diarize import sherpa_available
 from i18n import I18N
-from markers import add_speaker_markers
+from markers import add_speaker_markers, resolve_marks, speaker_turn_markers, write_marker_edl
 from models import model_folder, models_dir
 from pipeline import PipelineParams, run_folder_name, run_pipeline
 from player import PLAY_SR, RATES, EditedAudio, Player, PlayerError, sounddevice_available
@@ -1136,8 +1136,18 @@ class SnipSyncApp(_Base):
             self._log(self.t("log_markers_speaker_skipped"), "muted")
             return
         info = outcome["info"]
-        count = add_speaker_markers(result.timeline_path, info["saved_cues"] or [], self.lang, info["names"])
-        result.markers_added += count
+        if result.marker_edl_path:          # Resolve: マーカーは EDL。カット点に、話者交代を足して、書き直す
+            speaker = speaker_turn_markers(info["saved_cues"] or [], self.lang, info["names"])
+            try:
+                written = write_marker_edl(result.marker_edl_path, result.timeline_path,
+                                           resolve_marks(result.marker_cuts, speaker), title=result.marker_edl_path.stem)
+            except Exception:
+                written = 0
+            count = len(speaker) if written else 0
+            result.markers_added = written or result.markers_added
+        else:
+            count = add_speaker_markers(result.timeline_path, info["saved_cues"] or [], self.lang, info["names"])
+            result.markers_added += count
         if count:
             self._log(self.t("log_markers_speaker_added", count), "success")
 

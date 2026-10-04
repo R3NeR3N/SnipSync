@@ -222,7 +222,7 @@ While **Review before saving** is on (the default), processing pauses at the sub
 - If you close the window without saving, no subtitle files are written (the timeline or media already exists from ①).
 - Closing the window lets processing continue. After the last file, the main window log shows "Processing finished".
 - With **Review before saving** off, the subtitle files are written at ①. You can still reopen them later with **Review subtitles**, edit, and save again (the same files are overwritten).
-- Speaker-change markers (when the markers option is on) are added right after you save the subtitles, using the speakers and speaker names **as you edited them**. Cut-point markers are already in the timeline at ①. If you close without saving, no speaker-change markers are added. With **Review before saving** off, they come from the subtitles at ①.
+- Speaker-change markers (when the markers option is on) are added right after you save the subtitles, using the speakers and speaker names **as you edited them**. Cut-point markers are already in the timeline at ①. If you close without saving, no speaker-change markers are added. With **Review before saving** off, they come from the subtitles at ①. For Resolve, this rewrites `_markers.edl` instead (see the Markers note below).
 - Speaker names can be switched on or off with **Show speaker names** at the bottom of the window. Off removes `Speaker 1: ` from the saved, copied and previewed `.srt` / `.txt` / `.md` and keeps only the text. It starts on. It cannot be pressed when no cue has a speaker. It has no effect on speaker-change markers.
 
 #### 3. (Optional) Check what will be cut — Waveform Preview
@@ -268,7 +268,7 @@ See [Importing into your editor](#importing-into-your-editor) below.
 | **Chars per subtitle line** | Wraps Japanese at natural phrase boundaries (BudouX) and keeps each subtitle to 2 lines. `0` turns it off (default `20`) |
 | **Separate speakers** | Labels who is speaking (`Speaker 1: …`) and starts a new subtitle when the speaker changes. Set **Speakers** if you know how many people there are |
 | **Also write .txt / .md** | Saves the whole transcript (with speakers and timestamps) next to the subtitles |
-| **Add markers** | Adds markers for every cut and every speaker change to the timeline *(experimental — see notes)* |
+| **Add markers** | Adds markers for every cut and every speaker change to the timeline. For Resolve only, they are written to a separate `<name>_markers.edl` file *(experimental — see notes)* |
 | **Glossary** | Comma-separated terms (names, product names) that Whisper should prefer |
 | **Preset** | Save and load a whole set of settings. Your last settings are restored on launch |
 
@@ -295,7 +295,7 @@ Menu names can differ slightly between versions.
 
 - **Cut media export at 4K**: the bundled auto-editor (no license key) scales rendered output down to 3200×1800 or less. SnipSync warns you before it starts. **Timeline exports are not affected** — use them for full-resolution work.
 - **Audio-only cut media** is written as `.wav` / `.flac` / `.ogg` / `.opus`. `.mp3`, `.m4a`, `.aac` and `.wma` are written as `.wav` because the bundled auto-editor has no encoder for them.
-- **Markers** are experimental: they have not yet been verified by importing into every editor.
+- **Markers** are experimental: they have not yet been verified by importing into every editor. **DaVinci Resolve does not read markers from `.fcpxml`**, so for Resolve they are written to a separate `<name>_markers.edl` (blue = cut point, yellow = speaker change). In the Media Pool, right-click the timeline and choose **Timelines > Import > Timeline Markers from EDL**, then pick that file. The EDL's times follow the timeline's start timecode. For Premiere Pro and Final Cut Pro, the markers go inside the timeline file.
 - **Cuts differ from SnipSync 0.1.0**: the newer auto-editor also removes cuts and clips that are too short (`--smooth`), so you will see fewer, longer cuts.
 - Subtitles start at the first spoken word, so each subtitle begins a little after the start of its clip. This is expected (the margin is kept silent).
 

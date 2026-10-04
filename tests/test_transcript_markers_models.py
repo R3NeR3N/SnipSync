@@ -285,3 +285,50 @@ def test_add_speaker_markers_without_speakers_adds_nothing(tmp_path):
     xml = tmp_path / "t.xml"
     xml.write_text("<xmeml/>", encoding="utf-8")
     assert add_speaker_markers(xml, [Cue(0, 1, "a", None)], "ja") == 0
+
+
+# ── Resolve 用: マーカーの EDL（Resolve は .fcpxml のマーカーを読み込まない）───────────────────
+def _timeline_60(tmp_path, *, frame="1/60s", tc="0s"):
+    return _write(tmp_path, "t.fcpxml", f"""<?xml version='1.0' encoding='utf-8'?>
+<fcpxml version="1.11"><resources><format id="r1" frameDuration="{frame}"/></resources>
+<library><event name="e"><project name="p"><sequence tcStart="{tc}" format="r1"><spine/></sequence></project></event></library>
+</fcpxml>""")
+
+
+def _edl_lines(path):
+    return Path(path).read_bytes().decode("utf-8").split("\r\n")
+
+
+def test_marker_edl_has_resolves_own_layout_with_color_name_and_one_frame_duration(tmp_path):
+    from markers import resolve_marks, write_marker_edl
+    tl = _timeline_60(tmp_path)
+    marks = resolve_marks([(1.5, "カット 1")], [(0.0, "話者1"), (4.0, "山田")])
+    edl = tmp_path / "t_markers.edl"
+    assert write_marker_edl(edl, tl, marks, title="demo") == 3
+    lines = _edl_lines(edl)
+    assert lines[0] == "TITLE: demo" and lines[1] == "FCM: NON-DROP FRAME"
+    assert lines[3] == "001  001      V     C        00:00:00:00 00:00:00:01 00:00:00:00 00:00:00:01 "
+    assert lines[4] == " |C:ResolveColorYellow |M:話者1 |D:1"                     # 話者交代は黄
+    assert lines[6].startswith("002  001      V     C        00:00:01:30 00:00:01:31 ")   # 1.5 秒 = 90 フレーム = 1 秒 + 30
+    assert lines[7] == " |C:ResolveColorBlue |M:カット 1 |D:1"                    # カット点は青。時刻順に並ぶ
+    assert lines[9].startswith("003  001      V     C        00:00:04:00 ") and "|M:山田 " in lines[10]
+
+
+def test_marker_edl_follows_the_timeline_start_and_rate(tmp_path):
+    from markers import write_marker_edl
+    one_hour = _timeline_60(tmp_path, tc="3600s")                               # 開始 01:00:00:00 のタイムライン
+    write_marker_edl(tmp_path / "a.edl", one_hour, [(1.0, "x", "ResolveColorBlue")])
+    assert "01:00:01:00 01:00:01:01" in _edl_lines(tmp_path / "a.edl")[3]
+    ntsc = _write(tmp_path, "n.fcpxml", Path(one_hour).read_text(encoding="utf-8")
+                  .replace("1/60s", "1001/30000s").replace('tcStart="3600s"', 'tcStart="0s"'))
+    write_marker_edl(tmp_path / "b.edl", ntsc, [(1.0, "x", "ResolveColorBlue")])
+    assert "00:00:01:00 00:00:01:01" in _edl_lines(tmp_path / "b.edl")[3]       # 29.97 は、30 を単位に数える（ノンドロップ）
+
+
+def test_marker_edl_keeps_names_on_one_line_and_skips_when_nothing_to_write(tmp_path):
+    from markers import write_marker_edl
+    tl = _timeline_60(tmp_path)
+    write_marker_edl(tmp_path / "c.edl", tl, [(1.0, "a|b\nc", "ResolveColorBlue")])
+    assert " |C:ResolveColorBlue |M:a/b c |D:1" in _edl_lines(tmp_path / "c.edl")      # 区切りの | と改行は入れない
+    assert write_marker_edl(tmp_path / "d.edl", tl, []) == 0 and not (tmp_path / "d.edl").exists()
+    assert write_marker_edl(tmp_path / "e.edl", _write(tmp_path, "x.fcpxml", "<fcpxml/>"), [(1.0, "x", "c")]) == 0

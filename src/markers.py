@@ -7,13 +7,19 @@
   （フレーム整数）。Apple 公式「Final Cut Pro 7 XML Interchange Format」に従う。
   Premiere は取り込み時にシーケンスマーカーを保持する（Adobe ヘルプ）。
 
-実際の NLE への取り込みはこの環境では未検証。既定OFFのオプションとして提供する。
+- DaVinci Resolve: .fcpxml のマーカー（clip marker）は取り込まれない（Resolve 21 で、18 件入れて、マーカー
+  一覧が空だった）。公式マニュアルにも、FCPXML のマーカー取り込みの記載はない。代わりに、タイムラインマーカーを
+  EDL で取り込む（メディアプールでタイムラインを右クリック → Timelines → Import → Timeline Markers from EDL）。
+  書式は、Resolve 自身が書き出すマーカー EDL（イベント行 + `|C:色 |M:名前 |D:長さ` の行）に合わせる。
+
+Premiere / Final Cut Pro への取り込みと、Resolve での EDL 取り込みは、この環境では未検証。既定OFFのオプションとして提供する。
 
 XML は標準ライブラリで読む。対象は SnipSync 自身が auto-editor で直前に生成したローカル
 ファイルだけで、外部から受け取った XML は扱わない（XXE 等の攻撃経路が無い）。
 """
 import xml.etree.ElementTree as ET  # nosec B405 - 要素の組み立てと書き出しのみ。読み込みは safexml
 from fractions import Fraction
+from pathlib import Path
 
 import safexml
 from subtitles import speaker_label
@@ -48,6 +54,51 @@ def speaker_turn_markers(cues, ui_lang: str = "ja", names: dict | None = None) -
             out.append((c.start, speaker_label(c.speaker, ui_lang, names)))
         prev = c.speaker
     return out
+
+
+RESOLVE_CUT_COLOR = "ResolveColorBlue"
+RESOLVE_SPEAKER_COLOR = "ResolveColorYellow"
+
+
+def resolve_marks(cut_marks=(), speaker_marks=()) -> list[tuple[float, str, str]]:
+    """カット点と話者交代のマーカーを、色つきで、時刻順に並べる（Resolve の EDL 用）。"""
+    marks = [(t, n, RESOLVE_CUT_COLOR) for t, n in cut_marks] + \
+            [(t, n, RESOLVE_SPEAKER_COLOR) for t, n in speaker_marks]
+    return sorted(marks, key=lambda m: m[0])
+
+
+def _timecode(frames: int, nominal_fps: int) -> str:
+    """フレーム番号 -> HH:MM:SS:FF（ノンドロップ。nominal_fps は 30 / 60 などの整数）。"""
+    s, ff = divmod(frames, nominal_fps)
+    m, ss = divmod(s, 60)
+    h, mm = divmod(m, 60)
+    return f"{h:02d}:{mm:02d}:{ss:02d}:{ff:02d}"
+
+
+def write_marker_edl(edl_path, timeline_path, marks, title: str = "") -> int:
+    """Resolve の「Timeline Markers from EDL」で読み込める EDL を書く。書いた件数を返す（0 のときは書かない）。
+
+    marks は (秒, 名前, 色) の列。時刻は、タイムライン（.fcpxml）の開始タイムコードとフレームレートで、
+    タイムコードにする。1 件 = 1 フレーム長のイベント。
+    """
+    if not marks:
+        return 0
+    root = safexml.parse(timeline_path).getroot()
+    fmt = root.find(".//resources/format")
+    seq = root.find(".//sequence")
+    if fmt is None or seq is None or not fmt.get("frameDuration"):
+        return 0
+    fd = _frac(fmt.get("frameDuration"))
+    nominal = round(1 / fd)
+    base = round(_frac(seq.get("tcStart", "0s")) / fd)
+    lines = [f"TITLE: {title or 'SnipSync markers'}", "FCM: NON-DROP FRAME", ""]
+    for n, (t, name, color) in enumerate(marks, start=1):
+        frame = base + round(Fraction(t).limit_denominator(100000) / fd)
+        a, b = _timecode(frame, nominal), _timecode(frame + 1, nominal)
+        label = " ".join(str(name).replace("|", "/").split())        # 区切りの | と改行は、名前に入れない
+        lines += [f"{n:03d}  001      V     C        {a} {b} {a} {b} ", f" |C:{color} |M:{label} |D:1", ""]
+    Path(edl_path).write_bytes("\r\n".join(lines).encode("utf-8"))
+    return len(marks)
 
 
 def add_fcpxml_markers(path, markers) -> int:

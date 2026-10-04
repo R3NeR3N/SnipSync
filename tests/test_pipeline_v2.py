@@ -23,6 +23,11 @@ XMEML = ('<?xml version="1.0"?><xmeml version="5"><sequence><name>s</name><durat
          '<rate><timebase>30</timebase><ntsc>FALSE</ntsc></rate><media><video/></media></sequence></xmeml>')
 
 
+FCPXML = ('<?xml version="1.0"?><fcpxml version="1.11"><resources><format id="r1" frameDuration="1/10s"/></resources>'
+          '<library><event name="e"><project name="p"><sequence tcStart="0s" format="r1"><spine/></sequence>'
+          '</project></event></library></fcpxml>')
+
+
 @pytest.fixture
 def dirs(tmp_path):
     inp = tmp_path / "input.mp4"
@@ -35,10 +40,11 @@ def dirs(tmp_path):
 class Recorder:
     """Popen のコマンドを記録し、--output にダミー（または v1 JSON / XML）を書く。"""
 
-    def __init__(self, v1_chunks=None, xml=False):
+    def __init__(self, v1_chunks=None, xml=False, fcpxml=False):
         self.cmds = []
         self.v1_chunks = v1_chunks
         self.xml = xml
+        self.fcpxml = fcpxml
         self.seen_inputs = {}
 
     def __call__(self, cmd):
@@ -50,6 +56,8 @@ class Recorder:
             out.write_text(json.dumps({"chunks": self.v1_chunks}), encoding="utf-8")
         elif self.xml and out.suffix == ".xml":
             out.write_text(XMEML, encoding="utf-8")
+        elif self.fcpxml and out.suffix == ".fcpxml":
+            out.write_text(FCPXML, encoding="utf-8")
         else:
             out.write_bytes(b"dummy")
         # 入力が JSON のときは、その時点の中身を覚えておく（後で削除されるため）
@@ -528,3 +536,44 @@ def test_run_folder_name_is_date_first_then_model():
     assert run_folder_name("", when) == "2026-10-04_190357"
     assert run_folder_name('a/b:c*? "d"', when) == "2026-10-04_190357_a-b-c-d"          # Windows で使えない文字は除く
     assert run_folder_name("x", datetime(2026, 1, 2, 3, 4, 5)) < run_folder_name("x", when)   # 並べると、処理した順
+
+
+def _setup_two_speakers(monkeypatch):
+    monkeypatch.setattr(pl, "probe_fps", lambda p: 10.0)
+    monkeypatch.setattr(pl, "decode_mix", lambda p, sr=16000: np.zeros(20 * sr, dtype=np.float32))
+    monkeypatch.setattr(pl, "sherpa_available", lambda: True)
+    monkeypatch.setattr(pl, "diarize", lambda samples, **k: [(0.0, 2.5, 5), (2.5, 6.0, 9)])
+
+
+def test_resolve_markers_go_to_an_edl_because_resolve_ignores_fcpxml_markers(dirs, monkeypatch):
+    _, out = dirs
+    _setup_two_speakers(monkeypatch)
+    rec = Recorder(v1_chunks=[[0, 30, 1.0], [30, 40, 99999.0], [40, 90, 1.0]], fcpxml=True)
+    params = base_params(export_key="resolve", do_srt=True, snap_srt=False, diarize=True, markers=True)
+    res, logs = run(dirs, monkeypatch, params, rec, transcribe=_transcribe_two_speakers)
+    edl = out / "input_markers.edl"
+    assert res.ok and res.marker_edl_path == edl and edl.exists()
+    text = edl.read_bytes().decode("utf-8")
+    assert text.count("|D:1") == res.markers_added == 3                        # カット点 1 + 話者交代 2
+    assert "ResolveColorBlue" in text and "ResolveColorYellow" in text
+    assert "<marker" not in (out / "input_snipsynced.fcpxml").read_text(encoding="utf-8")   # .fcpxml には入れない
+    assert any("Timeline Markers from EDL" in m or "log_markers_edl" in m for m, _ in logs)
+
+
+def test_resolve_markers_wait_for_the_edited_subtitles_for_speaker_changes(dirs, monkeypatch):
+    _, out = dirs
+    _setup_two_speakers(monkeypatch)
+    rec = Recorder(v1_chunks=[[0, 30, 1.0], [30, 40, 99999.0], [40, 90, 1.0]], fcpxml=True)
+    params = base_params(export_key="resolve", do_srt=True, snap_srt=False, diarize=True, markers=True,
+                         hold_subtitles=True)
+    res, _ = run(dirs, monkeypatch, params, rec, transcribe=_transcribe_two_speakers)
+    assert res.speaker_markers_pending and res.marker_edl_path and len(res.marker_cuts) == 1
+    assert (out / "input_markers.edl").read_bytes().decode("utf-8").count("|D:1") == 1    # カット点だけ
+
+
+def test_non_resolve_exports_keep_markers_inside_the_timeline_and_write_no_edl(dirs, monkeypatch):
+    _, out = dirs
+    rec = Recorder(v1_chunks=[[0, 30, 1.0], [30, 40, 99999.0], [40, 90, 1.0]], xml=True)
+    monkeypatch.setattr(pl, "probe_fps", lambda p: 10.0)
+    res, _ = run(dirs, monkeypatch, base_params(export_key="premiere", markers=True), rec)
+    assert res.markers_added == 1 and res.marker_edl_path is None and not list(out.glob("*.edl"))

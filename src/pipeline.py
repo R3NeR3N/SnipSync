@@ -26,7 +26,13 @@ from autoeditor import (
     probe_resolution,
 )
 from diarize import diarize, sherpa_available
-from markers import add_markers, cut_point_markers, speaker_turn_markers
+from markers import (
+    add_markers,
+    cut_point_markers,
+    resolve_marks,
+    speaker_turn_markers,
+    write_marker_edl,
+)
 from models import (
     DownloadCancelled,
     DownloadFailed,
@@ -271,6 +277,8 @@ class PipelineResult:
     extra_paths: list = field(default_factory=list)   # 追加で書いた .txt / .md
     pending_paths: dict = field(default_factory=dict)  # hold_subtitles のとき: まだ書いていない宛先（形式 -> パス）
     markers_added: int = 0
+    marker_edl_path: Path | None = None     # DaVinci Resolve 用: マーカーを書いた EDL（.fcpxml のマーカーは Resolve が読まない）
+    marker_cuts: list = field(default_factory=list)   # 同: カット点のマーカー（話者交代を足して、EDL を書き直すため）
     speaker_markers_pending: bool = False   # hold_subtitles のとき: 話者交代のマーカーは、確認・編集後の字幕で入れる
 
 
@@ -777,15 +785,27 @@ def run_pipeline(
                 and result.timeline_path.exists()):
             try:
                 marks = cut_point_markers(get_boundaries(), tr("marker_cut"))
+                speaker_marks = []
                 if result.pending_paths:
                     # 字幕は確認・編集のあとに保存される。話者交代のマーカーは、編集後の字幕から入れる
                     # （いま入れると、確認画面で話者を直しても、マーカーが古いままになる）。
                     result.speaker_markers_pending = True
                 elif turns and result.cues:
-                    marks += speaker_turn_markers(result.cues, params.ui_lang)
-                marks.sort(key=lambda m: m[0])
-                result.markers_added = add_markers(result.timeline_path, marks)
-                on_log(tr("log_markers_added", result.markers_added), "muted")
+                    speaker_marks = speaker_turn_markers(result.cues, params.ui_lang)
+                if params.export_key == "resolve":
+                    # Resolve は .fcpxml のマーカーを読み込まない。EDL に書き、読み込み方をログに出す。
+                    result.marker_cuts = marks
+                    edl = out_dir / f"{name}_markers.edl"
+                    result.markers_added = write_marker_edl(edl, result.timeline_path,
+                                                            resolve_marks(marks, speaker_marks), title=name)
+                    if result.markers_added:
+                        result.marker_edl_path = edl
+                        on_log(tr("log_markers_edl", result.markers_added, edl.name), "success")
+                else:
+                    marks += speaker_marks
+                    marks.sort(key=lambda m: m[0])
+                    result.markers_added = add_markers(result.timeline_path, marks)
+                    on_log(tr("log_markers_added", result.markers_added), "muted")
             except Exception:
                 on_log(tr("log_unexpected", traceback.format_exc()), "error")
 

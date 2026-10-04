@@ -46,7 +46,7 @@ TIPS = {
         "tip_run_folder": "オンなら、保存先の中に「日時_モデル名」のフォルダー（例: 2026-10-04_190357_large-v3）を作り、その中へ書き出します。処理のたびに別のフォルダーになるので、前の結果を上書きしません。オフなら、保存先へ直接書きます。",
         "tip_txt": "字幕を、時刻つきの読みやすい文章（.txt）でも書き出します。会議の議事録などに使えます。",
         "tip_md": "字幕を、見出しつきの Markdown（.md）でも書き出します。ノートアプリや議事録に貼り付けやすい形です。",
-        "tip_markers": "タイムラインに、カット点と話者交代の目印（マーカー）を入れます。試験的な機能で、「動画・音声」には入りません。",
+        "tip_markers": "カット点と話者交代の目印（マーカー）を付けます。Resolve は .fcpxml のマーカーを読まないので、別ファイル（.edl）に書き出します。試験的な機能で、「動画・音声」には付きません。",
         # ── 字幕確認画面 ──
         "tip_ed_view": "編集: 表で直す。.txt / .md / .srt: 保存されるファイルの中身を、そのまま確認できます。",
         "tip_ed_undo": "直前の操作を取り消します（Ctrl+Z）。",
@@ -119,7 +119,7 @@ TIPS = {
         "tip_run_folder": "On: creates a \"date_model\" folder (e.g. 2026-10-04_190357_large-v3) inside the save folder and writes there. Each run gets its own folder, so earlier results are never overwritten. Off: writes straight into the save folder.",
         "tip_txt": "Also write subtitles as readable text with times (.txt). Handy for meeting minutes.",
         "tip_md": "Also write subtitles as Markdown with headings (.md). Easy to paste into notes or minutes.",
-        "tip_markers": "Adds markers for cut points and speaker changes to the timeline. Experimental; not added to video / audio output.",
+        "tip_markers": "Marks cut points and speaker changes. Resolve ignores markers in .fcpxml, so for Resolve they are written to a separate .edl file. Experimental; not added to video / audio output.",
         "tip_ed_view": "Edit: fix subtitles in the table. .txt / .md / .srt: see exactly what will be saved.",
         "tip_ed_undo": "Undo the last action (Ctrl+Z).",
         "tip_ed_redo": "Redo the undone action (Ctrl+Y).",

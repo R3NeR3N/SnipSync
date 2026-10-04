@@ -824,3 +824,30 @@ def test_run_folder_setting_is_saved_in_presets_and_restored(app):
     app._apply_settings(saved)
     assert app.run_folder_var.get() is False
     app.run_folder_var.set(True)
+
+
+def test_resolve_speaker_markers_rewrite_the_edl_with_the_cut_points_kept(app, tmp_path):
+    from pipeline import PipelineResult
+    timeline = tmp_path / "talk_snipsynced.fcpxml"
+    timeline.write_text('<?xml version="1.0"?><fcpxml version="1.11"><resources><format id="r1" frameDuration="1/30s"/>'
+                        '</resources><library><event name="e"><project name="p"><sequence tcStart="0s" format="r1">'
+                        '<spine/></sequence></project></event></library></fcpxml>', encoding="utf-8")
+    edl = tmp_path / "talk_markers.edl"
+    result = PipelineResult(ok=True, stopped=False, timeline_path=timeline, srt_path=None, speaker_markers_pending=True,
+                            marker_edl_path=edl, marker_cuts=[(3.0, "カット 1")], markers_added=1)
+    saved = [Cue(0.0, 2.0, "a", 0), Cue(2.0, 5.0, "b", 1), Cue(5.0, 7.0, "c", 1)]
+    app._add_speaker_markers(result, {"saved": True, "info": {"saved_cues": saved, "names": {1: "山田"}}})
+    text = edl.read_bytes().decode("utf-8")
+    assert text.count("|D:1") == 3 == result.markers_added and result.speaker_markers_pending is False
+    assert "|M:カット 1 " in text and "|M:山田 " in text
+    assert text.index("|M:話者1 ") < text.index("|M:山田 ") < text.index("|M:カット 1 ")      # 0.0 秒、2.0 秒、3.0 秒の順
+
+
+def test_resolve_speaker_markers_are_skipped_when_the_subtitles_were_not_saved(app, tmp_path):
+    from pipeline import PipelineResult
+    edl = tmp_path / "talk_markers.edl"
+    edl.write_bytes(b"keep")
+    result = PipelineResult(ok=True, stopped=False, timeline_path=tmp_path / "x.fcpxml", srt_path=None,
+                            speaker_markers_pending=True, marker_edl_path=edl, marker_cuts=[(3.0, "カット 1")])
+    app._add_speaker_markers(result, {"saved": False, "info": {"saved_cues": None, "names": {}}})
+    assert edl.read_bytes() == b"keep"                                      # 保存しなかったら、EDL は、そのまま
