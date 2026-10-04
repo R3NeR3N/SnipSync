@@ -223,10 +223,10 @@ class CueEditor:
 
 
 def render(cues, fmt: str, *, timestamps: bool = True, line_chars: int = 0, ui_lang: str = "ja",
-           title: str = "", names: dict | None = None) -> str:
+           title: str = "", names: dict | None = None, show_speakers: bool = True) -> str:
     """現在の字幕を txt / md / srt の文字列にする（プレビューと保存で同じ関数を使う）。"""
     cues = [c for c in cues if c.text.strip()]
-    speakers = any(c.speaker is not None for c in cues)
+    speakers = show_speakers and any(c.speaker is not None for c in cues)
     if fmt == "srt":
         return format_srt(cues, max_chars=line_chars, speaker_labels=speakers, ui_lang=ui_lang, names=names)
     if fmt == "md":
@@ -244,10 +244,10 @@ def format_for_path(path) -> str:
 
 
 def save(cues, path, *, timestamps: bool = True, line_chars: int = 0, ui_lang: str = "ja",
-         names: dict | None = None) -> str:
+         names: dict | None = None, show_speakers: bool = True) -> str:
     """拡張子に合わせた形式で path に書く。書いた形式を返す。"""
     fmt = format_for_path(path)
     text = render(cues, fmt, timestamps=timestamps, line_chars=line_chars, ui_lang=ui_lang,
-                  title=Path(path).stem, names=names)
+                  title=Path(path).stem, names=names, show_speakers=show_speakers)
     Path(path).write_text(text, encoding="utf-8")
     return fmt

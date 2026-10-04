@@ -742,3 +742,24 @@ def test_review_window_reports_no_saved_cues_when_nothing_was_saved(app, tmp_pat
     ed._close()
     assert got["saved"] is False and got["info"]["saved_cues"] is None and got["info"]["names"] == {}
     app.review_win = None
+
+
+def test_speaker_names_can_be_hidden_from_the_output_and_the_switch_follows_the_speakers(app, tmp_path):
+    ed = _open_plain_editor(app)
+    assert ed.sp_var.get() is True and str(ed.sp_switch.cget("state")) == "normal"
+    ed.view.set_key("srt")
+    ed._show_view()
+    assert "話者1：" in ed.preview.get("1.0", "end")
+    ed.sp_var.set(False)
+    ed._show_view()                                                      # スイッチの command と同じ
+    shown = ed.preview.get("1.0", "end")
+    assert "話者" not in shown and "あいう" in shown
+    ed.paths = {"srt": tmp_path / "demo.srt"}
+    ed.save()
+    assert "話者" not in (tmp_path / "demo.srt").read_text(encoding="utf-8")
+    ed.sp_var.set(True)
+    ed.save()
+    assert "話者1：" in (tmp_path / "demo.srt").read_text(encoding="utf-8")
+    ed.editor.set_speakers(list(range(len(ed.editor))), None)           # 話者を全部外すと、効くものが無いので押せない
+    ed._refresh_all()
+    assert str(ed.sp_switch.cget("state")) == "disabled"

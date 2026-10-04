@@ -294,3 +294,20 @@ def test_save_uses_the_names(tmp_path):
     ed.rename_speaker(0, "山田")
     save(ed.cues, tmp_path / "o.srt", names=ed.names)
     assert "山田：" in (tmp_path / "o.srt").read_text(encoding="utf-8")
+
+
+def test_render_can_leave_out_the_speaker_names_in_every_format():
+    ed = CueEditor(sample())
+    for fmt in ("srt", "txt", "md"):
+        assert "話者1" in render(ed.cues, fmt, title="t")                        # 既定は、話者名を付ける
+        assert "話者" not in render(ed.cues, fmt, title="t", show_speakers=False)
+    assert "こんにちは" in render(ed.cues, "srt", show_speakers=False)               # 本文は、残る
+
+
+def test_save_honours_the_speaker_name_switch(tmp_path):
+    from subtitle_edit import save
+    ed = CueEditor(sample())
+    save(ed.cues, tmp_path / "a.srt", show_speakers=False)
+    save(ed.cues, tmp_path / "b.srt")
+    assert "話者" not in (tmp_path / "a.srt").read_text(encoding="utf-8")
+    assert "話者1：" in (tmp_path / "b.srt").read_text(encoding="utf-8")
