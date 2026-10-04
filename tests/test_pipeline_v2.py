@@ -476,3 +476,42 @@ def test_no_deferred_markers_when_the_option_is_off(dirs, monkeypatch):
     res, _ = run(dirs, monkeypatch, base_params(do_srt=True, snap_srt=False, hold_subtitles=True), rec,
                  transcribe=_transcribe_two_speakers)
     assert not res.speaker_markers_pending
+
+
+# ── 字幕の時刻の補正（VAD） ──────────────────────────────────────────────────────
+
+def _one_cue_transcribe(wav, size):
+    segs = [DummySegment(0.5, 3.0, "今から", [DummyWord(0.5, 0.9, "今"), DummyWord(0.9, 1.6, "から")])]
+    return iter(segs), type("I", (), {"language": "ja", "language_probability": 1.0, "duration": 6.0})()
+
+
+def test_subtitle_times_follow_the_detected_voice(dirs, monkeypatch):
+    inp, out = dirs
+    monkeypatch.setattr(pl, "probe_fps", lambda p: 10.0)
+    monkeypatch.setattr(pl, "decode_mix", lambda p, sr=16000: np.zeros(6 * sr, dtype=np.float32))
+    monkeypatch.setattr(pl, "detect_speech", lambda samples, sr=16000: [(1.0, 1.4), (1.9, 2.6)])
+    rec = Recorder(v1_chunks=[[0, 60, 1.0]])
+    res, logs = run(dirs, monkeypatch, base_params(do_srt=True, snap_srt=False), rec, transcribe=_one_cue_transcribe)
+    assert res.ok and res.cues
+    assert (res.cues[0].start, res.cues[0].end) == (1.0, 2.6)          # 声に合わせた（元は 0.5〜3.0）
+    srt = res.srt_path.read_text(encoding="utf-8")
+    assert "00:00:01,000 --> 00:00:02,600" in srt                     # ファイルにも反映（補正したときは、書き直す）
+    assert any(m == "log_srt_refined" for m, _ in logs)
+
+
+def test_refinement_can_be_turned_off_and_failure_to_detect_is_harmless(dirs, monkeypatch):
+    monkeypatch.setattr(pl, "probe_fps", lambda p: 10.0)
+    monkeypatch.setattr(pl, "decode_mix", lambda p, sr=16000: np.zeros(6 * sr, dtype=np.float32))
+    monkeypatch.setattr(pl, "detect_speech", lambda samples, sr=16000: [(1.0, 1.4), (1.9, 2.6)])
+    rec = Recorder(v1_chunks=[[0, 60, 1.0]])
+    res, logs = run(dirs, monkeypatch, base_params(do_srt=True, snap_srt=False, refine_timing=False), rec,
+                    transcribe=_one_cue_transcribe)
+    assert res.cues[0].start == 0.5 and not any(m == "log_srt_refined" for m, _ in logs)
+
+    def boom(samples, sr=16000):
+        raise RuntimeError("vad model missing")
+
+    monkeypatch.setattr(pl, "detect_speech", boom)
+    rec2 = Recorder(v1_chunks=[[0, 60, 1.0]])
+    res2, _ = run(dirs, monkeypatch, base_params(do_srt=True, snap_srt=False), rec2, transcribe=_one_cue_transcribe)
+    assert res2.ok and res2.cues[0].start == 0.5                      # 補正を省くだけで、字幕づくりは続く

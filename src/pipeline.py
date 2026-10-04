@@ -42,6 +42,7 @@ from subtitles import (
     format_srt,
     format_timestamp,
     normalize_turns,
+    refine_cue_times,
     resolve_device,
     tag_words,
 )
@@ -249,6 +250,7 @@ class PipelineParams:
     line_chars: int = 0              # 字幕1行の全角文字数（0=整形しない）
     txt: bool = False                # 文字起こしを .txt でも書き出す
     md: bool = False                 # 文字起こしを .md でも書き出す
+    refine_timing: bool = True       # 字幕の時刻を、実際に声がある区間（VAD）に合わせて補正する
     hold_subtitles: bool = False     # 字幕（.srt/.txt/.md）をここでは書かず、確認・編集してから呼び出し側が保存する
     out_stem: str | None = None      # 出力ファイル名の幹（バッチで同名を避ける用）
     ui_lang: str = "ja"
@@ -497,10 +499,12 @@ def run_pipeline(
             #     まず chunks から自前で組み立てる（モノラルでも壊れず、auto-editor の追加実行も不要）。
             #     組み立てられないときだけ、従来どおり auto-editor で WAV を書き出す。
             on_log(tr("log_srt_temp_start"), "info")
+            cut_samples = None
             try:
                 built = render_audio(SAMPLE_RATE)
                 if built is not None:
                     write_wav(temp_wav, built, SAMPLE_RATE)
+                    cut_samples = built
                     temp_success = True
             except Exception:
                 temp_success = False
@@ -680,6 +684,16 @@ def run_pipeline(
                     turns = None
                     on_log(tr("log_speaker_fail", traceback.format_exc()), "warn")
 
+            # 2c'. 字幕の時刻の補正に使う、実際に声がある区間（Silero VAD）。失敗しても、補正を省くだけ。
+            speech_ranges, cut_total = None, None
+            if params.refine_timing and result.srt_path and not result.stopped:
+                try:
+                    samples = cut_samples if cut_samples is not None else decode_mix(temp_wav)
+                    speech_ranges = detect_speech(samples, SAMPLE_RATE)
+                    cut_total = len(samples) / SAMPLE_RATE
+                except Exception:
+                    speech_ranges = None
+
             # 2c. Cleanup Temp WAV
             try:
                 if temp_wav.exists():
@@ -706,8 +720,19 @@ def run_pipeline(
                     if cues is None:
                         cues = cues_from_segments(seg_tuples, turns, max_chars=params.line_chars,
                                                   lang=detected_lang)
+                    refined = False
+                    if cues and speech_ranges:
+                        try:
+                            cut_points = get_boundaries()
+                        except Exception:
+                            cut_points = []
+                        better = refine_cue_times(cues, speech_ranges, cut_points, cut_total)
+                        refined = better != cues
+                        cues = better
+                        if refined:
+                            on_log(tr("log_srt_refined"), "muted")
                     result.cues = cues
-                    if cues and not params.hold_subtitles and (aligned or turns or params.line_chars > 0):
+                    if cues and not params.hold_subtitles and (aligned or turns or refined or params.line_chars > 0):
                         srt = format_srt(cues, max_chars=params.line_chars, lang=detected_lang,
                                          speaker_labels=bool(turns) and params.speaker_labels,
                                          ui_lang=params.ui_lang)

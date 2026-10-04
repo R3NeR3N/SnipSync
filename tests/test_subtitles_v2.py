@@ -181,3 +181,95 @@ def test_chunks_to_boundaries_stay_within_one_frame_of_exact_time():
     got = chunks_to_boundaries(shifted, 30)[1:]
     for b in got:
         assert min(abs(b - x) for x in exact) <= 0.5 / 30 + 1e-6    # 各境界は正確な時刻から半フレーム以内
+
+
+# ── 字幕の時刻を、実際に声がある区間に合わせる補正 ───────────────────────────────────────
+from subtitles import refine_cue_times  # noqa: E402
+
+
+def C(a, b, t="x", s=None):
+    return Cue(a, b, t, s)
+
+
+def times(cues):
+    return [(round(c.start, 3), round(c.end, 3)) for c in cues]
+
+
+def test_refine_the_reported_case_late_voice_and_a_voice_that_continues_past_the_last_cut():
+    """実測（あなたの録画）: 最後の字幕は 39.72-40.883。直前の字幕の声が 40.04 まで食い込み、「今」は 40.38、
+    「から」は 41.05-41.95。最後のカット点は 40.883、全体は 41.95 秒。VAD の実測値を、そのまま使う。"""
+    cues = [C(36.0, 37.86), C(37.86, 38.82), C(38.82, 39.72), C(39.72, 40.883, "今から")]
+    speech = [(36.41, 37.96), (38.3, 40.04), (40.38, 40.84), (41.05, 41.95)]
+    out = refine_cue_times(cues, speech, boundaries=[38.817, 40.883], total=41.95)
+    assert times(out)[-1] == (40.38, 41.95)            # 開始は声の始まりへ、終了はカット点をこえて、声の終わりまで
+    assert out[-1].text == "今から"
+    assert out[-2].end <= out[-1].start                # 前の字幕は、食い込んでいた声の端まで延びても、重ならない
+
+
+def test_refine_ignores_a_short_tail_of_the_previous_voice_at_the_head_of_a_cue():
+    cues = [C(5.0, 6.0, "a"), C(6.0, 8.0, "b")]
+    out = refine_cue_times(cues, [(4.0, 6.3), (7.0, 7.9)], total=10)
+    assert times(out) == [(5.0, 6.3), (7.0, 8.0)]      # 終了の 0.1 秒の違いは、そのまま
+    out = refine_cue_times(cues, [(4.0, 7.0), (7.4, 7.9)], total=10)      # 食い込みが長い: 続いている声
+    assert out[1].start == 6.0
+
+
+def test_refine_does_not_move_a_start_that_sits_on_a_cut_point():
+    cues = [C(17.633, 18.58)]
+    out = refine_cue_times(cues, [(17.9, 18.6)], boundaries=[17.633], total=30)
+    assert out[0].start == 17.633                      # クリップの頭にそろえる設計は、保つ
+
+
+def test_refine_moves_a_late_start_only_when_the_gap_is_clear():
+    out = refine_cue_times([C(5.0, 7.0)], [(5.1, 7.0)], total=20)
+    assert times(out) == [(5.0, 7.0)]                  # 0.1 秒のずれは、そのまま
+    out = refine_cue_times([C(5.0, 7.0)], [(5.6, 7.0)], total=20)
+    assert times(out) == [(5.6, 7.0)]
+
+
+def test_refine_never_extends_into_the_next_cue():
+    cues = [C(1.0, 2.0), C(3.0, 4.0)]
+    out = refine_cue_times(cues, [(1.0, 2.0), (2.1, 5.0)], total=10)
+    assert out[0].end == 3.0 and out[1].start == 3.0   # 次の字幕の開始まで。こえない
+
+
+def test_refine_extends_across_short_pauses_but_stops_at_longer_silence():
+    cues = [C(1.0, 2.0)]
+    out = refine_cue_times(cues, [(1.0, 2.0), (2.2, 3.4), (5.0, 6.0)], total=10)
+    assert times(out) == [(1.0, 3.4)]                  # 0.2 秒の途切れは続いている。次の無音で止まる
+    out = refine_cue_times(cues, [(1.0, 2.0), (2.6, 3.4)], total=10)
+    assert times(out) == [(1.0, 2.0)]                  # 0.6 秒の途切れは、別の発話（文字になっていない声）とみなす
+
+
+def test_refine_shrinks_an_end_that_is_too_late():
+    out = refine_cue_times([C(1.0, 5.0)], [(1.0, 2.0)], total=10)
+    assert times(out) == [(1.0, 2.0)]
+    out = refine_cue_times([C(1.0, 2.2)], [(1.0, 2.0)], total=10)
+    assert times(out) == [(1.0, 2.2)]                  # 0.2 秒の違いは、そのまま
+
+
+def test_refine_keeps_cues_that_overlap_no_speech_and_ignores_empty_inputs():
+    cues = [C(1.0, 2.0)]
+    assert refine_cue_times(cues, [(5.0, 6.0)], total=10) == cues
+    assert refine_cue_times(cues, [], total=10) == cues
+    assert refine_cue_times([], [(1, 2)], total=10) == []
+
+
+def test_refine_keeps_the_text_speaker_and_order_and_never_overlaps():
+    cues = [C(0.0, 1.5, "a", 0), C(1.5, 3.0, "b", 1), C(4.0, 6.0, "c", 0)]
+    speech = [(0.3, 1.2), (1.9, 3.4), (4.4, 6.4)]
+    out = refine_cue_times(cues, speech, boundaries=[1.5], total=7.0)
+    assert [(c.text, c.speaker) for c in out] == [("a", 0), ("b", 1), ("c", 0)]
+    for a, b in zip(out, out[1:], strict=False):
+        assert a.end <= b.start + 1e-9 and a.start < a.end
+
+
+def test_refine_does_not_make_a_cue_shorter_than_the_minimum():
+    out = refine_cue_times([C(1.0, 3.0)], [(2.9, 3.0)], total=10)
+    assert times(out) == [(1.0, 3.0)]                  # 補正すると 0.1 秒になる: やめる
+
+
+def test_refine_does_not_change_the_input():
+    cues = [C(39.72, 40.883)]
+    refine_cue_times(cues, [(40.35, 41.8)], boundaries=[40.883], total=41.95)
+    assert times(cues) == [(39.72, 40.883)]

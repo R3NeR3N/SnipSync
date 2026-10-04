@@ -404,6 +404,80 @@ def build_cut_aligned_cues(words, natural_segments, boundaries, *,
     return cues
 
 
+def refine_cue_times(cues, speech, boundaries=(), total=None, *, onset_slack: float = 0.15,
+                     extend_slack: float = 0.15, shrink_slack: float = 0.3, gap_join: float = 0.25,
+                     tail_max: float = 0.4, min_dur: float = 0.3):
+    """Whisper が付けた字幕の時刻を、実際に声がある区間（VAD）に合わせて補正した Cue 列を返す。
+
+    なぜ必要か（実測）: Whisper の語の開始時刻は、直前の字幕が終わった時刻に張り付きやすく、間に無音があると、
+    字幕が声より早く出る。また、字幕はカット点で区切るため、カット点をまたいで続く声の後半が、字幕なしになる。
+
+    規則（入力の Cue は、時刻順で、重ならないものとする）:
+    - 開始: 実際の声が、字幕の開始より onset_slack 秒以上あとに始まるなら、声の開始へ遅らせる。
+      ただし、カット点に開始が一致している字幕は動かさない（クリップと字幕の位置をそろえる設計のため）。
+      字幕の頭に、直前の字幕の声の端（tail_max 秒未満）が食い込んでいて、そのあとに無音をはさんで声が続くなら、
+      その端は数えず、次の声の開始へ遅らせる。
+    - 終了: 声が、字幕の終了より extend_slack 秒以上あとまで続くなら、声の終わりまで延ばす。
+      声が shrink_slack 秒以上早く終わるなら、声の終わりへ縮める。
+    - 延ばす範囲は、次の字幕の（補正後の）開始まで。最後の字幕は total まで。
+      声の途切れが gap_join 秒以内なら、続いているとみなす。それより長い無音をこえては、延ばさない
+      （Whisper が文字にしなかった声まで、字幕に取り込まないため）。
+    - 声が重ならない字幕、補正で長さが min_dur 未満になる字幕は、そのままにする。
+    speech は [(開始秒, 終了秒)]、boundaries はカット点の秒、total はカット後の音声の長さ（秒）。
+    """
+    if not cues or not speech:
+        return list(cues)
+    ranges = sorted((float(a), float(b)) for a, b in speech if b > a)
+    cuts = [float(b) for b in boundaries]
+
+    def at_cut(t):
+        return any(abs(t - b) < 0.01 for b in cuts)
+
+    # この字幕の声: 字幕と 0.12 秒以上重なる区間（わずかに食い込んでいるだけのものは除く）
+    inside = [[r for r in ranges if min(r[1], c.end) - max(r[0], c.start) >= 0.12] for c in cues]
+
+    # 1 巡目: 開始を決める（終了の延ばす範囲が、次の字幕の補正後の開始に依るため、先に）
+    starts = []
+    for c, rs in zip(cues, inside, strict=True):
+        s = c.start
+        if not rs:
+            starts.append(s)
+            continue
+        first = rs[0]
+        if len(rs) > 1 and first[0] < s and first[1] - s < tail_max:
+            first = rs[1]                                  # 直前の字幕の声の端: 数えない
+        starts.append(first[0] if (not at_cut(s) and first[0] - s > onset_slack) else s)
+
+    out = []
+    for i, (c, rs) in enumerate(zip(cues, inside, strict=True)):
+        s, e, ns = c.start, c.end, starts[i]
+        if not rs:
+            out.append(c)
+            continue
+        nxt = starts[i + 1] if i + 1 < len(cues) else total
+        limit = nxt if nxt is not None else max(e, ranges[-1][1])
+        off = rs[-1][1]
+        for r in ranges:                                   # 声が、この字幕のあとへ続くなら、たどる
+            if r[0] >= limit:
+                break
+            if r[1] > off and r[0] <= off + gap_join:
+                off = min(r[1], limit)
+        if off - e > extend_slack:
+            ne = min(off, limit)
+        elif e - off > shrink_slack:
+            ne = off
+        else:
+            ne = e
+        if ne - ns < min_dur or ne <= ns:
+            ns, ne = s, e
+        out.append(Cue(round(ns, 3), round(ne, 3), c.text, c.speaker) if (ns, ne) != (s, e) else c)
+    # 補正を取りやめた字幕が、前の字幕の延びと重ならないように、前の字幕の終了を、次の開始までに収める
+    for i in range(len(out) - 1):
+        if out[i].end > out[i + 1].start and out[i + 1].start > out[i].start:
+            out[i] = Cue(out[i].start, out[i + 1].start, out[i].text, out[i].speaker)
+    return out
+
+
 def cues_from_segments(segments, turns=None, *, max_chars: int = 0, max_lines: int = 2,
                        lang: str | None = None):
     """自然な whisper セグメントから Cue 列を作る（カット整合を使わない経路）。
