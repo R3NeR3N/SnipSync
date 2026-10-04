@@ -156,3 +156,27 @@ def test_unlicensed_render_limit():
     assert exceeds_unlicensed_render_limit((3200, 1800)) is False       # 上限ちょうどは縮小されない
     assert exceeds_unlicensed_render_limit((1920, 1080)) is False
     assert exceeds_unlicensed_render_limit(None) is False
+
+
+import pytest  # noqa: E402
+
+
+@pytest.mark.parametrize("ext", [".mp4", ".mov", ".mkv", ".m4v", ".MP4"])
+def test_media_export_to_h264_containers_pins_the_video_profile(ext):
+    """指定なしだと、B フレームのある録画で「Could not write packet」で失敗することがある（実測）。"""
+    from autoeditor import EXPORT_MEDIA, build_cut_cmd, build_cut_cmd_from_chunks
+    for cmd in (build_cut_cmd("ae", "in.mp4", 0.2, 4.0, EXPORT_MEDIA, f"o{ext}"),
+                build_cut_cmd_from_chunks("ae", "cuts.json", EXPORT_MEDIA, f"o{ext}", tb=60)):
+        assert cmd[cmd.index("-vprofile") + 1] == "high"
+
+
+@pytest.mark.parametrize("output", ["o.webm", "o.wav", "o.flac", "o.opus"])
+def test_media_export_to_other_containers_does_not_set_a_video_profile(output):
+    from autoeditor import EXPORT_MEDIA, build_cut_cmd
+    assert "-vprofile" not in build_cut_cmd("ae", "in.mp4", 0.2, 4.0, EXPORT_MEDIA, output)
+
+
+def test_timeline_exports_and_audio_extraction_do_not_set_a_video_profile():
+    from autoeditor import build_cut_cmd, build_extract_wav_cmd
+    assert "-vprofile" not in build_cut_cmd("ae", "in.mp4", 0.2, 4.0, "resolve", "o.fcpxml")
+    assert "-vprofile" not in build_extract_wav_cmd("ae", "in.mp4", 0.2, 4.0, "o.wav")

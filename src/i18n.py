@@ -22,6 +22,7 @@ I18N = {
         "btn_preview": "切れる場所を確認",
         "btn_preview_again": "確認し直す",
         "btn_model_folder": "保存先を開く",
+        "btn_gpu_folder": "部品の保存先",
         "tr_prev": "前のカット",
         "tr_play": "再生",
         "tr_pause": "一時停止",
@@ -133,7 +134,7 @@ I18N = {
         "ed_col_speaker": "話者",
         "ed_col_text": "テキスト",
         "ed_detail": "選択中の字幕",
-        "ed_detail_none": "表の字幕を選ぶと、ここで直せます",
+        "ed_detail_none": "表の字幕を選ぶと、ここで直せます（Shift / Ctrl で複数選択）",
         "ed_detail_multi": "{} 件を選択中",
         "ed_multi_note": "話者はまとめて変えられます",
         "ed_undo": "元に戻す",
@@ -141,6 +142,8 @@ I18N = {
         "ed_speaker_mixed": "（混在）",
         "ed_name_placeholder": "話者名",
         "ed_name": "名前",
+        "ed_keys": "ショートカット",
+        "ed_close_note": "このウィンドウを閉じると、処理の続きが進みます（最後のファイルなら、メイン画面のログに「処理が完了しました」と出ます）。字幕ファイルが必要なら、先に「保存」を押してください。",
         "ed_split_hint": "「カーソル位置で分ける」: 本文の分けたい所をクリックしてから押すと、そこで2つの字幕になります。時刻は文字数に比例して割ります。",
         "ed_time_note": "時刻は、カットとの同期を保つため変更できません。",
         "ed_speaker": "話者",
@@ -240,6 +243,7 @@ I18N = {
         "btn_preview": "Preview cuts",
         "btn_preview_again": "Preview again",
         "btn_model_folder": "Open folder",
+        "btn_gpu_folder": "Parts folder",
         "tr_prev": "Previous cut",
         "tr_play": "Play",
         "tr_pause": "Pause",
@@ -351,7 +355,7 @@ I18N = {
         "ed_col_speaker": "Speaker",
         "ed_col_text": "Text",
         "ed_detail": "Selected subtitle",
-        "ed_detail_none": "Select a subtitle in the table to edit it here",
+        "ed_detail_none": "Select a subtitle in the table to edit it here (Shift / Ctrl for several)",
         "ed_detail_multi": "{} selected",
         "ed_multi_note": "You can change the speaker for all of them at once",
         "ed_undo": "Undo",
@@ -359,6 +363,8 @@ I18N = {
         "ed_speaker_mixed": "(mixed)",
         "ed_name_placeholder": "Speaker name",
         "ed_name": "Name",
+        "ed_keys": "Shortcuts",
+        "ed_close_note": "Closing this window lets processing continue (after the last file, the main window log shows \"Processing finished\"). If you need the subtitle files, press Save first.",
         "ed_split_hint": "Split at cursor: click where you want to cut the text, then press it. The subtitle becomes two; time is divided by character count.",
         "ed_time_note": "Times can't be changed, so subtitles stay in sync with the cuts.",
         "ed_speaker": "Speaker",
@@ -444,6 +450,12 @@ I18N = {
         "marker_cut": "Cut",
     },
 }
+
+# 簡易ヘルプとショートカットの案内は、量が多いので別ファイルに置く（i18n_tips.py）
+from i18n_tips import TIPS  # noqa: E402
+
+for _lang, _strings in TIPS.items():
+    I18N[_lang].update(_strings)
 
 
 def t(lang, key, *args):

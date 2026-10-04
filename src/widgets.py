@@ -390,3 +390,102 @@ class Legend(ctk.CTkFrame):
     def relabel(self):
         for lb, key in self._labels:
             lb.configure(text=self._t(key))
+
+
+# ── hover help ──────────────────────────────────────────────────────────────────────
+
+class Tooltip:
+    """マウスを重ねて少し待つと出る簡易ヘルプ。
+
+    text は文字列か、呼ぶたびに今の言語の文字列を返す関数（言語を切り替えても追従する）。
+    部品とその中身すべて（ラベル・ボタンの内側など）にまとめて効く。マウスが部品の外へ出る、または
+    クリック・キー入力で消える。
+    """
+
+    DELAY_MS = 450
+    WRAP = 340
+    _active = None            # いま出ているもの。同時に 2 つは出さない（あとから出る = 内側の部品のヘルプが勝つ）
+
+    def __init__(self, widget, text, delay: int | None = None):
+        self.widget = widget
+        self._text = text
+        self._delay = self.DELAY_MS if delay is None else delay
+        self._job = None
+        self._tip = None
+        self._bind_tree(widget)
+
+    def _bind_tree(self, w):
+        for ev, fn in (("<Enter>", self._enter), ("<Leave>", self._leave), ("<ButtonPress>", self._hide),
+                       ("<KeyPress>", self._hide)):
+            try:
+                tk.Misc.bind(w, ev, fn, add="+")
+            except tk.TclError:
+                pass
+        for child in w.winfo_children():
+            self._bind_tree(child)
+
+    @property
+    def text(self) -> str:
+        return self._text() if callable(self._text) else str(self._text)
+
+    def _inside(self) -> bool:
+        w = self.widget
+        try:
+            x, y = w.winfo_pointerxy()
+            return (w.winfo_rootx() <= x < w.winfo_rootx() + w.winfo_width()
+                    and w.winfo_rooty() <= y < w.winfo_rooty() + w.winfo_height())
+        except tk.TclError:
+            return False
+
+    def _enter(self, _e=None):
+        if self._tip is None and self._job is None:
+            self._job = self.widget.after(self._delay, self._show)
+
+    def _leave(self, _e=None):
+        if not self._inside():          # 部品の中の別の部分へ移っただけなら、そのまま
+            self._hide()
+
+    def _hide(self, _e=None):
+        if self._job is not None:
+            try:
+                self.widget.after_cancel(self._job)
+            except tk.TclError:
+                pass
+            self._job = None
+        if self._tip is not None:
+            try:
+                self._tip.destroy()
+            except tk.TclError:
+                pass
+            self._tip = None
+            if Tooltip._active is self:
+                Tooltip._active = None
+
+    def _show(self):
+        self._job = None
+        text = self.text
+        if self._tip is not None or not text or not self._inside():
+            return
+        if Tooltip._active is not None and Tooltip._active is not self:
+            Tooltip._active._hide()
+        tip = tk.Toplevel(self.widget)
+        tip.wm_overrideredirect(True)
+        tip.configure(bg=T.EDGE)
+        tk.Label(tip, text=text, justify="left", wraplength=self.WRAP, bg=T.PANEL, fg=T.CHALK,
+                 font=T.font(ctk, "caption"), padx=T.S3, pady=T.S2, bd=0).pack(padx=1, pady=1)
+        tip.update_idletasks()
+        x, y = self.widget.winfo_pointerxy()
+        x, y = x + 14, y + 20
+        sw, sh = tip.winfo_screenwidth(), tip.winfo_screenheight()
+        x = max(0, min(x, sw - tip.winfo_reqwidth() - 8))
+        if y + tip.winfo_reqheight() > sh - 8:               # 下にはみ出すなら、ポインターの上に出す
+            y = max(0, y - tip.winfo_reqheight() - 34)
+        tip.wm_geometry(f"+{x}+{y}")
+        self._tip = tip
+        Tooltip._active = self
+
+
+def tip(widget, text):
+    """widget に簡易ヘルプを付ける。widget はそのまま返す。"""
+    Tooltip(widget, text)
+    return widget

@@ -163,6 +163,23 @@ class SnipSyncApp(_Base):
         self._build_settings()
         self._build_actions()
         self._build_log()
+        self._attach_tips()
+
+    def _attach_tips(self):
+        pairs = [
+            (self.lang_choice, "tip_lang"), (self.btn_pick, "tip_pick"), (self.btn_clear, "tip_clear"),
+            (self.btn_preview, "tip_preview"), (self.tabs, "tip_tabs"), (self.preset_menu, "tip_preset"),
+            (self.btn_preset_save, "tip_preset_save"), (self.btn_preset_delete, "tip_preset_delete"),
+            (self.btn_start, "tip_start"), (self.btn_stop, "tip_stop"), (self.btn_open_out, "tip_open_out"),
+            (self.btn_review, "tip_open_review"), (self.btn_log_clear, "tip_log_clear"),
+            (self.btn_model_folder, "tip_model_folder"), (self.btn_gpu_folder, "tip_gpu_folder"),
+            (self.btn_change, "tip_folder"),
+        ]
+        if self.player is not None:
+            pairs += [(self.btn_prev, "tip_prev"), (self.btn_play, "tip_play"), (self.btn_next, "tip_next"),
+                      (self.rate_choice, "tip_speed"), (self.rate_lbl, "tip_speed")]
+        for widget, key in pairs:
+            self._tip(widget, key)
 
     def _build_header(self):
         bar = ctk.CTkFrame(self, fg_color="transparent")
@@ -278,7 +295,7 @@ class SnipSyncApp(_Base):
         self.tab_frames[key].tkraise()
 
     # 設定の1項目: 見出し、操作部品、補足の3段
-    def _field(self, parent, title, build, cap=None, wrap=460):
+    def _field(self, parent, title, build, cap=None, wrap=460, tip=None):
         f = ctk.CTkFrame(parent, fg_color="transparent")
         f.columnconfigure(0, weight=1)
         r = 0
@@ -289,7 +306,13 @@ class SnipSyncApp(_Base):
         r += 1
         if cap:
             self.reg(W.caption(f, wraplength=wrap), cap).grid(row=r, column=0, sticky="w", pady=(T.S1, 0))
+        if tip:
+            self._tip(f, tip)                 # ラベル・部品・補足のどこに重ねても出る
         return f
+
+    def _tip(self, widget, key):
+        """簡易ヘルプを付ける。key は i18n のキー（言語を切り替えると、文言も切り替わる）。"""
+        return W.tip(widget, lambda: self.t(key))
 
     def _column(self, parent, col):
         c = ctk.CTkFrame(parent, fg_color="transparent")
@@ -315,7 +338,7 @@ class SnipSyncApp(_Base):
         def method(p):
             self.method_choice = W.Choice(p, self.t("method_options"), command=self._on_method)
             return self.method_choice
-        self._field(left, "f_method", method, "cap_method").pack(anchor="w", fill="x")
+        self._field(left, "f_method", method, "cap_method", tip="tip_method").pack(anchor="w", fill="x")
         def silence(p):
             row = ctk.CTkFrame(p, fg_color="transparent")
             self.silence_choice = W.Choice(row, self.t("silence_options"), command=self._on_silence)
@@ -327,24 +350,24 @@ class SnipSyncApp(_Base):
             self.speed_entry.bind("<FocusOut>", self._commit_speed, add="+")
             self.speed_entry.bind("<Return>", self._commit_speed, add="+")
             return row
-        self._field(left, "f_silence", silence, "cap_silence").pack(anchor="w", fill="x", pady=(T.S4, 0))
+        self._field(left, "f_silence", silence, "cap_silence", tip="tip_silence").pack(anchor="w", fill="x", pady=(T.S4, 0))
         def threshold(p):
             self.threshold_row = self._slider_row(p, self.threshold_var, 0.0, 50.0, 100,
                                                   lambda v: f"{v:.1f} {self.t('unit_pct')}")
             return self.threshold_row
-        self._field(right, "f_threshold", threshold, "cap_threshold").pack(anchor="w", fill="x")
+        self._field(right, "f_threshold", threshold, "cap_threshold", tip="tip_threshold").pack(anchor="w", fill="x")
         def margin(p):
             self.margin_row = self._slider_row(p, self.margin_var, 0.0, 2.0, 40,
                                                lambda v: f"{v:.2f} {self.t('unit_sec')}")
             return self.margin_row
-        self._field(right, "f_margin", margin, "cap_margin").pack(anchor="w", fill="x", pady=(T.S4, 0))
+        self._field(right, "f_margin", margin, "cap_margin", tip="tip_margin").pack(anchor="w", fill="x", pady=(T.S4, 0))
 
     def _tab_subs(self, f):
         left, right = self._column(f, 0), self._column(f, 1)
         def srt(p):
             self.srt_switch = self.reg(W.switch(p, "", self.srt_var, self._refresh_states), "f_srt")
             return self.srt_switch
-        self._field(left, None, srt).pack(anchor="w", fill="x")
+        self._field(left, None, srt, tip="tip_srt").pack(anchor="w", fill="x")
         def model(p):
             row = ctk.CTkFrame(p, fg_color="transparent")
             self.model_menu = W.menu(row, [""], command=self._on_model, width=290)
@@ -352,29 +375,33 @@ class SnipSyncApp(_Base):
             self.btn_model_folder = self.reg(W.Btn(row, "", self._open_model_folder, height=32), "btn_model_folder")
             self.btn_model_folder.pack(side="left", padx=(T.S2, 0))
             return row
-        self._field(left, "f_model", model, "cap_model").pack(anchor="w", fill="x", pady=(T.S3, 0))
+        self._field(left, "f_model", model, "cap_model", tip="tip_model").pack(anchor="w", fill="x", pady=(T.S3, 0))
         def gpu(p):
-            self.gpu_switch = self.reg(W.switch(p, "", self.gpu_var), "f_gpu")
-            return self.gpu_switch
-        self._field(left, None, gpu, "cap_gpu").pack(anchor="w", fill="x", pady=(T.S3, 0))
+            row = ctk.CTkFrame(p, fg_color="transparent")
+            self.gpu_switch = self.reg(W.switch(row, "", self.gpu_var), "f_gpu")
+            self.gpu_switch.pack(side="left")
+            self.btn_gpu_folder = self.reg(W.Btn(row, "", self._open_cuda_folder, height=28), "btn_gpu_folder")
+            self.btn_gpu_folder.pack(side="left", padx=(T.S4, 0))
+            return row
+        self._field(left, None, gpu, "cap_gpu", tip="tip_gpu").pack(anchor="w", fill="x", pady=(T.S3, 0))
         def glossary(p):
             self.glossary_entry = W.entry(p, self.glossary_var, width=380)
             return self.glossary_entry
-        self._field(left, "f_glossary", glossary).pack(anchor="w", fill="x", pady=(T.S3, 0))
+        self._field(left, "f_glossary", glossary, tip="tip_glossary").pack(anchor="w", fill="x", pady=(T.S3, 0))
         def review(p):
             self.review_switch = self.reg(W.switch(p, "", self.review_var), "f_review")
             return self.review_switch
-        self._field(left, None, review, "cap_review").pack(anchor="w", fill="x", pady=(T.S3, 0))
+        self._field(left, None, review, "cap_review", tip="tip_review").pack(anchor="w", fill="x", pady=(T.S3, 0))
 
         def snap(p):
             self.snap_switch = self.reg(W.switch(p, "", self.snap_var), "f_snap")
             return self.snap_switch
-        self._field(right, None, snap, "cap_snap").pack(anchor="w", fill="x")
+        self._field(right, None, snap, "cap_snap", tip="tip_snap").pack(anchor="w", fill="x")
         def chars(p):
             self.chars_row = self._slider_row(p, self.chars_var, 0, 40, 40,
                                               lambda v: self.t("chars_off") if int(v) == 0 else f"{int(v)} {self.t('unit_chars')}")
             return self.chars_row
-        self._field(right, "f_chars", chars, "cap_chars").pack(anchor="w", fill="x", pady=(T.S3, 0))
+        self._field(right, "f_chars", chars, "cap_chars", tip="tip_chars").pack(anchor="w", fill="x", pady=(T.S3, 0))
         def speakers(p):
             row = ctk.CTkFrame(p, fg_color="transparent")
             self.diarize_switch = self.reg(W.switch(row, "", self.diarize_var, self._refresh_states), "f_speakers")
@@ -384,14 +411,14 @@ class SnipSyncApp(_Base):
             self.speakers_menu = W.menu(row, [""], command=self._on_speakers, width=96)
             self.speakers_menu.pack(side="left")
             return row
-        self._field(right, None, speakers, "cap_speakers").pack(anchor="w", fill="x", pady=(T.S3, 0))
+        self._field(right, None, speakers, "cap_speakers", tip="tip_speakers").pack(anchor="w", fill="x", pady=(T.S3, 0))
 
     def _tab_export(self, f):
         left, right = self._column(f, 0), self._column(f, 1)
         def output(p):
             self.export_choice = W.Choice(p, self.t("export_options"), command=self._on_export)
             return self.export_choice
-        box = self._field(left, "f_export", output, None)
+        box = self._field(left, "f_export", output, None, tip="tip_export")
         box.pack(anchor="w", fill="x")
         self.export_cap = W.caption(box, wraplength=430)
         self.export_cap.grid(row=2, column=0, sticky="w", pady=(T.S1, 0))
@@ -402,15 +429,16 @@ class SnipSyncApp(_Base):
             self.btn_change = self.reg(W.Btn(row, "", self._browse_outdir, height=30), "btn_change")
             self.btn_change.pack(side="left", padx=(T.S2, 0))
             return row
-        self._field(left, "f_folder", folder).pack(anchor="w", fill="x", pady=(T.S4, 0))
+        self._field(left, "f_folder", folder, tip="tip_folder").pack(anchor="w", fill="x", pady=(T.S4, 0))
 
         def extra(p):
             col = ctk.CTkFrame(p, fg_color="transparent")
             self.txt_switch = self.reg(W.switch(col, "", self.txt_var), "extra_txt")
             self.md_switch = self.reg(W.switch(col, "", self.md_var), "extra_md")
             self.markers_switch = self.reg(W.switch(col, "", self.markers_var), "extra_markers")
-            for s in (self.txt_switch, self.md_switch, self.markers_switch):
+            for s, key in ((self.txt_switch, "tip_txt"), (self.md_switch, "tip_md"), (self.markers_switch, "tip_markers")):
                 s.pack(anchor="w", pady=(0, T.S2))
+                self._tip(s, key)
             return col
         self._field(right, "f_extra", extra).pack(anchor="w", fill="x")
 
@@ -1127,6 +1155,16 @@ class SnipSyncApp(_Base):
         self.dl_text.configure(text=text)
         self.dl_text.grid()
         self.dl_bar.grid()
+
+    def _open_cuda_folder(self):
+        """取得した GPU 用の部品の置き場を開く。まだ無ければ、いちばん近い既存のフォルダ。"""
+        target = cudalibs.cuda_dir()
+        if not target.exists():
+            target = next((q for q in target.parents if q.exists()), None)
+            if target is None or target == Path(target.anchor):
+                target = cudalibs.cuda_dir().parent
+                target.mkdir(parents=True, exist_ok=True)
+        os.startfile(str(target))
 
     def _open_model_folder(self):
         """選んでいるモデルの保存先を開く。まだ無ければ、いちばん近い既存のフォルダを開く。"""

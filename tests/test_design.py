@@ -122,7 +122,7 @@ def test_ui_copy_has_no_emoji_and_no_trailing_decoration(lang):
 
 
 def test_i18n_has_no_dead_keys_and_no_missing_keys():
-    sources = {p.name: p.read_text(encoding="utf-8") for p in PY_FILES if p.name != "i18n.py"}
+    sources = {p.name: p.read_text(encoding="utf-8") for p in PY_FILES if p.name not in ("i18n.py", "i18n_tips.py")}
     blob = "\n".join(sources.values())
     dynamic = ("cap_export_", "hover_")          # f"cap_export_{key}" / "hover_" + kind
     dead = [k for k in I18N["ja"] if f'"{k}"' not in blob and f"'{k}'" not in blob and not k.startswith(dynamic)]

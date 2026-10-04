@@ -16,6 +16,14 @@
 
 ---
 
+## 2026-10-04 — 「動画・音声」の書き出しが「Could not write packet: Invalid argument (pts … dts …)」で失敗する（auto-editor 31.7.2 の既定の映像設定）
+- やったこと/疑い: 実機で、プリセットを選び、新しいファイルをドロップし、出力形式を「動画・音声」に切り替えて処理を開始した。auto-editor が終了コード 1 で失敗した。
+- 再現: 失敗した録画（OBS 系の H.264・60fps・音声 4 トラック・約 1 分）で、**カットする設定**（声で判定・音量で判定のどちらでも）だと、ログのエラー（`stream 0, pts 21248, dts 20736, duration 256, timebase 1/15360`）まで同じものが出た。無音を倍速にする設定では出なかったため、倍速の設定の人は気づかなかった。出力先には、再生できない書きかけの `.mp4`（約 260KB）が残っていた。
+- 原因: auto-editor 31.7.2 は、映像のプロファイルを指定しないと、B フレームのある H.264 で、書き出しの途中にパケットの時刻（pts/dts）が合わなくなることがある。24 通りの設定（しきい値 4・余白 2・指定 3）で比べると、指定なしは 8 通り中 5 通りで失敗、`-vprofile high` と `main` を指定した 16 通りはすべて成功した。`-c:v libx264` の明示や `--no-seek`、`-g`、`--no-faststart` では直らなかった。`--smooth 0` は直るが、カットの結果が変わるので採らない。
+- 回避策 / 正しい手順: 「動画・音声」の書き出し（H.264 の入れ物 `.mp4` `.mov` `.mkv` `.m4v`）では、`-vprofile high` を付ける（`autoeditor._media_video_args`）。`.webm`（VP9）と音声のみには付けない。失敗した（または止めた）書き出しの書きかけのファイルは消す。
+- 注意: 試験用に作った B フレーム入りの動画（PyAV で生成）では再現しなかった。実際の録画でしか再現しないため、コマンドの組み立てだけをテストで固定している（`tests/test_autoeditor.py`）。
+- 関連: `src/autoeditor.py`、`src/pipeline.py`、`tests/test_autoeditor.py`
+
 ## 2026-10-04 — GPU を選んでも CPU に切り替わる（EXE に cuBLAS・cuDNN が入っていない）／文字起こし中は「停止」が効かず、進み具合も見えなかった
 - やったこと/疑い: 実機（RTX 5070）で「GPU を使う」を入れて処理した。ログに「GPU を使えなかったため、CPU に切り替えました」。large-v3 を選ぶと、数分間ログが止まり、「停止」を押しても終わらなかった。
 - 実測: GPU 自体は使える。`ctranslate2.get_cuda_device_count()` は 1。失敗の理由は `Library cublas64_12.dll is not found or cannot be loaded`（cuBLAS が無い）。配布する EXE には、1GB 以上ある NVIDIA の DLL を入れていない（意図した設計）が、画面は「GPU がある」だけを見て、使えるかのように見せていた。cuBLAS・cuDNN を入れると、RTX 5070 でも動いた（large-v3-turbo・38 秒の音声で GPU 0.6 秒、CPU 8.7 秒）。kotoba に限らず、どのモデルでも同じ。

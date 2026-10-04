@@ -427,6 +427,8 @@ def run_pipeline(
                 result.timeline_path = output_ae
             else:
                 on_log(tr("log_error", rc), "error")
+            if is_media and not result.ok:
+                output_ae.unlink(missing_ok=True)       # 書きかけの動画・音声（再生できない）を残さない
         except FileNotFoundError as e:
             on_log(tr("log_ae_missing", e), "error")
         except Exception:

@@ -413,3 +413,29 @@ def test_gpu_failure_falls_back_to_cpu_and_the_log_says_why(dirs, monkeypatch):
                           transcribe=transcribe)
     assert res.ok and res.srt_path and len(calls) == 2
     assert any(m.startswith("log_gpu_fallback:") and "cublas64_12.dll" in m for m, _ in logs)
+
+
+def test_failed_media_export_does_not_leave_a_half_written_file(dirs, monkeypatch):
+    inp, out = dirs
+    monkeypatch.setattr(pl, "probe_fps", lambda p: 10.0)
+
+    def write_partial(cmd):
+        Path(cmd[cmd.index("--output") + 1]).write_bytes(b"partial")
+
+    monkeypatch.setattr(subprocess, "Popen", make_mock_popen(stdout_lines=["x"], returncode=1, write_output=write_partial))
+    res, logs = run_pipeline_with(inp, out, base_params(export_key="media"))
+    assert not res.ok and any(m.startswith("log_error") for m, _ in logs)
+    assert not list(out.glob("*_snipsynced.*"))
+
+
+def test_failed_timeline_export_is_left_for_the_user_to_inspect(dirs, monkeypatch):
+    """タイムライン（小さな XML）の失敗は従来どおり。消すのは、再生できない書きかけのメディアだけ。"""
+    inp, out = dirs
+    monkeypatch.setattr(pl, "probe_fps", lambda p: 10.0)
+
+    def write_partial(cmd):
+        Path(cmd[cmd.index("--output") + 1]).write_bytes(b"partial")
+
+    monkeypatch.setattr(subprocess, "Popen", make_mock_popen(stdout_lines=["x"], returncode=1, write_output=write_partial))
+    res, _ = run_pipeline_with(inp, out, base_params(export_key="premiere"))
+    assert not res.ok and list(out.glob("*_snipsynced.*"))

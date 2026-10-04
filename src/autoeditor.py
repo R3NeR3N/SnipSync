@@ -56,6 +56,17 @@ def _tail(output):
     return ["--progress", "none", "--output", str(output), "--no-open"]
 
 
+# カット済みの動画を書き出すとき、映像のプロファイルを明示する。
+# auto-editor 31.7.2 は、指定しないと、B フレームのある H.264（OBS などの録画に多い）で
+# 「Could not write packet: Invalid argument (pts/dts …)」で失敗することがある（実測: 24 通りの設定のうち、
+# 指定なしは 8 通り中 5 通りで失敗、high / main を指定した 16 通りはすべて成功）。
+VIDEO_PROFILE_EXTS = (".mp4", ".mov", ".mkv", ".m4v")      # H.264 で書き出す入れ物。webm（VP9）などには付けない
+
+
+def _media_video_args(output) -> list[str]:
+    return ["-vprofile", "high"] if Path(str(output)).suffix.lower() in VIDEO_PROFILE_EXTS else []
+
+
 def build_cut_cmd(ae_path, inp, margin, threshold, export_key, output, *, silent_speed=None):
     """auto-editor command: silence cut -> NLE timeline (.fcpxml/.xml) or rendered media.
 
@@ -65,6 +76,8 @@ def build_cut_cmd(ae_path, inp, margin, threshold, export_key, output, *, silent
     cmd = [str(ae_path), str(inp), *_edit_args(margin, threshold, silent_speed)]
     if export_key != EXPORT_MEDIA:
         cmd += ["--export", export_key]
+    else:
+        cmd += _media_video_args(output)
     return cmd + _tail(output)
 
 
@@ -106,6 +119,8 @@ def build_cut_cmd_from_chunks(ae_path, chunks_json, export_key, output, tb=None)
         cmd += ["-tb", format_timebase(tb)]
     if export_key != EXPORT_MEDIA:
         cmd += ["--export", export_key]
+    else:
+        cmd += _media_video_args(output)
     return cmd + _tail(output)
 
 

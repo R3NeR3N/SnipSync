@@ -49,10 +49,9 @@ class SubtitleEditor(ctk.CTkToplevel):
         self.protocol("WM_DELETE_WINDOW", self._close)
         self._style_tree()
         self._build()
-        self.bind("<Control-s>", lambda _e: self.save())
-        self.bind("<Control-z>", lambda _e: self.undo())
-        self.bind("<Control-y>", lambda _e: self.redo())
-        self.bind("<Control-Shift-Z>", lambda _e: self.redo())
+        self._help = None
+        self._bind_keys()
+        self._attach_tips()
         self._refresh_all()
         if self.pending and self.paths:
             self.status.configure(text=self.t("ed_dest", ", ".join(p.name for p in self.paths.values())))
@@ -89,7 +88,9 @@ class SubtitleEditor(ctk.CTkToplevel):
         self.btn_undo = W.Btn(bar, self.t("ed_undo"), self.undo, height=30)
         self.btn_undo.grid(row=0, column=3, padx=(0, T.S2))
         self.btn_redo = W.Btn(bar, self.t("ed_redo"), self.redo, height=30)
-        self.btn_redo.grid(row=0, column=4)
+        self.btn_redo.grid(row=0, column=4, padx=(0, T.S2))
+        self.btn_keys = W.Btn(bar, self.t("ed_keys"), self.toggle_help, kind="ghost", height=30)
+        self.btn_keys.grid(row=0, column=5)
 
         # 中段: 編集ビューとプレビュー（重ねて切り替える）
         self.body = ctk.CTkFrame(self, fg_color="transparent")
@@ -116,6 +117,10 @@ class SubtitleEditor(ctk.CTkToplevel):
         self.btn_save_as.grid(row=0, column=4, padx=(0, T.S2))
         self.btn_save = W.Btn(foot, self.t("ed_save"), self.save, kind="primary", width=120)
         self.btn_save.grid(row=0, column=5)
+        self.close_note = None
+        if self._on_closed is not None:         # 処理が、この画面を閉じるのを待っている
+            self.close_note = W.caption(foot, self.t("ed_close_note"), wraplength=900)
+            self.close_note.grid(row=1, column=0, columnspan=6, sticky="w", pady=(T.S2, 0))
 
     def _view_options(self) -> dict:
         return {"edit": self.t("ed_view_edit"), "txt": ".txt", "md": ".md", "srt": ".srt"}
@@ -218,7 +223,7 @@ class SubtitleEditor(ctk.CTkToplevel):
             idx = min(max(select if select is not None else 0, 0), n - 1)
             self.tree.selection_set(str(idx))
             self.tree.see(str(idx))
-            self._on_select()
+            self._on_select(force=True)
         else:
             self.empty.place(relx=0, rely=0, relwidth=1, relheight=1)
             self._sel, self._sels = None, []
@@ -287,9 +292,12 @@ class SubtitleEditor(ctk.CTkToplevel):
         self._status_after = self.after(5000, lambda: self.status.configure(text=""))
 
     # ── 選択と編集 ──────────────────────────────────────────────────────────────────
-    def _on_select(self):
+    def _on_select(self, force=False):
+        sels = sorted(int(i) for i in self.tree.selection())
+        if sels == self._sels and not force:
+            return          # 同じ選択の通知（プログラムで選んだあとに遅れて届く分）で、編集欄を読み直さない（カーソルが飛ぶ）
         self.editor.end_typing()                       # 別の字幕へ移ったら、文字入力のまとまりはここで区切る
-        self._sels = sorted(int(i) for i in self.tree.selection())
+        self._sels = sels
         self._sel = self._sels[0] if len(self._sels) == 1 else None
         self._load_detail()
 
@@ -410,21 +418,127 @@ class SubtitleEditor(ctk.CTkToplevel):
         self._refresh_all(select=keep)
 
     def split(self):
+        """カーソル位置で2件に分け、あとの方を選ぶ（続けて、その先で分けられる）。"""
         if self._sel is None:
             return
         offset = len(self.text._textbox.get("1.0", "insert"))
         if self.editor.split(self._sel, offset):
-            self._refresh_all(select=self._sel)
+            self._refresh_all(select=self._sel + 1)
+            self._focus_text("start")
 
     def merge(self):
-        if self._sel is not None and self.editor.merge_next(self._sel):
-            self._refresh_all(select=self._sel)
+        """次の字幕と結合し、つなぎ目にカーソルを置く（続けて、さらに次と結合できる）。"""
+        if self._sel is not None:
+            joint = len(self.editor.cue(self._sel).text)
+            if self.editor.merge_next(self._sel):
+                self._refresh_all(select=self._sel)
+                self._focus_text(joint)
 
     def delete(self):
         if self._sel is not None:
             i = self._sel
             self.editor.delete(i)
             self._refresh_all(select=i)
+            self._focus_text("start")
+
+    def _focus_text(self, at="end"):
+        """本文の欄にフォーカスを置き、カーソルを位置 at（"start" / "end" / 文字数）に置く。"""
+        if self._sel is None:
+            return
+        tb = self.text._textbox
+        tb.focus_set()
+        tb.mark_set("insert", "1.0" if at == "start" else ("end-1c" if at == "end" else f"1.0+{at}c"))
+        tb.see("insert")
+
+    # ── キー操作 ───────────────────────────────────────────────────────────────────
+    def _move_row(self, delta: int):
+        n = len(self.editor)
+        if not n:
+            return
+        base = self._sels[0] if self._sels else -1
+        idx = min(max(base + delta, 0), n - 1)
+        self.tree.selection_set(str(idx))
+        self.tree.see(str(idx))
+        self._on_select()
+        self._focus_text("end")
+
+    def _set_speaker_key(self, number: int):
+        """Ctrl+1〜9 で話者 N に、Ctrl+0 でなしにする（選んでいる字幕すべて）。"""
+        if self._sels and self.editor.set_speakers(self._sels, None if number == 0 else number - 1):
+            self._refresh_rows()
+            self._load_detail()
+            self._update_chrome()
+
+    def _select_all_rows(self):
+        self.tree.selection_set(*self.tree.get_children())
+        self._on_select()
+
+    def _bind_keys(self):
+        keys = {
+            "<Control-Return>": self.split, "<Control-j>": self.merge, "<Control-J>": self.merge,
+            "<Control-d>": self.delete, "<Control-D>": self.delete, "<Control-r>": self.revert,
+            "<Control-R>": self.revert, "<Alt-Up>": lambda: self._move_row(-1),
+            "<Alt-Down>": lambda: self._move_row(1), "<Control-s>": self.save, "<Control-z>": self.undo,
+            "<Control-Z>": self.redo, "<Control-y>": self.redo, "<Control-Y>": self.redo,
+            "<F1>": self.toggle_help, "<Escape>": self.close_help,
+        }
+        for n in range(10):
+            keys[f"<Control-Key-{n}>"] = (lambda n=n: self._set_speaker_key(n))
+
+        def handler(fn):
+            def run(_e=None):
+                fn()
+                return "break"             # 入力欄の標準の動き（Ctrl+D で1文字消える等）より、こちらを優先する
+            return run
+
+        targets = [self, self.text._textbox, self.name_entry, self.tree]
+        for seq, fn in keys.items():
+            for w in targets:
+                tk.Misc.bind(w, seq, handler(fn))
+        tk.Misc.bind(self.tree, "<Control-a>", handler(self._select_all_rows))
+        tk.Misc.bind(self.tree, "<Control-A>", handler(self._select_all_rows))
+
+    def toggle_help(self):
+        self.close_help() if self._help is not None else self._open_help()
+
+    def close_help(self):
+        if self._help is not None:
+            self._help.destroy()
+            self._help = None
+
+    def _open_help(self):
+        """ショートカットの一覧を、窓の上に重ねて出す（普段は隠れている）。"""
+        rows = [("Ctrl+Enter", "sc_split"), ("Ctrl+J", "sc_merge"), ("Ctrl+D", "sc_delete"),
+                ("Ctrl+R", "sc_revert"), ("Alt+\u2191", "sc_prev"), ("Alt+\u2193", "sc_next"),
+                ("Ctrl+1 \u2013 9", "sc_speaker"), ("Ctrl+0", "sc_speaker_none"), ("Ctrl+Z", "sc_undo"),
+                ("Ctrl+Y", "sc_redo"), ("Ctrl+S", "sc_save"), ("Ctrl+A", "sc_select_all"), ("F1", "sc_help")]
+        box = ctk.CTkFrame(self, fg_color=T.PANEL, corner_radius=T.R_PANEL, border_width=1, border_color=T.EDGE)
+        W.label(box, self.t("sc_title"), "title").grid(row=0, column=0, columnspan=2, sticky="w",
+                                                      padx=T.S6, pady=(T.S4, T.S3))
+        for i, (key, text_key) in enumerate(rows, start=1):
+            chip = ctk.CTkLabel(box, text=key, font=T.font(ctk, "mono"), text_color=T.CHALK, fg_color=T.WELL,
+                                corner_radius=T.R_CONTROL, width=128, height=26)
+            chip.grid(row=i, column=0, sticky="w", padx=(T.S6, T.S3), pady=2)
+            W.label(box, self.t(text_key), "body").grid(row=i, column=1, sticky="w", padx=(0, T.S6), pady=2)
+        W.caption(box, self.t("sc_hint")).grid(row=len(rows) + 1, column=0, columnspan=2, sticky="w",
+                                              padx=T.S6, pady=(T.S3, T.S4))
+        box.place(relx=0.5, rely=0.5, anchor="center")
+        box.lift()
+        for w in (box, *box.winfo_children()):
+            tk.Misc.bind(w, "<Button-1>", lambda _e: self.close_help())
+        self._help = box
+
+    def _attach_tips(self):
+        pairs = [
+            (self.view, "tip_ed_view"), (self.btn_undo, "tip_ed_undo"), (self.btn_redo, "tip_ed_redo"),
+            (self.btn_keys, "tip_ed_keys"), (self.text, "tip_ed_text"), (self.speaker_menu, "tip_ed_speaker"),
+            (self.name_entry, "tip_ed_name"), (self.name_lbl, "tip_ed_name"), (self.btn_revert, "tip_ed_revert"),
+            (self.btn_split, "tip_ed_split"), (self.btn_merge, "tip_ed_merge"), (self.btn_delete, "tip_ed_delete"),
+            (self.ts_switch, "tip_ed_timestamps"), (self.btn_open, "tip_ed_open"), (self.btn_copy, "tip_ed_copy"),
+            (self.btn_save_as, "tip_ed_save_as"), (self.btn_save, "tip_ed_save"),
+        ]
+        for widget, key in pairs:
+            W.tip(widget, (lambda k=key: self.t(k)))
 
     # ── 保存・コピー・読み込み ────────────────────────────────────────────────────────
     def _render_args(self) -> dict:
@@ -540,6 +654,12 @@ class SubtitleEditor(ctk.CTkToplevel):
         self.speaker_lbl.configure(text=self.t("ed_speaker"))
         self.split_hint.configure(text=self.t("ed_split_hint"))
         self.name_lbl.configure(text=self.t("ed_name"))
+        self.btn_keys.configure(text=self.t("ed_keys"))
+        if self.close_note is not None:
+            self.close_note.configure(text=self.t("ed_close_note"))
+        if self._help is not None:                   # 開いている一覧は、閉じて開き直す
+            self.close_help()
+            self._open_help()
         self.preview_note.configure(text=self.t("ed_preview_note"))
         self._empty_label.configure(text=self.t("ed_empty"))
         self._empty_btn.configure(text=self.t("ed_open"))

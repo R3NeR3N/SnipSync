@@ -52,6 +52,8 @@ Because the subtitle pipeline runs transcription on the *already-cut* audio (not
 
 No Python installation required. SnipSync ships as a single `.exe` file.
 
+**It also works for meeting minutes.** Give it a recording of a meeting (Zoom, Teams, or in person) and it transcribes the audio with the silences taken out, split by speaker, and writes `.txt` or `.md`. Speakers can be given names such as "Yamada" and "Sato", so the result is a ready first draft of the minutes. Audio-only files work too. Transcription and speaker separation still make mistakes, so fix them in the subtitle review window before saving.
+
 ---
 
 ## ✨ Features
@@ -62,7 +64,7 @@ No Python installation required. SnipSync ships as a single `.exe` file.
 | 🎬 **NLE Timeline Export** | Exports cut-ready timelines for DaVinci Resolve, Final Cut Pro, and Premiere Pro |
 | 📝 **AI Subtitle Generation** | Generates `.srt` files with `faster-whisper` — no timecode drift |
 | ⚙️ **Fine-grained Controls** | Adjustable volume threshold (%) and silence margin (seconds) |
-| 🤖 **Model Size Selection** | Choose from `tiny` / `base` / `small` / `medium` Whisper models |
+| 🤖 **AI Model Choice** | Pick `tiny` / `base` / `small` / `medium` / `large-v3-turbo` / `large-v3` for the speed and accuracy you need. Also available: `kotoba-whisper` (Japanese-specialised, experimental) and `distil-large-v3` (English only) |
 | 🌐 **Multilingual UI** | Full Japanese / English interface switchable at runtime |
 | 📁 **Drag & Drop** | Simply drag your video file onto the app window |
 | 📦 **Zero Setup** | Ships as a single `.exe` — no Python, no dependencies to install |
@@ -72,7 +74,6 @@ No Python installation required. SnipSync ships as a single `.exe` file.
 | 🈶 **Readable Subtitles** | Japanese phrase-aware line breaks (BudouX), glossary hints, optional speaker separation |
 | 📄 **Transcript Export** | Preview and save the whole transcript as `.txt` / `.md` / `.srt` |
 | 📍 **Timeline Markers** | Optional cut-point / speaker-change markers (not yet verified in a real NLE) |
-| 🤖 **More Models** | large-v3-turbo, large-v3, kotoba-whisper (experimental), distil-large-v3 (English only) |
 
 ### Supported Export Formats
 
@@ -84,7 +85,16 @@ No Python installation required. SnipSync ships as a single `.exe` file.
 
 ### Supported Input Formats
 
-`.mp4` · `.mov` · `.avi` · `.mkv` · `.wmv` · `.flv` · `.webm` · `.m4v` · audio: `.wav` · `.mp3` · `.m4a` · `.flac` · `.aac` · `.ogg` · `.opus` · `.wma`
+| Video files | Audio files |
+|---|---|
+| `.mp4` | `.wav` |
+| `.mov` | `.mp3` |
+| `.avi` | `.m4a` |
+| `.mkv` | `.flac` |
+| `.wmv` | `.aac` |
+| `.flv` | `.ogg` |
+| `.webm` | `.opus` |
+| `.m4v` | `.wma` |
 
 ---
 
@@ -184,14 +194,31 @@ flowchart LR
 
 The **Log** at the bottom shows each step: cutting, speech recognition (with the recognised text), speaker separation, and the files written. When it finishes, SnipSync offers to open the output folder.
 
-Outputs are written next to each input file (or to the folder you choose):
+Outputs are written next to each input file (or to the folder you choose). Files appear at two moments.
+
+**① After you press Start processing, while processing runs**
 
 | File | What it is |
 |---|---|
-| `<name>_snipsynced.fcpxml` / `.xml` | The cut timeline (plus a `<name>_tracks` folder for multi-track audio — keep it next to the `.fcpxml`) |
-| `<name>_snipsynced.mp4` / `.wav` … | Cut media, when the export format is *Cut media* |
-| `<name>.srt` | Subtitles |
-| `<name>.txt` / `<name>.md` | Whole transcript, if you ticked them |
+| `<name>_snipsynced.fcpxml` / `.xml` | The cut timeline, written as soon as cutting finishes. For a video with several audio tracks and `.fcpxml`, a `<name>_tracks` folder with the extracted audio is written too (keep it next to the `.fcpxml`) |
+| `<name>_snipsynced.mp4` / `.mov` / `.mkv` / `.wav` … | The cut video / audio, when the export format is *Video / audio* |
+| Working files such as `<name>_temp_audio.wav` | Exist only while subtitles are being made, then are deleted automatically |
+
+**② When you press Save in the subtitle review window**
+
+While **Review before saving** is on (the default), processing pauses at the subtitle review window. No subtitle file exists yet. Pressing Save writes the files below once, **with your edits applied**.
+
+| File | What it is |
+|---|---|
+| `<name>.srt` | Subtitles, with speaker names and line wrapping applied |
+| `<name>.txt` | The whole transcript, only if you ticked *.txt transcript*. Times are included or not according to the *Include timestamps* switch in the window |
+| `<name>.md` | The whole transcript with headings, only if you ticked *.md transcript* |
+
+- The destination is shown at the bottom of the window ("Saves to: …"). *Save as…* writes only the format you are viewing, to the place you choose.
+- If you close the window without saving, no subtitle files are written (the timeline or media already exists from ①).
+- Closing the window lets processing continue. After the last file, the main window log shows "Processing finished".
+- With **Review before saving** off, the subtitle files are written at ①. You can still reopen them later with **Review subtitles**, edit, and save again (the same files are overwritten).
+- Speaker-change markers in the timeline are built from the subtitles at ①. Fixing a speaker in the review window does not change the markers.
 
 #### 3. (Optional) Check what will be cut — Waveform Preview
 

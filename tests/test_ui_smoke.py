@@ -506,3 +506,152 @@ def test_stop_shows_immediate_feedback_even_when_the_stage_cannot_be_interrupted
     assert app.stop_requested and app.dl_text.cget("text") == app.t("stopping")
     app.stop_requested = False
     app._on_progress("model", None, None)
+
+
+# ── 簡易ヘルプ（マウスを重ねると出る説明） ──────────────────────────────────────────
+def test_tooltip_shows_text_for_the_current_language_and_hides(app, monkeypatch):
+    import widgets as W
+    lbl = W.label(app, "x")
+    state = {"text": "最初"}
+    tt = W.Tooltip(lbl, lambda: state["text"])
+    monkeypatch.setattr(tt, "_inside", lambda: True)
+    tt._show()
+    assert tt._tip is not None and tt._tip.winfo_children()[0].cget("text") == "最初"
+    tt._hide()
+    assert tt._tip is None
+    state["text"] = "English"                              # 言語を切り替えたあと、次に出すときは新しい文言
+    tt._show()
+    assert tt._tip.winfo_children()[0].cget("text") == "English"
+    tt._hide()
+    lbl.destroy()
+
+
+def test_only_one_tooltip_is_visible_and_the_inner_widgets_one_wins(app, monkeypatch):
+    import widgets as W
+    outer = ctk_frame = __import__("customtkinter").CTkFrame(app)
+    inner = W.label(outer, "i")
+    a = W.Tooltip(outer, "外側")
+    b = W.Tooltip(inner, "内側")
+    for t_ in (a, b):
+        monkeypatch.setattr(t_, "_inside", lambda: True)
+    a._show()
+    b._show()                                               # あとから出る内側のヘルプが、外側を置き換える
+    assert a._tip is None and b._tip is not None and W.Tooltip._active is b
+    b._hide()
+    assert W.Tooltip._active is None
+    ctk_frame.destroy()
+
+
+def test_main_window_controls_have_help_in_both_languages(app):
+    from i18n import I18N
+    tip_keys = [k for k in I18N["ja"] if k.startswith("tip_")]
+    assert len(tip_keys) >= 50
+    for k in tip_keys:
+        assert I18N["ja"][k].strip() and I18N["en"][k].strip()
+        assert "→" not in I18N["ja"][k]
+
+
+# ── 字幕確認画面のショートカット ─────────────────────────────────────────────────────
+def test_shortcut_keys_work_from_the_text_box_and_keep_the_keyboard_flow(app):
+    ed = _open_plain_editor(app)
+    ed.tree.selection_set("0")
+    ed._on_select()
+    pump(app)
+    tb = ed.text._textbox
+    # 結合: つなぎ目にカーソルが残り、続けて押せる
+    tb.event_generate("<Control-j>")
+    pump(app)
+    assert len(ed.editor) == 2
+    joint = int(tb.index("insert").split(".")[1])
+    assert joint == len(CUES[0].text)
+    tb.event_generate("<Control-j>")
+    pump(app)
+    assert len(ed.editor) == 1                                          # 続けて、次とも結合
+    # 分割: カーソル位置で2件に分かれ、あとの方が選ばれる
+    tb.mark_set("insert", "1.2")
+    tb.event_generate("<Control-Return>")
+    pump(app)
+    assert len(ed.editor) == 2 and ed._sel == 1
+    assert tb.index("insert") == "1.0"
+
+
+def test_shortcut_for_delete_revert_move_speaker_undo_and_help(app):
+    ed = _open_plain_editor(app)
+    ed.tree.selection_set("1")
+    ed._on_select()
+    pump(app)
+    tb = ed.text._textbox
+    tb.event_generate("<Alt-Down>")
+    pump(app)
+    assert ed._sel == 2
+    tb.event_generate("<Alt-Up>")
+    pump(app)
+    assert ed._sel == 1
+    tb.event_generate("<Control-Key-3>")                                # 話者3
+    pump(app)
+    assert ed.editor.cue(1).speaker == 2
+    tb.event_generate("<Control-Key-0>")                                # なし
+    pump(app)
+    assert ed.editor.cue(1).speaker is None
+    tb.event_generate("<Control-r>")                                    # 最初に戻す（話者も戻る）
+    pump(app)
+    assert ed.editor.cue(1).speaker == CUES[1].speaker
+    tb.event_generate("<Control-d>")
+    pump(app)
+    assert len(ed.editor) == 2
+    tb.event_generate("<Control-z>")
+    pump(app)
+    assert len(ed.editor) == 3
+    tb.event_generate("<Control-y>")
+    pump(app)
+    assert len(ed.editor) == 2
+    assert ed._help is None
+    tb.event_generate("<F1>")
+    pump(app)
+    assert ed._help is not None
+    tb.event_generate("<Escape>")
+    pump(app)
+    assert ed._help is None
+
+
+def test_shortcut_help_lists_every_shortcut_and_follows_the_language(app):
+    ed = _open_plain_editor(app)
+    ed.toggle_help()
+    pump(app)
+    texts = [w.cget("text") for w in ed._help.winfo_children() if hasattr(w, "cget")]
+    for key in ("Ctrl+Enter", "Ctrl+J", "Ctrl+D", "Ctrl+R", "Ctrl+Z", "Ctrl+Y", "Ctrl+S", "F1"):
+        assert key in texts
+    assert app.t("sc_split") in texts and app.t("sc_title") in texts
+    ed.toggle_help()
+    assert ed._help is None
+
+
+def test_close_note_is_shown_only_while_processing_waits_for_the_window(app, tmp_path):
+    from subtitle_editor import SubtitleEditor
+    plain = _open_plain_editor(app)
+    assert plain.close_note is None
+    waiting = SubtitleEditor(app, list(CUES), "talk", {"srt": tmp_path / "a.srt"}, pending=True,
+                             on_closed=lambda *a: None)
+    app.review_win = waiting
+    pump(app)
+    assert waiting.close_note is not None and "処理" in waiting.close_note.cget("text")
+    assert "保存" in waiting.close_note.cget("text")
+    waiting.pending = False
+    waiting._on_closed = None
+    waiting.destroy()
+    app.review_win = None
+
+
+def test_open_gpu_parts_folder_opens_the_folder_or_the_nearest_existing_one(app, tmp_path, monkeypatch):
+    import os
+
+    import cudalibs
+    opened = []
+    monkeypatch.setattr(os, "startfile", lambda p: opened.append(Path(p)), raising=False)
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+    (tmp_path / "SnipSync").mkdir()
+    app._open_cuda_folder()
+    assert opened[-1] == tmp_path / "SnipSync"                  # まだ取得していない: 一番近い既存のフォルダ
+    cudalibs.cuda_dir().mkdir()
+    app._open_cuda_folder()
+    assert opened[-1] == cudalibs.cuda_dir()
