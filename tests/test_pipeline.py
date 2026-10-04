@@ -1206,3 +1206,82 @@ def test_pipeline_cut_align_no_fps_fallback(temp_dirs, monkeypatch):
 
 
 
+
+
+# ── ファイル名にスペースや日本語を含むときの、_tracks 参照の書き換え ───────────────────
+# auto-editor は、参照を URL で書く（スペースは %20、日本語は %XX）。生の文字列で置換すると一致せず、
+# 何も書き換えないまま「成功」になり、DaVinci Resolve が「3 クリップのうち 3 クリップが見つかりません」になった。
+
+def _encoded(path: Path) -> str:
+    from urllib.parse import quote
+    return quote(str(path).replace("\\", "/"), safe="/:")
+
+
+def test_rewrite_fcpxml_track_paths_handles_percent_encoded_urls(tmp_path):
+    from pipeline import _rewrite_fcpxml_track_paths
+    old = tmp_path / "録画 フォルダ" / "2026-06-20 11-04-28_tracks"
+    new = tmp_path / "出力 先" / "2026-06-20 11-04-28_tracks"
+    f = tmp_path / "t.fcpxml"
+    f.write_text(f'<media-rep src="file:///{_encoded(old)}/2026-06-20%2011-04-28_1.wav" />', encoding="utf-8")
+    assert _rewrite_fcpxml_track_paths(f, old, new) is True
+    text = f.read_text(encoding="utf-8")
+    assert _encoded(new) in text and _encoded(old) not in text        # 移動先も、URL として正しく %エンコードで書く
+    assert " " not in text.split('src="')[1].split('"')[0]            # URL にスペースを生のまま入れない
+
+
+def test_rewrite_fcpxml_track_paths_still_handles_raw_and_backslash_forms(tmp_path):
+    from pipeline import _rewrite_fcpxml_track_paths
+    old, new = tmp_path / "a" / "x_tracks", tmp_path / "b" / "x_tracks"
+    for form in (str(old).replace("\\", "/"), str(old)):
+        f = tmp_path / "t.fcpxml"
+        f.write_text(f'<media-rep src="file:///{form}/x_1.wav" />', encoding="utf-8")
+        assert _rewrite_fcpxml_track_paths(f, old, new) is True
+        assert str(old).replace("\\", "/") not in f.read_text(encoding="utf-8").replace("\\", "/")
+
+
+def test_rewrite_fcpxml_track_paths_reports_when_nothing_matched(tmp_path):
+    from pipeline import _rewrite_fcpxml_track_paths
+    f = tmp_path / "t.fcpxml"
+    f.write_text('<media-rep src="file:///Z:/somewhere/else/x_1.wav" />', encoding="utf-8")
+    assert _rewrite_fcpxml_track_paths(f, tmp_path / "a_tracks", tmp_path / "b_tracks") is False
+
+
+def _run_with_tracks(tmp_path, monkeypatch, reference):
+    inp_dir = tmp_path / "録画 フォルダ"
+    inp_dir.mkdir()
+    inp = inp_dir / "2026-06-20 11-04-28.mp4"
+    inp.write_bytes(b"dummy")
+    out_dir = tmp_path / "出力 先"
+    out_dir.mkdir()
+    tracks_dir = inp_dir / "2026-06-20 11-04-28_tracks"
+
+    def mock_write(cmd):
+        tracks_dir.mkdir(exist_ok=True)
+        (tracks_dir / "2026-06-20 11-04-28_1.wav").write_bytes(b"audio")
+        if "--output" in cmd:
+            out_path = Path(cmd[cmd.index("--output") + 1])
+            out_path.write_text(f'<media-rep src="file:///{reference(tracks_dir)}/2026-06-20%2011-04-28_1.wav" />',
+                                encoding="utf-8")
+
+    monkeypatch.setattr(subprocess, "Popen", make_mock_popen(stdout_lines=["progress"], write_output=mock_write))
+    params = PipelineParams(margin=0.2, threshold=4.0, export_key="resolve", do_srt=False, model_size="small")
+    logs = []
+    res = run_pipeline(ae_path="dummy-ae", inp=inp, out_dir=out_dir, params=params,
+                       on_log=lambda m, lvl="": logs.append((m, lvl)), should_stop=lambda: False, tr=stub_tr)
+    return res, logs, tracks_dir, out_dir / tracks_dir.name
+
+
+def test_tracks_relocation_works_for_names_with_spaces_and_japanese_folders(tmp_path, monkeypatch):
+    res, logs, tracks_dir, dest = _run_with_tracks(tmp_path, monkeypatch, _encoded)
+    assert res.ok and not tracks_dir.exists() and (dest / "2026-06-20 11-04-28_1.wav").exists()
+    text = res.timeline_path.read_text(encoding="utf-8")
+    assert _encoded(dest) in text and _encoded(tracks_dir) not in text      # タイムラインが、移動先を指している
+    assert any("log_tracks_relocated" in m for m, _ in logs)
+
+
+def test_tracks_stay_in_place_when_the_references_cannot_be_rewritten(tmp_path, monkeypatch):
+    """書き換えに失敗したのに移すと、タイムラインが音声を見失う。そのときは、元の場所に残す。"""
+    res, logs, tracks_dir, dest = _run_with_tracks(tmp_path, monkeypatch, lambda d: "Z:/not/the/real/path")
+    assert res.ok and tracks_dir.exists() and not dest.exists()
+    assert any(m == "log_tracks_rewrite_failed" and lvl == "warn" for m, lvl in logs)
+    assert not any("log_tracks_relocated" in m for m, _ in logs)

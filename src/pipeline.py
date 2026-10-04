@@ -114,22 +114,33 @@ def _run_streaming(cmd, *, on_log, should_stop) -> tuple[int, bool]:
     return rc, False
 
 
-def _rewrite_fcpxml_track_paths(timeline_path: Path, old_dir: Path, new_dir: Path) -> None:
-    """relocate 後、fcpxml 内の {stem}_tracks 参照パスを移動先へ書き換える。
-    auto-editor は forward-slash の絶対パスで file:// 参照を書く（実測）ため、
-    まず forward-slash 形で置換し、不一致なら backslash 形を保険で試す。
+def _rewrite_fcpxml_track_paths(timeline_path: Path, old_dir: Path, new_dir: Path) -> bool:
+    """relocate 後、fcpxml 内の {stem}_tracks 参照パスを移動先へ書き換える。書き換えたら True。
+
+    auto-editor は、参照を file:// の URL で書く（実測: スペースは %20、日本語などは %XX）。
+    以前は、生のパス文字列で置換していたため、ファイル名に**スペースや日本語を含むと一致せず、
+    何も書き換えないまま成功したことになり**、DaVinci Resolve で「3 クリップのうち 3 クリップが
+    見つかりません」になった（OBS の録画は、名前にスペースを含むことが多い）。
+    URL 形式（%エンコード）を先に試し、生の形式・バックスラッシュ形式も保険で試す。
+    置換後の形式は、一致した形式に合わせる（URL なら、移動先も %エンコードして書く）。
     """
+    from urllib.parse import quote
     try:
         text = timeline_path.read_text(encoding="utf-8")
     except Exception:
-        return
+        return False
     old_fwd = str(old_dir).replace("\\", "/")
     new_fwd = str(new_dir).replace("\\", "/")
-    new_text = text.replace(old_fwd, new_fwd)
-    if new_text == text:
-        new_text = text.replace(str(old_dir), str(new_dir))
-    if new_text != text:
-        timeline_path.write_text(new_text, encoding="utf-8")
+    candidates = (
+        (quote(old_fwd, safe="/:"), quote(new_fwd, safe="/:")),      # file:///G:/…/2026-06-20%2011-04-28_tracks
+        (old_fwd, new_fwd),                                          # 生の形式
+        (str(old_dir), str(new_dir)),                                # バックスラッシュ形式
+    )
+    for old, new in candidates:
+        if old in text:
+            timeline_path.write_text(text.replace(old, new), encoding="utf-8")
+            return True
+    return False
 
 
 def _reorder_fcpxml_tracks(timeline_path: Path, stem: str) -> bool:
@@ -452,8 +463,13 @@ def run_pipeline(
                     if dest.exists():
                         shutil.rmtree(dest, ignore_errors=True)
                     shutil.move(str(tracks_dir), str(dest))
-                    _rewrite_fcpxml_track_paths(result.timeline_path, tracks_dir, dest)
-                    on_log(tr("log_tracks_relocated", dest.name), "muted")
+                    if _rewrite_fcpxml_track_paths(result.timeline_path, tracks_dir, dest):
+                        on_log(tr("log_tracks_relocated", dest.name), "muted")
+                    else:
+                        # 参照を書き換えられなかった。移動してしまうと、タイムラインが音声を見失うので、元に戻す。
+                        shutil.move(str(dest), str(tracks_dir))
+                        tracks_keep_in_place = True
+                        on_log(tr("log_tracks_rewrite_failed"), "warn")
                 except Exception:
                     # 移動失敗時は参照を壊さぬよう元の場所に温存（タイムライン保護優先）
                     tracks_keep_in_place = True
