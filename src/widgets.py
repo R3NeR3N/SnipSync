@@ -394,6 +394,34 @@ class Legend(ctk.CTkFrame):
 
 # ── hover help ──────────────────────────────────────────────────────────────────────
 
+_NO_LINE_START = set("、。，．）」』】〕！？!?,.)]}：:；;ー")     # 行の先頭に来てはいけない文字
+
+
+def wrap_text(text: str, measure, max_px: int) -> str:
+    """幅 max_px に収まるよう改行する。日本語は文字の間で、英単語は途中で切らず、句読点・閉じ括弧は行頭に置かない。
+
+    measure(文字列) -> 幅(px)。Tk のラベル任せの折り返しは、空白でしか切れないため、日本語の文に
+    英単語（GPU など）が混じると、行が極端に短くなる。
+    """
+    import re
+    tokens = re.findall(r"[A-Za-z0-9_+./\-]+|\s+|.", text)
+    lines, cur = [], ""
+    for tok in tokens:
+        if tok == "\n":
+            lines.append(cur)
+            cur = ""
+            continue
+        if cur and measure(cur + tok) > max_px and tok[0] not in _NO_LINE_START and not tok.isspace():
+            lines.append(cur.rstrip())
+            cur = ""
+        if not cur and tok.isspace():
+            continue
+        cur += tok
+    if cur:
+        lines.append(cur.rstrip())
+    return "\n".join(lines)
+
+
 class Tooltip:
     """マウスを重ねて少し待つと出る簡易ヘルプ。
 
@@ -470,9 +498,11 @@ class Tooltip:
             Tooltip._active._hide()
         tip = tk.Toplevel(self.widget)
         tip.wm_overrideredirect(True)
+        tip.attributes("-topmost", True)          # 他の窓の裏に隠れない
         tip.configure(bg=T.EDGE)
-        tk.Label(tip, text=text, justify="left", wraplength=self.WRAP, bg=T.PANEL, fg=T.CHALK,
-                 font=T.font(ctk, "caption"), padx=T.S3, pady=T.S2, bd=0).pack(padx=1, pady=1)
+        font = T.font(ctk, "caption")
+        tk.Label(tip, text=wrap_text(text, font.measure, self.WRAP), justify="left", bg=T.PANEL, fg=T.CHALK,
+                 font=font, padx=T.S3, pady=T.S2, bd=0).pack(padx=1, pady=1)
         tip.update_idletasks()
         x, y = self.widget.winfo_pointerxy()
         x, y = x + 14, y + 20

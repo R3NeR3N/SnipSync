@@ -655,3 +655,17 @@ def test_open_gpu_parts_folder_opens_the_folder_or_the_nearest_existing_one(app,
     cudalibs.cuda_dir().mkdir()
     app._open_cuda_folder()
     assert opened[-1] == cudalibs.cuda_dir()
+
+
+def test_tooltip_wrapping_keeps_words_whole_and_punctuation_off_line_starts():
+    import widgets as W
+    def measure(s):
+        return sum(13 if ord(c) > 0x2E80 else 6 for c in s)
+    text = "取得した GPU 用の部品の置き場を開きます。消しても他のアプリには影響せず、GPU を使うときにまた取得します。"
+    out = W.wrap_text(text, measure, 260)
+    lines = out.split("\n")
+    assert len(lines) >= 2 and all(measure(ln) <= 260 + 13 for ln in lines)       # 句読点は、行末にはみ出して置いてよい（ぶら下がり）
+    assert "GPU" in " ".join(lines) and not any(ln.startswith(("。", "、")) for ln in lines)
+    assert not any(ln.endswith("GP") or ln.startswith("PU") for ln in lines)         # 英単語は途中で切らない
+    assert W.wrap_text("短い", measure, 260) == "短い"
+    assert W.wrap_text("a\nb", measure, 260) == "a\nb"
