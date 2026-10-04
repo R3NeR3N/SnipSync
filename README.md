@@ -214,7 +214,7 @@ While **Review before saving** is on (the default), processing pauses at the sub
 
 | File | What it is |
 |---|---|
-| `<name>.srt` | Subtitles, with speaker names and line wrapping applied |
+| `<name>.srt` | Subtitles, with speaker names (optional) and line wrapping applied |
 | `<name>.txt` | The whole transcript, only if you ticked *.txt transcript*. Times are included or not according to the *Include timestamps* switch in the window |
 | `<name>.md` | The whole transcript with headings, only if you ticked *.md transcript* |
 
@@ -223,6 +223,7 @@ While **Review before saving** is on (the default), processing pauses at the sub
 - Closing the window lets processing continue. After the last file, the main window log shows "Processing finished".
 - With **Review before saving** off, the subtitle files are written at ①. You can still reopen them later with **Review subtitles**, edit, and save again (the same files are overwritten).
 - Speaker-change markers (when the markers option is on) are added right after you save the subtitles, using the speakers and speaker names **as you edited them**. Cut-point markers are already in the timeline at ①. If you close without saving, no speaker-change markers are added. With **Review before saving** off, they come from the subtitles at ①.
+- Speaker names can be switched on or off with **Show speaker names** at the bottom of the window. Off removes `Speaker 1: ` from the saved, copied and previewed `.srt` / `.txt` / `.md` and keeps only the text. It starts on. It cannot be pressed when no cue has a speaker. It has no effect on speaker-change markers.
 
 #### 3. (Optional) Check what will be cut — Waveform Preview
 
