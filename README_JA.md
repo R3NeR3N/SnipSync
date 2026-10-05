@@ -1,7 +1,7 @@
 <div align="center">
 
 <h1>✂ SnipSync</h1>
-<p><strong>プロの動画クリエイター向け 無音自動カット＆字幕生成ツール</strong></p>
+<p><strong>無音カット、AI字幕、話者ごとの文字起こしを自動化する Windows アプリ。編集ソフトに取り込めるタイムラインも書き出します</strong></p>
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![CustomTkinter](https://img.shields.io/badge/GUI-CustomTkinter-6C63FF?style=for-the-badge)](https://github.com/TomSchimansky/CustomTkinter)

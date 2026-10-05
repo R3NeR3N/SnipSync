@@ -1,7 +1,7 @@
 <div align="center">
 
 <h1>✂ SnipSync</h1>
-<p><strong>전문 비디오 편집자를 위한 무음 자동 컷 편집 및 자막 생성 도구</strong></p>
+<p><strong>무음 컷, AI 자막, 화자별 문자 기록을 자동화하는 Windows 앱. 편집 소프트웨어로 바로 가져올 수 있는 타임라인도 내보냅니다</strong></p>
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![CustomTkinter](https://img.shields.io/badge/GUI-CustomTkinter-6C63FF?style=for-the-badge)](https://github.com/TomSchimansky/CustomTkinter)

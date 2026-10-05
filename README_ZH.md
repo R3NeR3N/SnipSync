@@ -1,7 +1,7 @@
 <div align="center">
 
 <h1>✂ SnipSync</h1>
-<p><strong>为专业视频剪辑师打造的静音自动剪辑与字幕生成工具</strong></p>
+<p><strong>自动完成静音剪切、AI 字幕和按说话人区分的文字稿的 Windows 应用，并导出可直接导入剪辑软件的时间线</strong></p>
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![CustomTkinter](https://img.shields.io/badge/GUI-CustomTkinter-6C63FF?style=for-the-badge)](https://github.com/TomSchimansky/CustomTkinter)

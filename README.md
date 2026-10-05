@@ -1,7 +1,7 @@
 <div align="center">
 
 <h1>✂ SnipSync</h1>
-<p><strong>Silent Auto-Cutter & Subtitle Generator for Professional Video Editors</strong></p>
+<p><strong>A Windows app that automates silence cutting, AI subtitles and speaker-labelled transcripts, and exports timelines you can import straight into your editor</strong></p>
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![CustomTkinter](https://img.shields.io/badge/GUI-CustomTkinter-6C63FF?style=for-the-badge)](https://github.com/TomSchimansky/CustomTkinter)
