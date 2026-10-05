@@ -1071,7 +1071,11 @@ class SnipSyncApp(_Base):
             out_dir = shared_out or inp.parent
             if run_name:                        # 1 回の処理（一括も）は、同じフォルダーへ。前の結果は、上書きしない
                 out_dir = out_dir / run_name
-                out_dir.mkdir(parents=True, exist_ok=True)
+                try:
+                    out_dir.mkdir(parents=True, exist_ok=True)
+                except OSError as exc:          # 書き込めない保存先など。処理スレッドを落として、画面を「処理中」のままにしない
+                    self._log(self.t("log_run_folder_failed", out_dir, exc), "error")
+                    continue
                 self._log(self.t("log_outdir", out_dir), "muted")
             stem = f"{inp.stem}_{idx}" if (shared_out and stems.count(inp.stem) > 1) else None
             self._log(self.t("log_batch_item", idx, total, inp.name) if total > 1 else self.t("log_input", inp.name),

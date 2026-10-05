@@ -796,10 +796,12 @@ def run_pipeline(
                     # Resolve は .fcpxml のマーカーを読み込まない。EDL に書き、読み込み方をログに出す。
                     result.marker_cuts = marks
                     edl = out_dir / f"{name}_markers.edl"
+                    # 件数が 0 でも、置き場は決めておく。カット点が無く、話者交代を字幕の保存後に足すだけのときも、
+                    # EDL に書く（決めないと、足す側が .fcpxml へ書いてしまい、Resolve が読まず、失われる）。
+                    result.marker_edl_path = edl
                     result.markers_added = write_marker_edl(edl, result.timeline_path,
                                                             resolve_marks(marks, speaker_marks), title=name)
                     if result.markers_added:
-                        result.marker_edl_path = edl
                         on_log(tr("log_markers_edl", result.markers_added, edl.name), "success")
                 else:
                     marks += speaker_marks

@@ -773,6 +773,18 @@ def test_speaker_names_can_be_hidden_from_the_output_and_the_switch_follows_the_
     assert str(ed.sp_switch.cget("state")) == "disabled"
 
 
+@pytest.fixture
+def restore_settings(app):
+    """app は、このファイルの全試験で共有される。設定を書き換える試験のあと、元に戻す。"""
+    saved = (app.output_dir, app.model_key, app.srt_var.get(), app.run_folder_var.get(), app.last_out_dir,
+             app.last_paths, app.stop_requested)
+    yield
+    app.output_dir, app.model_key = saved[0], saved[1]
+    app.srt_var.set(saved[2])
+    app.run_folder_var.set(saved[3])
+    app.last_out_dir, app.last_paths, app.stop_requested = saved[4:]
+
+
 def _run_worker(app, monkeypatch, tmp_path, *, run_folder, out_dir):
     import types
 
@@ -792,7 +804,7 @@ def _run_worker(app, monkeypatch, tmp_path, *, run_folder, out_dir):
     return seen, params
 
 
-def test_each_run_writes_into_its_own_dated_model_folder(app, monkeypatch, tmp_path):
+def test_each_run_writes_into_its_own_dated_model_folder(app, monkeypatch, tmp_path, restore_settings):
     import re
     out = tmp_path / "out"
     out.mkdir()
@@ -805,7 +817,8 @@ def test_each_run_writes_into_its_own_dated_model_folder(app, monkeypatch, tmp_p
     assert app.last_out_dir == seen[0]                              # 「出力フォルダを開く」は、そのフォルダーを開く
 
 
-def test_run_folder_off_writes_straight_into_the_save_folder_and_default_is_on(app, monkeypatch, tmp_path):
+def test_run_folder_off_writes_straight_into_the_save_folder_and_default_is_on(app, monkeypatch, tmp_path,
+                                                                                  restore_settings):
     assert app.run_folder_var.get() is True                          # 既定はオン
     out = tmp_path / "out"
     out.mkdir()
@@ -813,13 +826,13 @@ def test_run_folder_off_writes_straight_into_the_save_folder_and_default_is_on(a
     assert seen == [out.resolve()] and list(out.iterdir()) == []
 
 
-def test_run_folder_without_subtitles_is_the_date_only_and_follows_the_input_folder(app, monkeypatch, tmp_path):
+def test_run_folder_without_subtitles_is_the_date_only_and_follows_the_input_folder(app, monkeypatch, tmp_path,
+                                                                                    restore_settings):
     import re
     app.srt_var.set(False)
     seen, _ = _run_worker(app, monkeypatch, tmp_path, run_folder=True, out_dir=None)
     assert seen[0].parent == tmp_path.resolve()                      # 保存先が未設定なら、入力ファイルの隣
     assert re.fullmatch(r"\d{4}-\d\d-\d\d_\d{6}", seen[0].name)
-    app.srt_var.set(True)
 
 
 def test_run_folder_setting_is_saved_in_presets_and_restored(app):
@@ -859,3 +872,27 @@ def test_resolve_speaker_markers_are_skipped_when_the_subtitles_were_not_saved(a
                             speaker_markers_pending=True, marker_edl_path=edl, marker_cuts=[(3.0, "カット 1")])
     app._add_speaker_markers(result, {"saved": False, "info": {"saved_cues": None, "names": {}}})
     assert edl.read_bytes() == b"keep"                                      # 保存しなかったら、EDL は、そのまま
+
+
+def test_a_run_folder_that_cannot_be_created_is_reported_and_does_not_leave_the_app_busy(app, monkeypatch, tmp_path,
+                                                                                         restore_settings):
+    blocker = tmp_path / "blocker"
+    blocker.write_text("x")                                   # ファイルの下には、フォルダーを作れない
+    seen, _ = _run_worker(app, monkeypatch, tmp_path, run_folder=True, out_dir=blocker / "out")
+    assert seen == [] and app.running is False                # 処理は始まらず、画面は「処理中」のままにならない
+    pump(app, 10)                                             # ログは、画面のイベントを回すと、表示に反映される
+    assert "blocker" in app.console.get("1.0", "end")         # 何が起きたかが、ログに出る
+
+
+def test_resolve_speaker_markers_create_the_edl_when_there_were_no_cut_points(app, tmp_path):
+    from pipeline import PipelineResult
+    timeline = tmp_path / "talk_snipsynced.fcpxml"
+    timeline.write_text('<?xml version="1.0"?><fcpxml version="1.11"><resources><format id="r1" frameDuration="1/30s"/>'
+                        '</resources><library><event name="e"><project name="p"><sequence tcStart="0s" format="r1">'
+                        '<spine/></sequence></project></event></library></fcpxml>', encoding="utf-8")
+    edl = tmp_path / "talk_markers.edl"                       # カット点が 0 件: 処理の中では、まだ書かれていない
+    result = PipelineResult(ok=True, stopped=False, timeline_path=timeline, srt_path=None, speaker_markers_pending=True,
+                            marker_edl_path=edl, marker_cuts=[])
+    saved = [Cue(0.0, 2.0, "a", 0), Cue(2.0, 5.0, "b", 1)]
+    app._add_speaker_markers(result, {"saved": True, "info": {"saved_cues": saved, "names": {}}})
+    assert edl.exists() and edl.read_bytes().decode("utf-8").count("|D:1") == 2 == result.markers_added

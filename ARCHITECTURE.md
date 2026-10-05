@@ -28,7 +28,7 @@ SnipSync/
 │   ├── safexml.py          # XML を defusedxml で読む（DOCTYPE・エンティティを拒否）
 │   ├── diarize.py          # 話者分離（sherpa-onnx・モデル取得と SHA-256 検証）
 │   ├── models.py           # Whisper モデル登録（kotoba の alignment_heads 補正を含む）
-│   ├── markers.py          # FCPXML / xmeml へのマーカー挿入
+│   ├── markers.py          # マーカー（FCPXML / xmeml へ挿入。Resolve 向けは .edl に書く）
 │   ├── transcript.py       # .txt / .md 生成・SRT 読み込み
 │   ├── waveform.py         # 波形ピーク・カット統計（描画は widgets.CutMap）
 │   ├── theme.py            # デザイントークン（色・書体・角丸・間隔。理由は DESIGN.md）
@@ -100,15 +100,18 @@ SnipSync/
    │ 2b. faster-whisper（単語時刻つき）。モデルは model_cache で使い回し。用語辞書は hotwords
    │ 2b'. （任意）sherpa-onnx で話者分離（カット後音声＝タイムライン基準）
    │ 2d. 字幕整形: カット境界 ∪ 文境界 ∪ 話者交代で分割 → BudouX 文節改行 → SRT
+   │ 2e. 字幕の時刻補正: カット後音声の VAD（Silero）で、遅い開始・短い終わりを声の区間に合わせる（subtitles.refine_cue_times）
    ▼
 [成果物② .srt]（+ 任意で .txt / .md）
-   │ 4. （任意）カット点・話者交代のマーカーを FCPXML / xmeml へ追加
+   │ 4. （任意）カット点・話者交代のマーカー。Premiere / FCP は xmeml / FCPXML へ追加。
+   │    Resolve は .fcpxml のマーカーを読まないので、<名前>_markers.edl に書く（字幕の保存後に、話者交代を足して書き直す）
 ```
 
 ### 設計上の要点
 - **同期の肝**: タイムラインも字幕用音声もマーカーも**同じ chunks** から作る。以前は auto-editor を別々に3回走らせて margin / threshold を揃えていた（P-2）。
 - **チャンクの正準ソース**: auto-editor は v1 JSON を**入力**として受け取れる。直接実行と同じ出力になる（31.7.2 は全形式・複数トラック・29.97fps で完全一致を実測）。FCPXML のトラック順は `_reorder_fcpxml_tracks` で Resolve 向けに整列する。
 - **スレッド分離**: 処理は `threading.Thread(daemon=True)`。UI ログは `self.after(0, ...)`。
+- **出力先**: 既定で、保存先の中に、1 回の処理ごとの `日時_モデル名` フォルダーを作る（`app._worker` が作り、pipeline には、そのフォルダーを `out_dir` として渡す）。`.fcpxml` が音声（`_tracks`）を絶対パスで参照するため、処理後に出力を移すと参照が切れる。それを避けるための決めごと。
 - **停止**: `Popen` + `taskkill /F /T` で即時 kill。バッチは次のファイルへ進まない。
 
 ---

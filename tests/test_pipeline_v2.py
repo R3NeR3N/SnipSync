@@ -577,3 +577,15 @@ def test_non_resolve_exports_keep_markers_inside_the_timeline_and_write_no_edl(d
     monkeypatch.setattr(pl, "probe_fps", lambda p: 10.0)
     res, _ = run(dirs, monkeypatch, base_params(export_key="premiere", markers=True), rec)
     assert res.markers_added == 1 and res.marker_edl_path is None and not list(out.glob("*.edl"))
+
+
+def test_resolve_edl_path_is_known_even_without_cut_points_so_speaker_markers_can_still_be_written(dirs, monkeypatch):
+    """カット点が 0 件でも、EDL の置き場は決めておく（話者交代を、字幕の保存後に足すとき、.fcpxml へ流れて失われないため）。"""
+    _, out = dirs
+    _setup_two_speakers(monkeypatch)
+    rec = Recorder(v1_chunks=[[0, 90, 1.0]], fcpxml=True)
+    params = base_params(export_key="resolve", do_srt=True, snap_srt=False, diarize=True, markers=True,
+                         hold_subtitles=True)
+    res, _ = run(dirs, monkeypatch, params, rec, transcribe=_transcribe_two_speakers)
+    assert res.ok and res.speaker_markers_pending
+    assert res.marker_edl_path == out / "input_markers.edl" and res.marker_cuts == [] and res.markers_added == 0
