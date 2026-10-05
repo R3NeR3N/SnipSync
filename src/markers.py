@@ -12,7 +12,8 @@
   EDL で取り込む（メディアプールでタイムラインを右クリック → Timelines → Import → Timeline Markers from EDL）。
   書式は、Resolve 自身が書き出すマーカー EDL（イベント行 + `|C:色 |M:名前 |D:長さ` の行）に合わせる。
 
-Premiere / Final Cut Pro への取り込みと、Resolve での EDL 取り込みは、この環境では未検証。既定OFFのオプションとして提供する。
+Resolve 21（日本語表示）での EDL 取り込みは、実機で確認済み（2026-10-05: 18 件が、名前つきでマーカー一覧に出た）。
+Premiere / Final Cut Pro への取り込みは、この環境では未検証。既定OFFのオプションとして提供する。
 
 XML は標準ライブラリで読む。対象は SnipSync 自身が auto-editor で直前に生成したローカル
 ファイルだけで、外部から受け取った XML は扱わない（XXE 等の攻撃経路が無い）。

@@ -73,7 +73,7 @@
 | 🧩 **批量与音频文件** | 支持多个文件／文件夹；支持纯音频输入和导出剪切后的媒体 |
 | 🈶 **易读字幕** | 日语按词组换行（BudouX）、术语表、可选说话人分离 |
 | 📄 **字幕全文导出** | 可预览并保存为 `.txt` / `.md` / `.srt` |
-| 📍 **时间线标记** | 可选添加剪切点／说话人切换标记（尚未在真实 NLE 中验证） |
+| 📍 **时间线标记** | 可选添加剪切点／说话人切换标记（已在 DaVinci Resolve 21 中确认；Premiere Pro、Final Cut Pro 尚未验证） |
 
 ### 支持的导出格式
 
@@ -295,7 +295,7 @@ flowchart LR
 
 - **4K 媒体导出**：内置的 auto-editor（无许可证密钥）会把渲染结果缩小到 3200×1800 以内。开始前 SnipSync 会给出警告。**时间线导出不受影响**，需要原分辨率时请使用时间线导出。
 - **仅音频的剪切媒体**以 `.wav` / `.flac` / `.ogg` / `.opus` 输出。`.mp3` / `.m4a` / `.aac` / `.wma` 因内置 auto-editor 没有对应编码器，会输出为 `.wav`。
-- **标记**属于实验性功能，尚未在所有剪辑软件中验证导入效果。**DaVinci Resolve 不会读取 `.fcpxml` 中的标记**，因此面向 Resolve 的标记会写入单独的文件 `<名称>_markers.edl`（蓝色 = 剪切点，黄色 = 说话人切换）。请在媒体池中右键单击想要加标记的时间线的**图标**，选择 **Timelines > Import > Timeline Markers from EDL**，再选择该文件。不要使用在空白处右键单击后出现的“时间线 > 导入 > AAF / EDL / XML…”：它会把 EDL 当作由单帧片段组成的另一条时间线导入。EDL 中的时间已对齐时间线的起始时间码。Premiere Pro 和 Final Cut Pro 的标记则写在时间线文件内部。
+- **标记**属于实验性功能，已确认可导入 DaVinci Resolve 21，但尚未在 Premiere Pro 和 Final Cut Pro 中验证。**DaVinci Resolve 不会读取 `.fcpxml` 中的标记**，因此面向 Resolve 的标记会写入单独的文件 `<名称>_markers.edl`（蓝色 = 剪切点，黄色 = 说话人切换）。请在媒体池中右键单击想要加标记的时间线的**图标**，选择 **Timelines > Import > Timeline Markers from EDL**，再选择该文件。不要使用在空白处右键单击后出现的“时间线 > 导入 > AAF / EDL / XML…”：它会把 EDL 当作由单帧片段组成的另一条时间线导入。EDL 中的时间已对齐时间线的起始时间码。Premiere Pro 和 Final Cut Pro 的标记则写在时间线文件内部。
 - **剪切结果与 SnipSync 0.1.0 不同**：新版 auto-editor 还会去除过短的剪切和片段（`--smooth`），因此剪切数量更少、单段更长。
 - 字幕从第一个说出的词开始，所以每条字幕会比片段开头稍晚开始。这是正常的（余量部分保持静音）。
 

@@ -73,7 +73,7 @@ No Python installation required. SnipSync ships as a single `.exe` file.
 | 🧩 **Batch & Audio Files** | Drop several files or a folder; audio-only inputs and cut-media export supported |
 | 🈶 **Readable Subtitles** | Japanese phrase-aware line breaks (BudouX), glossary hints, optional speaker separation |
 | 📄 **Transcript Export** | Preview and save the whole transcript as `.txt` / `.md` / `.srt` |
-| 📍 **Timeline Markers** | Optional cut-point / speaker-change markers (not yet verified in a real NLE) |
+| 📍 **Timeline Markers** | Optional cut-point / speaker-change markers (confirmed in DaVinci Resolve 21; not yet verified in Premiere Pro or Final Cut Pro) |
 
 ### Supported Export Formats
 
@@ -295,7 +295,7 @@ Menu names can differ slightly between versions.
 
 - **Cut media export at 4K**: the bundled auto-editor (no license key) scales rendered output down to 3200×1800 or less. SnipSync warns you before it starts. **Timeline exports are not affected** — use them for full-resolution work.
 - **Audio-only cut media** is written as `.wav` / `.flac` / `.ogg` / `.opus`. `.mp3`, `.m4a`, `.aac` and `.wma` are written as `.wav` because the bundled auto-editor has no encoder for them.
-- **Markers** are experimental: they have not yet been verified by importing into every editor. **DaVinci Resolve does not read markers from `.fcpxml`**, so for Resolve they are written to a separate `<name>_markers.edl` (blue = cut point, yellow = speaker change). In the Media Pool, right-click the **icon of the timeline** you want to mark, choose **Timelines > Import > Timeline Markers from EDL**, then pick that file. Do not use the menu that opens when you right-click an empty area (Timeline > Import > AAF / EDL / XML…): it loads the EDL as a separate timeline of one-frame clips. The EDL's times follow the timeline's start timecode. For Premiere Pro and Final Cut Pro, the markers go inside the timeline file.
+- **Markers** are experimental: they are confirmed to import into DaVinci Resolve 21, but not yet verified in Premiere Pro or Final Cut Pro. **DaVinci Resolve does not read markers from `.fcpxml`**, so for Resolve they are written to a separate `<name>_markers.edl` (blue = cut point, yellow = speaker change). In the Media Pool, right-click the **icon of the timeline** you want to mark, choose **Timelines > Import > Timeline Markers from EDL**, then pick that file. Do not use the menu that opens when you right-click an empty area (Timeline > Import > AAF / EDL / XML…): it loads the EDL as a separate timeline of one-frame clips. The EDL's times follow the timeline's start timecode. For Premiere Pro and Final Cut Pro, the markers go inside the timeline file.
 - **Cuts differ from SnipSync 0.1.0**: the newer auto-editor also removes cuts and clips that are too short (`--smooth`), so you will see fewer, longer cuts.
 - Subtitles start at the first spoken word, so each subtitle begins a little after the start of its clip. This is expected (the margin is kept silent).
 
