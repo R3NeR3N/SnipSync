@@ -406,7 +406,7 @@ def build_cut_aligned_cues(words, natural_segments, boundaries, *,
 
 def refine_cue_times(cues, speech, boundaries=(), total=None, *, onset_slack: float = 0.15,
                      extend_slack: float = 0.15, shrink_slack: float = 0.3, gap_join: float = 0.25,
-                     tail_max: float = 0.4, min_dur: float = 0.3):
+                     clipped_gap_join: float = 0.6, tail_max: float = 0.4, min_dur: float = 0.3):
     """Whisper が付けた字幕の時刻を、実際に声がある区間（VAD）に合わせて補正した Cue 列を返す。
 
     なぜ必要か（実測）: Whisper の語の開始時刻は、直前の字幕が終わった時刻に張り付きやすく、間に無音があると、
@@ -422,6 +422,8 @@ def refine_cue_times(cues, speech, boundaries=(), total=None, *, onset_slack: fl
     - 延ばす範囲は、次の字幕の（補正後の）開始まで。最後の字幕は total まで。
       声の途切れが gap_join 秒以内なら、続いているとみなす。それより長い無音をこえては、延ばさない
       （Whisper が文字にしなかった声まで、字幕に取り込まないため）。
+      ただし、終了がカット点にぴったり重なる字幕（カット点で切られた字幕）は、途切れの上限を clipped_gap_join 秒に広げる。
+      kotoba のように、語の時刻が粗いモデルは、間をはさんだ「今から」の「から」を、カット点の手前に置くため。
     - 声が重ならない字幕、補正で長さが min_dur 未満になる字幕は、そのままにする。
     speech は [(開始秒, 終了秒)]、boundaries はカット点の秒、total はカット後の音声の長さ（秒）。
     """
@@ -457,10 +459,11 @@ def refine_cue_times(cues, speech, boundaries=(), total=None, *, onset_slack: fl
         nxt = starts[i + 1] if i + 1 < len(cues) else total
         limit = nxt if nxt is not None else max(e, ranges[-1][1])
         off = rs[-1][1]
+        join = clipped_gap_join if at_cut(e) else gap_join
         for r in ranges:                                   # 声が、この字幕のあとへ続くなら、たどる
             if r[0] >= limit:
                 break
-            if r[1] > off and r[0] <= off + gap_join:
+            if r[1] > off and r[0] <= off + join:
                 off = min(r[1], limit)
         if off - e > extend_slack:
             ne = min(off, limit)

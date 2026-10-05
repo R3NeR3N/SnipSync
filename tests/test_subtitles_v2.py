@@ -273,3 +273,28 @@ def test_refine_does_not_change_the_input():
     cues = [C(39.72, 40.883)]
     refine_cue_times(cues, [(40.35, 41.8)], boundaries=[40.883], total=41.95)
     assert times(cues) == [(39.72, 40.883)]
+
+
+# ── kotoba: カット点で切られた字幕の、間をはさんだ後半（「今」と「から」の間が 0.5 秒）─────────────────
+KOTOBA_SPEECH = [(42.17, 43.27), (43.64, 43.97), (44.48, 45.37)]          # 実測（VAD）。「今」と「から」の間に 0.5 秒の無音
+KOTOBA_CUTS = [42.083, 44.15, 44.3, 45.367]
+
+
+def test_refine_extends_a_cue_clipped_at_a_cut_over_a_longer_pause():
+    """kotoba は「今から」を 43.46〜44.96 で返し、字幕は、カット点 44.15 で切れる。後半の「から」は 44.48 から。"""
+    cues = [C(43.46, 44.15, "今から"), C(45.0, 45.34, "ごめん")]
+    out = refine_cue_times(cues, KOTOBA_SPEECH, boundaries=KOTOBA_CUTS, total=45.37)
+    assert times(out)[0] == (43.64, 45.0)             # 声の始まりへ、終わりは、次の字幕の開始まで（「から」を含める）
+    assert out[1].start == 45.0                       # 次の字幕には、食い込まない
+
+
+def test_refine_keeps_the_shorter_join_when_the_cue_end_is_not_on_a_cut():
+    cues = [C(43.46, 44.15, "今から")]
+    out = refine_cue_times(cues, KOTOBA_SPEECH, boundaries=[44.0], total=45.37)   # 44.15 は、カット点ではない
+    assert times(out)[0][1] == 44.15                  # 0.5 秒の無音は、別の発話とみなす（従来どおり）
+
+
+def test_refine_never_extends_a_clipped_cue_into_the_next_cue():
+    cues = [C(43.46, 44.15, "今から"), C(44.5, 45.3, "次の文")]
+    out = refine_cue_times(cues, KOTOBA_SPEECH, boundaries=KOTOBA_CUTS, total=45.37)
+    assert out[0].end <= out[1].start and out[1].start == 44.5

@@ -8,6 +8,7 @@ Flag names follow auto-editor 31.x (``--when-inactive``). 29.x spelled it ``--wh
 and could only take one ``--cut-out`` range. The pinned version lives in ``aebin.AE_VERSION``;
 re-check every flag against that version's ``--help`` when bumping it.
 """
+import sys
 from fractions import Fraction
 from pathlib import Path
 
@@ -26,6 +27,11 @@ EXPORT_MEDIA = "media"
 AUDIO_ONLY_TIMEBASE = 30
 # v1 JSON の chunk で「カット」を表す速度値（auto-editor 仕様）
 CUT_SPEED = 99999.0
+
+# Windows: 窓のないアプリ（EXE）が、コンソールのプログラム（auto-editor・ffprobe・taskkill）を起動すると、黒い窓が一瞬開く。
+# それを出さない起動の指定。外部プログラムを起動するときは、必ず付ける。
+CREATE_NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
+
 
 
 def is_audio_only(path) -> bool:
@@ -140,6 +146,7 @@ def _probe_fps_ffprobe(path):
              "-of", "default=noprint_wrappers=1:nokey=1",
              str(Path(path).resolve())],
             capture_output=True, text=True, encoding="utf-8", errors="replace",
+            creationflags=CREATE_NO_WINDOW,
         )
         out = (result.stdout or "").strip()
         if not out:

@@ -589,3 +589,41 @@ def test_resolve_edl_path_is_known_even_without_cut_points_so_speaker_markers_ca
     res, _ = run(dirs, monkeypatch, params, rec, transcribe=_transcribe_two_speakers)
     assert res.ok and res.speaker_markers_pending
     assert res.marker_edl_path == out / "input_markers.edl" and res.marker_cuts == [] and res.markers_added == 0
+
+
+# ── 窓のないアプリから外部プログラムを起動しても、黒い窓を出さない ──────────────────────────────
+@pytest.mark.skipif(sys.platform != "win32", reason="CREATE_NO_WINDOW は Windows の指定")
+def test_every_external_program_is_started_without_a_console_window(monkeypatch, tmp_path):
+    from snipsync.core import autoeditor, preview
+
+    seen = {}
+
+    class FakeProc:
+        pid, stdout = 1234, iter(())
+
+        def poll(self):
+            return None
+
+        def wait(self, timeout=None):
+            return 0
+
+        def kill(self):
+            pass
+
+    def fake_popen(cmd, **kw):
+        seen["popen"] = kw
+        return FakeProc()
+
+    def fake_run(cmd, **kw):
+        seen[cmd[0]] = kw
+        return subprocess.CompletedProcess(cmd, 0, stdout="30/1\n", stderr="")
+
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    pl._run_streaming(["auto-editor.exe"], on_log=lambda *a: None, should_stop=lambda: False)
+    pl._kill_tree(FakeProc())                                   # 停止のときの taskkill
+    autoeditor._probe_fps_ffprobe(tmp_path / "a.mp4")           # ffprobe
+    for key in ("popen", "taskkill", "ffprobe"):
+        assert seen[key]["creationflags"] & autoeditor.CREATE_NO_WINDOW, key
+    assert autoeditor.CREATE_NO_WINDOW == 0x08000000
+    assert preview.CREATE_NO_WINDOW is autoeditor.CREATE_NO_WINDOW or preview.CREATE_NO_WINDOW == 0x08000000

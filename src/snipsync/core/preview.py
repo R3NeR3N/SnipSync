@@ -6,13 +6,13 @@
 from __future__ import annotations
 
 import subprocess
-import sys
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from snipsync.core.autoeditor import (
     AUDIO_ONLY_TIMEBASE,
+    CREATE_NO_WINDOW,
     build_v1_export_cmd,
     is_audio_only,
     probe_fps,
@@ -72,7 +72,7 @@ def compute_preview(path, cfg: CutSettings, ae_path, cache: dict | None = None) 
             cmd = build_v1_export_cmd(ae_path, path, cfg.margin, cfg.threshold, out_json, fps,
                                       silent_speed=cfg.silent_speed)
             subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                           creationflags=0x08000000 if sys.platform == "win32" else 0)
+                           creationflags=CREATE_NO_WINDOW)
             chunks = read_v1_chunks(out_json)
     if not chunks:
         raise PreviewError("no cut data")

@@ -13,6 +13,7 @@ from snipsync.core.autoeditor import (
     AUDIO_EXTS,
     AUDIO_ONLY_TIMEBASE,
     AUDIO_RENDER_EXTS,
+    CREATE_NO_WINDOW,
     EXPORT_MEDIA,
     build_cut_cmd,
     build_cut_cmd_from_chunks,
@@ -70,7 +71,7 @@ def _kill_tree(proc):
         return
     if sys.platform == "win32":
         subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)],
-                       capture_output=True)
+                       capture_output=True, creationflags=CREATE_NO_WINDOW)
     else:
         proc.terminate()
     try:
@@ -90,7 +91,7 @@ def _run_streaming(cmd, *, on_log, should_stop) -> tuple[int, bool]:
         text=True,
         encoding="utf-8",
         errors="replace",
-        creationflags=CREATE_NEW_PROCESS_GROUP
+        creationflags=CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW,
     )
 
     stopped = False
