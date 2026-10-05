@@ -429,7 +429,7 @@ class SnipSyncApp(_Base):
             col = ctk.CTkFrame(p, fg_color="transparent")
             row = ctk.CTkFrame(col, fg_color="transparent")
             row.pack(anchor="w")
-            self.folder_lbl = W.label(row, "", "mono_small", T.DUST, anchor="w", width=300)
+            self.folder_lbl = W.label(row, "", "literal", T.DUST, anchor="w", width=300)
             self.folder_lbl.pack(side="left")
             self.btn_change = self.reg(W.Btn(row, "", self._browse_outdir, height=30), "btn_change")
             self.btn_change.pack(side="left", padx=(T.S2, 0))
@@ -490,7 +490,7 @@ class SnipSyncApp(_Base):
         self.btn_log_clear = self.reg(W.Btn(head, "", self._clear_log, kind="ghost", height=26), "btn_log_clear")
         self.btn_log_clear.grid(row=0, column=3)
         self.console = ctk.CTkTextbox(box, height=120, corner_radius=T.R_PANEL, fg_color=T.WELL, text_color=T.CHALK,
-                                      font=T.font(ctk, "mono_small"), wrap="word", state="disabled", border_width=0,
+                                      font=T.font(ctk, "literal"), wrap="word", state="disabled", border_width=0,
                                       scrollbar_button_color=T.EDGE, scrollbar_button_hover_color=T.RAISED)
         self.console.grid(row=1, column=0, sticky="nsew", pady=(T.S1, 0))
         tb = self.console._textbox

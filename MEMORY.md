@@ -15,6 +15,12 @@
 
 ---
 
+## 2026-10-05 11:30 — ログ欄と保存先の書体だけ Consolas にする（実装・検証: Claude Sonnet 5.5 / オーナーの依頼）
+- 決定: 書体の役割 `literal`（Consolas、無ければ Cascadia Mono、さらに無ければ BIZ UD ゴシック）を足し、ログ欄（`console`）と保存先（`folder_lbl`）にだけ使う。時刻・字幕の表・速度入力は BIZ UD ゴシックのまま。
+- 理由: BIZ UD の下線は行の高さの外に出て、Tk に切り取られる。ファイル名は下線だらけで、読み違えると実害がある。アプリ自身のウィンドウだけを撮って、修正前は空白に見え、修正後は下線が出ることを確認した。
+- 影響/トレードオフ: ログの日本語は、Consolas に字形が無いので Tk が別の書体で描く（BIZ UD の読み間違えにくさは、この 2 か所では失われる）。入力ファイル名のラベルは比例幅の BIZ UDPゴシックで、下線は出ていたので変えない。
+- 関連: `src/theme.py`、`src/app.py`、DESIGN.md §4、PITFALLS 2026-10-05
+
 ## 2026-10-03 22:00 — auto-editor 31.7.2 への移行・セキュリティ検証・バージョン表記を 0.2.0 へ（実装・検証: Claude Sonnet 5.5 / オーナーの依頼）
 - 決定:
   1. **auto-editor を 29.3.1 → 31.7.2 へ移行**。PyPI は 29.3.1 で止まっているため pip 依存をやめ、公式リリースの固定版を取得して使う（`src/aebin.py`、SHA-256 を GitHub API の digest と実測で照合。配布 EXE は `scripts/fetch_auto_editor.py` で同梱）。理由: 30.2.2 / 31.1.2 に NLE 出力の重要な修正（FCPXML の開始タイムコードずれ・Final Cut Pro が拒否する audioLayout・Premiere XML の重複 clipitem と参照切れ・モノラル・NTSC 1000/1001・ドロップフレーム）、モノラル破損も修正済み。

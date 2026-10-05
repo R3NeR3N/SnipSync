@@ -50,12 +50,16 @@ SIZE_MONO = 13
 # system and "BIZ UDPGothic" on an English one), so look for every spelling.
 _UI_NAMES = ("BIZ UDPGothic", "BIZ UDPゴシック")
 _MONO_NAMES = ("BIZ UDGothic", "BIZ UDゴシック")
+# BIZ UD の下線「_」は行の高さの外に描かれ、Tk の Text や Label で切れて空白に見える。ファイル名・保存先・ログは
+# 下線が命なので、その表示だけ、OS 標準で下線が出る等幅体にする（日本語は Tk が別の書体で補う）。
+_LITERAL_NAMES = ("Consolas", "Cascadia Mono")
 _FALLBACK_UI = "Segoe UI"
 _FALLBACK_MONO = "Consolas"
 _FONT_FILES = ("BIZUDPGothic-Regular.ttf", "BIZUDPGothic-Bold.ttf", "BIZUDGothic-Regular.ttf")
 
 UI_FAMILY = _FALLBACK_UI
 MONO_FAMILY = _FALLBACK_MONO
+LITERAL_FAMILY = _FALLBACK_MONO
 _cache: dict = {}
 
 
@@ -89,7 +93,7 @@ def load_fonts(ctk, root) -> None:
 
     Call once, after the Tk root exists. Safe to call again. If anything fails the OS fonts are used.
     """
-    global UI_FAMILY, MONO_FAMILY
+    global UI_FAMILY, MONO_FAMILY, LITERAL_FAMILY
     if sys.platform == "win32":
         for name in _FONT_FILES:
             f = asset_path(f"assets/fonts/{name}")
@@ -105,6 +109,7 @@ def load_fonts(ctk, root) -> None:
         families = set()
     UI_FAMILY = next((n for n in _UI_NAMES if n in families), _FALLBACK_UI)
     MONO_FAMILY = next((n for n in _MONO_NAMES if n in families), _FALLBACK_MONO)
+    LITERAL_FAMILY = next((n for n in _LITERAL_NAMES if n in families), MONO_FAMILY)
     _cache.clear()
 
 
@@ -120,6 +125,7 @@ def font(ctk, role: str):
             "mono": (MONO_FAMILY, SIZE_MONO, "normal"),
             "mono_small": (MONO_FAMILY, SIZE_CAPTION, "normal"),
             "mono_large": (MONO_FAMILY, SIZE_TITLE + 3, "normal"),
+            "literal": (LITERAL_FAMILY, SIZE_CAPTION, "normal"),
         }[role]
         _cache[role] = ctk.CTkFont(family=spec[0], size=spec[1], weight=spec[2])
     return _cache[role]

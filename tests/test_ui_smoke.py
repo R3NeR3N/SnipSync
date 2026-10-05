@@ -75,6 +75,14 @@ def test_main_window_builds_and_switches_tabs_and_language(app):
     pump(app)
 
 
+def test_log_and_save_folder_use_the_font_that_draws_underscores(app):
+    import theme as T
+    pump(app)
+    assert app.console.cget("font").cget("family") == T.LITERAL_FAMILY
+    assert app.folder_lbl.cget("font").cget("family") == T.LITERAL_FAMILY
+    assert "BIZ" not in T.LITERAL_FAMILY
+
+
 def test_editing_a_cue_in_the_review_window_marks_it_changed_but_not_the_others(app):
     app.last_cues, app.last_title = list(CUES), "demo"
     app._open_editor()

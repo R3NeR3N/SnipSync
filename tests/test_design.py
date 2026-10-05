@@ -100,6 +100,14 @@ def test_font_roles_are_defined_and_use_the_resolved_families():
     assert "BIZ" in " ".join(T._UI_NAMES + T._MONO_NAMES)
 
 
+def test_text_with_underscores_is_not_set_in_biz_ud():
+    """BIZ UD は下線「_」が行の高さの外に出て、Tk に切り取られる（ファイル名が空白に見える）。DESIGN.md §4。"""
+    assert not any("BIZ" in n for n in T._LITERAL_NAMES)
+    src = (SRC / "app.py").read_text(encoding="utf-8")
+    assert re.search(r'self\.folder_lbl = W\.label\(row, "", "literal"', src)
+    assert re.search(r'self\.console = ctk\.CTkTextbox\([^)]*font=T\.font\(ctk, "literal"\)', src, re.S)
+
+
 # ── 文言 ─────────────────────────────────────────────────────────────────────────────
 def width(text: str) -> int:
     return sum(2 if unicodedata.east_asian_width(c) in ("W", "F") else 1 for c in text)
