@@ -183,20 +183,27 @@ flowchart LR
 
 | # | Where | What it is |
 |:-:|---|---|
-| ① | Drop zone | Drop one or more video/audio files (or a whole folder) here, or click to browse |
-| ② | Cut settings | **Silence Margin**, **Volume Threshold**, **Cut Method** (volume or voice detection) and **Silence** (cut it out, or speed it up) |
-| ③ | Export Format | DaVinci Resolve / Premiere Pro / Final Cut Pro, or *Cut media* (a rendered video/audio file) |
-| ④ | Subtitles | Turn subtitles on and pick the AI model. `large-v3-turbo` is recommended |
-| ⑤ | Subtitle details and extras | Split at cut boundaries, line length, **speaker separation**, `.txt` / `.md` export, timeline markers, glossary, output folder |
-| ⑥ | **▶ Start Processing** | Runs everything. **■ Stop** cancels |
-| ⑦ | Waveform Preview | See what will be cut *before* you process |
-| ⑧ | Subtitle Preview | Read, copy and save the whole transcript |
+| ① | Choose files / Clear | You can also drop video or audio files (several, or a whole folder) onto the waveform. **Choose files…** opens a file picker |
+| ② | Waveform | See what will be cut *before* you process. **Red** is removed, **blue** is sped up, grey is kept. Click the waveform to move the playhead there |
+| ③ | Playback | Previous cut / Play / Next cut, and playback speed (0.5× to 4×). Listen to the result before processing |
+| ④ | Length and reduction | Length before → after, percent shorter, number of cuts. After changing a setting, press **Preview again** |
+| ⑤ | Setting tabs | **Cut** (method, threshold, padding, silence), **Subtitles** (AI model, speakers, …), **Export** (format, save folder, …) |
+| ⑥ | Preset | Save a whole set of settings and recall it later |
+| ⑦ | **Start processing** | Runs everything. **Stop** cancels |
+| ⑧ | Open output folder / Review subtitles | Available once processing has finished |
+| ⑨ | Log | Shows the progress |
+
+The Subtitles and Export tabs look like this.
+
+<p align="center"><img src="docs/images/tab_subs_en.png" width="640" alt="The Subtitles tab"></p>
+
+<p align="center"><img src="docs/images/tab_export_en.png" width="640" alt="The Export tab"></p>
 
 #### 2. Press Start and watch the log
 
 <p align="center"><img src="docs/images/result_en.png" width="640" alt="SnipSync main window after processing, showing the log"></p>
 
-The **Log** at the bottom shows each step: cutting, speech recognition (with the recognised text), speaker separation, and the files written. When it finishes, SnipSync offers to open the output folder.
+The **Log** at the bottom shows each step: cutting, speech recognition (with the recognised text), speaker separation, and the files written. When it finishes, **Open output folder** opens the place where the files were written.
 
 Outputs are written next to each input file (or to the folder you choose). With **Make a dated folder for each run** on (the default), they go into a `date_model` folder inside it (for example `2026-10-04_190357_large-v3`). Files appear at two moments.
 
@@ -225,27 +232,36 @@ While **Review before saving** is on (the default), processing pauses at the sub
 - Speaker-change markers (when the markers option is on) are added right after you save the subtitles, using the speakers and speaker names **as you edited them**. Cut-point markers are already in the timeline at ①. If you close without saving, no speaker-change markers are added. With **Review before saving** off, they come from the subtitles at ①. For Resolve, this rewrites `_markers.edl` instead (see the Markers note below).
 - Speaker names can be switched on or off with **Show speaker names** at the bottom of the window. Off removes `Speaker 1: ` from the saved, copied and previewed `.srt` / `.txt` / `.md` and keeps only the text. It starts on. It cannot be pressed when no cue has a speaker. It has no effect on speaker-change markers.
 
-#### 3. (Optional) Check what will be cut — Waveform Preview
+#### 3. (Optional) Check what will be cut — the waveform
 
-<p align="center"><img src="docs/images/waveform_en.png" width="760" alt="Waveform preview with removed parts in red"></p>
+<p align="center"><img src="docs/images/waveform_en.png" width="760" alt="Waveform with the parts to be cut colour-coded"></p>
 
 | # | What it shows |
 |:-:|---|
-| ① | Length before → after, the saving, and the number of cuts |
-| ② | **Red** = removed, **orange** = sped up. Everything else is kept |
-| ③ | **Recalculate** after you change the margin, threshold or cut method |
+| ① | Length before → after, percent shorter, number of cuts |
+| ② | Colour key: kept / removed / sped up |
+| ③ | **Preview again** — press it after changing the cut settings to recalculate |
+| ④ | Playback, jumping to the previous or next cut, and playback speed |
+| ⑤ | The bar above the waveform: **red** = removed, **blue** = sped up, grey = kept |
 
-#### 4. (Optional) Read the whole transcript — Subtitle Preview
+#### 4. (Optional) Read and fix the subtitles — the review window
 
-<p align="center"><img src="docs/images/text_en.png" width="640" alt="Subtitle preview window showing the transcript with speaker labels"></p>
+<p align="center"><img src="docs/images/editor_en.png" width="640" alt="Subtitle review window with numbered callouts"></p>
 
-| # | What it does |
+| # | What you can do |
 |:-:|---|
-| ① | Switch between `.txt`, `.md` and `.srt` views |
-| ② | Include or hide the timestamps |
-| ③ | **Copy** the text to the clipboard |
-| ④ | **Save…** it as a file |
-| ⑤ | **Open SRT…** — load any existing `.srt` to read it or convert it to `.txt` / `.md` |
+| ① | The subtitle list. Select a row to edit it below. Select several rows with Shift or Ctrl to change them together. Rows you changed are marked |
+| ② | Undo / Redo. Every edit can be undone |
+| ③ | Switch the view: edit, or preview exactly what `.txt` / `.md` / `.srt` will contain |
+| ④ | Edit the text of the selected subtitle |
+| ⑤ | Change the speaker (for all selected rows at once) and type a speaker name such as "Yamada" |
+| ⑥ | Split at the cursor, merge with the next subtitle, restore the original, delete |
+| ⑦ | **Include timestamps** (`.txt` / `.md`) and **Show speaker names**. They change what is saved and copied |
+| ⑧ | **Save**. **Save as…**, **Copy** and **Open SRT…** are next to it |
+
+<p align="center"><img src="docs/images/editor_en.gif" width="640" alt="Using the review window: select several rows, change their speaker at once, name the speaker, check the .srt preview, and turn off speaker names"></p>
+
+The animation selects several rows, changes their speaker at once, names the speaker, checks the `.srt` preview, and turns **Show speaker names** off.
 
 #### 5. Import the results into your editor
 

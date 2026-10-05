@@ -183,20 +183,27 @@ flowchart LR
 
 | # | 位置 | 说明 |
 |:-:|---|---|
-| ① | 投放区 | 将一个或多个视频/音频文件（或整个文件夹）拖到这里，也可点击选择 |
-| ② | 剪切设置 | **静音余量**（Silence Margin）、**音量阈值**（Volume Threshold）、**剪切方式**（Cut Method：音量/语音检测）、**静音处理**（Silence：剪掉/加速） |
-| ③ | 导出格式（Export Format） | DaVinci Resolve / Premiere Pro / Final Cut Pro，或 *Cut media*（已渲染的视频/音频） |
-| ④ | 字幕（Subtitles） | 开关字幕并选择 AI 模型。追求精度推荐 `large-v3-turbo` |
-| ⑤ | 字幕细节与选项 | 按剪切点拆分、每行字数、**说话人分离**（Separate speakers）、`.txt` / `.md` 导出、标记、术语表、输出文件夹 |
-| ⑥ | **▶ Start Processing** | 执行全部处理。**■ Stop** 可中断 |
-| ⑦ | Waveform Preview（波形预览） | 处理*之前*先看哪些部分会被剪掉 |
-| ⑧ | Subtitle Preview（字幕预览） | 阅读、复制、保存完整文字稿 |
+| ① | 选择文件（Choose files）/ 清除（Clear） | 也可以把视频/音频文件（多个或整个文件夹）拖到波形上。**Choose files…** 用来选择文件 |
+| ② | 波形 | 处理*之前*就能看到哪些部分会被剪掉。**红色**为删除，**蓝色**为加速，灰色为保留。点击波形可把播放位置移到那里 |
+| ③ | 播放 | Previous cut / Play / Next cut，以及播放速度（0.5×〜4×）。处理前就能听到剪切后的效果 |
+| ④ | 时长与缩短率 | 处理前 → 处理后的时长、缩短比例、剪切次数。修改设置后，请点击 **Preview again** |
+| ⑤ | 设置标签页 | **Cut**（方式、阈值、余量、静音处理）、**Subtitles**（AI 模型、说话人等）、**Export**（格式、保存位置等） |
+| ⑥ | 预设（Preset） | 保存整套设置，之后可以调用 |
+| ⑦ | **Start processing** | 执行全部处理。**Stop** 可中断 |
+| ⑧ | Open output folder / Review subtitles | 处理完成后可以点击 |
+| ⑨ | 日志（Log） | 显示处理进度 |
+
+Subtitles 和 Export 标签页如下。
+
+<p align="center"><img src="docs/images/tab_subs_en.png" width="640" alt="Subtitles 标签页"></p>
+
+<p align="center"><img src="docs/images/tab_export_en.png" width="640" alt="Export 标签页"></p>
 
 #### 2. 点击开始并查看日志
 
 <p align="center"><img src="docs/images/result_en.png" width="640" alt="处理完成后的主界面（显示日志）"></p>
 
-底部的 **Log**（日志）会依次显示剪切、语音识别（含识别出的文字）、说话人分离以及写出的文件。处理完成后，会询问是否打开输出文件夹。
+底部的 **Log**（日志）会依次显示剪切、语音识别（含识别出的文字）、说话人分离以及写出的文件。处理完成后，可点击 **Open output folder** 打开输出位置。
 
 输出文件保存在输入文件所在文件夹（或你指定的文件夹）。开启**每次处理都建一个日期文件夹**（默认开启）时，会在其中建一个 `日期_模型名` 文件夹（例如 `2026-10-04_190357_large-v3`），所有文件都放进去。文件在两个时间点生成。
 
@@ -225,27 +232,36 @@ flowchart LR
 - 说话人切换标记（开启标记选项时）会在保存字幕后立即添加，使用**你修改后的说话人和说话人名称**。剪切点标记在 ① 时已经写入时间线。不保存就关闭，则不会添加说话人切换标记。关闭 **Review before saving** 时，则根据 ① 时的字幕生成。（对于 Resolve，则改为重写 `_markers.edl`，见下方说明）
 - 说话人名称可以用窗口底部的 *Show speaker names* 开关打开或关闭。关闭后，保存、复制和预览的 `.srt` / `.txt` / `.md` 中不再带 `说话人1：`，只保留正文。默认开启。没有任何说话人时，开关不可用。不影响说话人切换标记。
 
-#### 3.（可选）查看将被剪掉的位置 — 波形预览
+#### 3.（可选）查看哪些部分会被剪掉 — 波形
 
-<p align="center"><img src="docs/images/waveform_en.png" width="760" alt="用红色标出删除部分的波形预览"></p>
+<p align="center"><img src="docs/images/waveform_en.png" width="760" alt="用颜色标出将被剪掉部分的波形"></p>
 
 | # | 显示内容 |
 |:-:|---|
-| ① | 处理前 → 处理后的时长、缩短比例和剪切数量 |
-| ② | **红色** = 删除的部分，**橙色** = 加速的部分，其余保留 |
-| ③ | 修改余量、阈值或剪切方式后，点击 **Recalculate**（重新计算） |
+| ① | 处理前 → 处理后的时长、缩短比例、剪切次数 |
+| ② | 颜色说明（保留 / 删除 / 加速） |
+| ③ | **Preview again** — 修改剪切设置后点击，重新计算 |
+| ④ | 播放、跳到上一个/下一个剪切点、播放速度 |
+| ⑤ | 波形上方的色条：**红色** = 删除，**蓝色** = 加速，灰色 = 保留 |
 
-#### 4.（可选）阅读完整文字稿 — 字幕预览
+#### 4.（可选）确认并修改字幕 — 字幕确认·编辑窗口
 
-<p align="center"><img src="docs/images/text_en.png" width="640" alt="带说话人标注的字幕预览窗口"></p>
+<p align="center"><img src="docs/images/editor_en.png" width="640" alt="带编号标注的字幕确认·编辑窗口"></p>
 
-| # | 作用 |
+| # | 可以做什么 |
 |:-:|---|
-| ① | 在 `.txt`、`.md`、`.srt` 视图之间切换 |
-| ② | 显示或隐藏时间戳（Include timestamps） |
-| ③ | **Copy**（复制）到剪贴板 |
-| ④ | **Save…**（保存）为文件 |
-| ⑤ | **Open SRT…** — 载入已有的 `.srt` 阅读，或转换为 `.txt` / `.md` |
+| ① | 字幕列表。选中一行即可在下方修改。按住 Shift 或 Ctrl 可选多行，一起修改。修改过的行会有标记 |
+| ② | 撤销 / 重做。所有编辑都可以撤销 |
+| ③ | 切换显示：编辑，或原样预览 `.txt` / `.md` / `.srt` 将写入的内容 |
+| ④ | 修改所选字幕的文字 |
+| ⑤ | 更改说话人（对所有选中行生效），并输入“山田”这样的说话人名称 |
+| ⑥ | 在光标处拆分、与下一条字幕合并、恢复原样、删除 |
+| ⑦ | **Include timestamps**（`.txt` / `.md`）和 **Show speaker names**。会改变保存和复制的内容 |
+| ⑧ | **Save**。旁边有 **Save as…**、**Copy**、**Open SRT…** |
+
+<p align="center"><img src="docs/images/editor_en.gif" width="640" alt="字幕确认·编辑窗口的操作：选择多行、一起更改说话人、命名说话人、查看 .srt 预览、关闭说话人名称"></p>
+
+动画依次演示：选择多行、一起更改说话人、给说话人命名、查看 `.srt` 预览，最后关闭 **Show speaker names**。
 
 #### 5. 导入剪辑软件
 
