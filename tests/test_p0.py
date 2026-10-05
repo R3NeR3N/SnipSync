@@ -20,7 +20,7 @@ def test_format_timestamp():
 
 def test_version_consistency():
     # SemVer 2.0 の形式であること。現在は初期開発段階（MAJOR = 0）。1.0.0 へ上げるときは オーナーの判断で
-    # このアサーションと AGENTS.md §5 を更新する。
+    # このアサーションを更新する。
     assert re.fullmatch(r"\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?", APP_VERSION), APP_VERSION
     assert APP_VERSION.split(".")[0] == "0"
 

@@ -5,7 +5,7 @@ name: Release
 #   dev      = local `python src/app.py`
 #   staging  = pre-release tag (vX.Y.Z-rc.N / -beta.N)  -> GitHub *pre-release*,  environment: staging
 #   prod     = stable tag      (vX.Y.Z)                 -> GitHub *release*,      environment: production
-# Tag format and -rc/-beta suffixes follow AGENTS.md §5. Add required-reviewer
+# Tag format and -rc/-beta suffixes follow SemVer. Add required-reviewer
 # protection on the `production` environment in repo Settings to gate prod.
 on:
   push:
@@ -64,7 +64,7 @@ jobs:
           ver=$(python -c "import sys; sys.path.insert(0,'src'); from version import APP_VERSION; print(APP_VERSION)")
           tag="${GITHUB_REF_NAME#v}"
           if [[ "$tag" != "$ver" ]]; then
-            echo "::error::Tag $GITHUB_REF_NAME does not match APP_VERSION $ver (AGENTS.md §5)"; exit 1
+            echo "::error::Tag $GITHUB_REF_NAME does not match APP_VERSION $ver"; exit 1
           fi
 
       - name: Build EXE

@@ -4,7 +4,7 @@
 バージョニングは [Semantic Versioning 2.0](https://semver.org/lang/ja/) に従う。
 
 > バージョンは `src/version.py` の `APP_VERSION` に一元化している（UI タイトル・README バッジ・`pyproject.toml` と一致させる）。
-> **現在は初期開発段階（MAJOR = 0）**。0.y.z の間は、機能追加と互換性を壊す変更は MINOR、バグ修正は PATCH を上げる（AGENTS.md §5）。
+> **現在は初期開発段階（MAJOR = 0）**。0.y.z の間は、機能追加と互換性を壊す変更は MINOR、バグ修正は PATCH を上げる。
 > 旧表記: 最初の公開版（GitHub のタグ `v1.0.0`）は、この体系では **0.1.0** に相当する。
 
 ---
@@ -68,13 +68,13 @@
 - **用語辞書**: 固有名詞を Whisper の `hotwords` に渡して認識を寄せる。
 - **話者分離**: sherpa-onnx（onnxruntime のみ・PyTorch/トークン不要）。字幕に「話者1：」を前置し、話者交代でも字幕を分割する。モデルは初回のみ公式リリースから取得し SHA-256 を検証。
 - **字幕全文のプレビュー／書き出し**: `.txt` / `.md` / `.srt` を表示・コピー・保存。処理時に `.txt` / `.md` も同時出力できる。
-- **タイムラインマーカー（任意）**: カット点と話者交代を FCPXML / Premiere XML に追加。**実 NLE への取り込みは未検証**（`docs/handoff/verification-2026-10.md`）。
+- **タイムラインマーカー（任意）**: カット点と話者交代を FCPXML / Premiere XML に追加。**実 NLE への取り込みは未検証**。
 - **Whisper モデル追加**: large-v3-turbo / large-v3 / kotoba-whisper-v2.0（日本語特化・実験的）/ distil-large-v3（英語専用）。
 - 実行環境の自動取得: `src/aebin.py`（auto-editor を公式リリースから取得し SHA-256 を照合）、`scripts/fetch_auto_editor.py`（EXE 同梱用）。
 - 出力プリセット: 名前付きプリセットの保存/読込/削除 + 前回終了時設定の自動復元（`%APPDATA%/SnipSync/presets.json`）。
 - GPU (CUDA) 対応: オプトイン（既定OFF）。GPU 失敗時は CPU へ自動フォールバック。
 - カット整合字幕（Cut-Aligned Subtitles）: 字幕を whisper の word-level timestamp で生成し、全カット境界で再分割することで、どの NLE 形式（DaVinci/Premiere/FCP）でも各カットに整合する字幕 (.srt) を生成する（旧 SRT-snap 方式から置換）。
-- AI 駆動開発用ドキュメント群（`AGENTS.md` / `CONTEXT.md` / `ARCHITECTURE.md` / `MEMORY.md` / `PITFALLS.md` ほか）と、単体テスト（`tests/`）・`pyproject.toml`。
+- 開発用ドキュメント（`ARCHITECTURE.md` / `DESIGN.md` ほか）と、単体テスト（`tests/`）・`pyproject.toml`。
 
 ### Changed
 - **auto-editor を 29.3.1 から 31.7.2 へ移行**（互換性に影響）。PyPI の `auto-editor` は 29.3.1 で止まっているため、pip の依存をやめ、公式リリースの固定版を取得して使う（配布 EXE は同梱）。

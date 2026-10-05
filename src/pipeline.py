@@ -470,7 +470,7 @@ def run_pipeline(
         # 1b. 多トラック音声の _tracks 後処理（B 案）。
         # fcpxml(resolve / final-cut-pro) は _tracks/*.wav を必須アセットとして
         # 参照するため、掃除すると DaVinci 等で当該トラックが「メディア未検出」に
-        # なる（実測・PITFALLS 参照）。出力先へ移動し fcpxml 内の参照パスを書き換える。
+        # なる（実測）。出力先へ移動し fcpxml 内の参照パスを書き換える。
         # premiere(.xml) は元動画を直接参照するため _tracks は不要 → finally で掃除。
         # 字幕用 WAV 抽出(2a)が _tracks を再生成し得るので、その前にここで移動する。
         if (result.ok and is_fcpxml and result.timeline_path

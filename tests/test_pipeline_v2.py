@@ -1,7 +1,7 @@
 """パイプラインの新機能（VAD・倍速・メディア書き出し・自前音声・話者・マーカー・txt/md）。
 
 auto-editor / faster-whisper / sherpa-onnx は実物を使わず、subprocess と DI でモックする。
-実物での通し検証は docs/handoff/verification-2026-10.md を参照。
+実物での通し検証（実機の DaVinci Resolve・Premiere Pro・Final Cut Pro への取り込みを含む）は、別に手元で行う。
 """
 import json
 import subprocess

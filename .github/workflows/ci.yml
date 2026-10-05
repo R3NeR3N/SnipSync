@@ -1,6 +1,6 @@
 name: CI
 
-# Quality gate for every push / PR (AGENTS.md §4, dev workflow guide §4 三点セット).
+# Quality gate for every push / PR.
 # Heavy runtime deps (auto-editor / faster-whisper) are NOT installed: the test
 # suite mocks subprocess and transcribe, so CI only needs customtkinter + pytest.
 on:

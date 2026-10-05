@@ -1,4 +1,4 @@
-"""i18n dictionaries + t() helper. ja/en must stay equivalent (AGENTS.md §4).
+"""i18n dictionaries + t() helper. ja/en must stay equivalent.
 
 Writing rules (DESIGN.md §6): say what the control does, in the user's words; a button names the action it
 performs and the log/toast afterwards uses the same word; sentence case; no emoji (status is carried by

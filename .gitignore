@@ -66,3 +66,15 @@ tests/*.mp4
 tests/*.mov
 tests/*.avi
 tests/*.mkv
+
+# --- 作業用の文書（リモートへは載せない。手元には残る）---
+# 公開するのは README* / LICENSE / CHANGELOG.md / DESIGN.md / ARCHITECTURE.md とコード。
+/AGENTS.md
+/CLAUDE.md
+/CONTEXT.md
+/MEMORY.md
+/PITFALLS.md
+/ROADMAP.md
+/CONTRIBUTING.md
+/docs/handoff/
+/docs/superpowers/

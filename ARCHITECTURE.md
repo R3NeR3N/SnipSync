@@ -37,14 +37,13 @@ SnipSync/
 ├── build/app.spec          # PyInstaller（budoux / sherpa_onnx を collect_all、auto-editor は build/vendor、フォントは src/assets から同梱）
 ├── scripts/fetch_auto_editor.py  # 同梱用の auto-editor を取得（SHA-256 検証）
 ├── scripts/make_icon.py    # アプリアイコンの生成（Pillow。実行時は不要）
-├── docs/handoff/           # 設計・検証の引き継ぎ書
 ├── pyproject.toml          # 直接依存の単一ソース
 └── requirements.txt        # 再現用フルフリーズ
 ```
 
 ### 残っている課題
 1. `src/snipsync/` へのパッケージ化は未実施（§2 の目標構造）。
-2. auto-editor は 31.7.2 に固定（`aebin.AE_VERSION`）。ライセンスキー無しではレンダリングが 3200×1800 に縮小される（タイムライン出力は無制限）。版を上げるときは SHA-256・フラグ・カット結果・NLE 出力を再検証する（AGENTS.md §4.2）。
+2. auto-editor は 31.7.2 に固定（`aebin.AE_VERSION`）。ライセンスキー無しではレンダリングが 3200×1800 に縮小される（タイムライン出力は無制限）。版を上げるときは SHA-256・フラグ・カット結果・NLE 出力を再検証する。
 
 ---
 
@@ -79,7 +78,6 @@ SnipSync/
 ```
 
 > ⚠ これは**目標**であり、本タスクでは未実施。分割は別タスクで段階的に行う（一度に壊さない）。
-> 移行手順・注意は着手時に PITFALLS.md を確認すること。
 
 ---
 
@@ -133,8 +131,8 @@ SnipSync/
 
 ## 5. 技術的 TODO（優先度順）
 
-1. **`__version__` 一元化** — タイトル/README/CHANGELOG のズレを構造的に解消（AGENTS.md §5）。
-2. **Whisper 言語の自動判定対応** — `language="ja"` 固定を解除、UI に言語選択を追加（MEMORY.md 参照）。
+1. **`__version__` 一元化** — タイトル/README/CHANGELOG のズレを構造的に解消。
+2. **Whisper 言語の自動判定対応** — `language="ja"` 固定を解除、UI に言語選択を追加。
 3. **モノリス分割** — §2 の構造へ段階移行。
 4. **単体テスト導入** — `format_timestamp` とコマンド組み立てから着手。
 5. **依存管理整理** — `pyproject.toml` に直接依存を切り出し。

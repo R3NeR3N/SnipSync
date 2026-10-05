@@ -2,7 +2,7 @@
 
 Pure functions -> unit-testable without spawning processes. The main cut and
 the subtitle WAV extraction MUST share margin/threshold or subtitle timecodes
-drift from the timeline (PITFALLS P-2 / CONTEXT.md §1).
+drift from the timeline.
 
 Flag names follow auto-editor 31.x (``--when-inactive``). 29.x spelled it ``--when-silent``
 and could only take one ``--cut-out`` range. The pinned version lives in ``aebin.AE_VERSION``;

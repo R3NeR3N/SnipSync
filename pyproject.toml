@@ -7,7 +7,7 @@ requires-python = ">=3.10"
 license = { text = "MIT" }
 
 # Direct runtime dependencies only. The full pinned set lives in
-# requirements.txt (treat as the generated lock; AGENTS.md §3).
+# requirements.txt (treat as the generated lock).
 # auto-editor is NOT a pip dependency: PyPI stops at 29.3.1, so src/aebin.py fetches the
 # pinned official release (SHA-256 verified). FFmpeg is bundled inside it; no PATH setup needed.
 dependencies = [
@@ -34,7 +34,7 @@ dev = ["pytest>=7", "ruff>=0.6"]
 # Opt-in GPU (CUDA 12) acceleration for faster-whisper on Windows. These wheels
 # ship cuBLAS/cuDNN/cudart DLLs *inside* the venv (site-packages/nvidia/*/bin) so
 # the host stays clean. subtitles.add_cuda_dll_dirs() registers them at runtime.
-# NOT bundled in the distributed EXE (CONTEXT §7); install with: pip install -e ".[gpu]"
+# NOT bundled in the distributed EXE; install with: pip install -e ".[gpu]"
 gpu = [
     "nvidia-cublas-cu12",
     "nvidia-cudnn-cu12",

@@ -44,7 +44,7 @@ def test_build_extract_wav_cmd():
 
 
 def test_cut_and_extract_share_margin_threshold():
-    """PITFALLS P-2: cut and subtitle WAV must use identical margin/threshold."""
+    """Cut and subtitle WAV must use identical margin/threshold."""
     cut = build_cut_cmd("ae", "in.mp4", 0.35, 7.5, "premiere", "o.xml")
     wav = build_extract_wav_cmd("ae", "in.mp4", 0.35, 7.5, "t.wav")
     # margin + edit args identical in both
