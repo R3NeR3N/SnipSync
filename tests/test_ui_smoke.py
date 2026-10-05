@@ -9,7 +9,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 tk = pytest.importorskip("tkinter")
 pytest.importorskip("customtkinter")
 
+from snipsync.core.player import sounddevice_available  # noqa: E402
 from snipsync.core.subtitles import Cue  # noqa: E402
+
+needs_audio = pytest.mark.skipif(not sounddevice_available(),
+                                  reason="sounddevice（音の再生）が無い環境では、再生バーは作られない（CI など）")
 
 CUES = [Cue(0.0, 2.0, "あいう", 0), Cue(2.0, 4.0, "えおか", 1), Cue(4.0, 6.0, "きくけ", 0)]
 
@@ -241,12 +245,14 @@ def _wait(app, cond, seconds=3.0):
     return cond()
 
 
+@needs_audio
 def test_transport_is_disabled_until_a_result_exists(app):
     pump(app)
     for b in (app.btn_prev, app.btn_play, app.btn_next):
         assert b.cget("state") == "disabled"
 
 
+@needs_audio
 def test_transport_plays_pauses_and_follows_the_playhead(app, monkeypatch):
     _prepare_result(app, monkeypatch)
     assert app.btn_play.cget("state") == "normal"
@@ -261,6 +267,7 @@ def test_transport_plays_pauses_and_follows_the_playhead(app, monkeypatch):
     assert not app.player.playing and app.btn_play.cget("text") == app.t("tr_play")
 
 
+@needs_audio
 def test_clicking_the_cut_map_moves_the_playhead_without_starting(app, monkeypatch):
     _prepare_result(app, monkeypatch)
     app._seek_source(8.0)
@@ -269,6 +276,7 @@ def test_clicking_the_cut_map_moves_the_playhead_without_starting(app, monkeypat
     assert app.player.position == pytest.approx(5.0, abs=0.05)      # 元の 8 秒 = 編集後 2 + 3 = 5 秒
 
 
+@needs_audio
 def test_changing_a_setting_pauses_playback_and_disables_the_buttons_until_recomputed(app, monkeypatch):
     _prepare_result(app, monkeypatch)
     app._play_toggle()
@@ -281,6 +289,7 @@ def test_changing_a_setting_pauses_playback_and_disables_the_buttons_until_recom
     assert app.btn_play.cget("state") == "disabled"
 
 
+@needs_audio
 def test_a_new_result_discards_the_loaded_audio(app, monkeypatch):
     _prepare_result(app, monkeypatch)
     app._seek_source(1.0)
@@ -290,6 +299,7 @@ def test_a_new_result_discards_the_loaded_audio(app, monkeypatch):
     assert not app.player.loaded and not app.cutmap.canvas.find_withtag("playhead")
 
 
+@needs_audio
 def test_rate_choice_applies_to_the_loaded_audio(app, monkeypatch):
     _prepare_result(app, monkeypatch)
     app._seek_source(1.0)
@@ -302,6 +312,7 @@ def test_rate_choice_applies_to_the_loaded_audio(app, monkeypatch):
     app._on_rate("1")
 
 
+@needs_audio
 def test_speed_choices_go_up_to_four_times(app):
     from snipsync.core.player import RATES
     assert RATES[-1] == 4.0 and 3.0 in RATES
