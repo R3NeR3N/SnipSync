@@ -41,7 +41,7 @@ gpu = [
     "nvidia-cuda-runtime-cu12",
 ]
 
-[project.scripts]
+[project.gui-scripts]          # 画面のあるアプリ。Windows で、コンソールの窓を出さない
 snipsync = "snipsync.ui.app:main"
 
 [tool.setuptools.packages.find]

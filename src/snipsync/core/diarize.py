@@ -23,6 +23,7 @@ _BASE = "https://github.com/k2-fsa/sherpa-onnx/releases/download"
 SEG_URL = f"{_BASE}/speaker-segmentation-models/sherpa-onnx-pyannote-segmentation-3-0.tar.bz2"
 SEG_MEMBER = "sherpa-onnx-pyannote-segmentation-3-0/model.onnx"
 SEG_SHA256 = "220ad67ca923bef2fa91f2390c786097bf305bceb5e261d4af67b38e938e1079"
+MAX_SEG_BYTES = 64 * 1024 * 1024      # 取り出すモデルは約 7MB。改ざんされた巨大な部品を、ハッシュを見る前にメモリへ読まない
 SEG_FILE = "pyannote-segmentation-3-0.onnx"
 
 # embedding: 3D-Speaker CAM++ 中英対応版（Apache-2.0, 28MB）。SHA は公式 checksum.txt と一致。
@@ -94,6 +95,8 @@ def ensure_models(on_log=None) -> tuple[Path, Path]:
         try:
             with tarfile.open(archive, "r:bz2") as tf:
                 member = tf.getmember(SEG_MEMBER)       # 想定した1ファイルだけを読む
+                if member.size > MAX_SEG_BYTES:
+                    raise RuntimeError("segmentation モデルが大きすぎます（改ざんの可能性）")
                 src = tf.extractfile(member)
                 seg.write_bytes(src.read())
         finally:

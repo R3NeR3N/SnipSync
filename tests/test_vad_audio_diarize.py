@@ -166,6 +166,31 @@ def test_ensure_models_rejects_tampered_download(tmp_path, monkeypatch):
     assert not (diarize.diarization_dir() / diarize.EMB_FILE).exists()  # 不一致のファイルは消す
 
 
+def test_ensure_models_refuses_an_oversized_member_before_reading_it(tmp_path, monkeypatch):
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+    monkeypatch.setattr(diarize, "EMB_SHA256", hashlib.sha256(b"emb").hexdigest())
+    monkeypatch.setattr(diarize, "MAX_SEG_BYTES", 8)                    # 上限を小さくして、大きすぎる部品を再現する
+    import io
+    import tarfile
+
+    def fake_download(url, dest):
+        if url == diarize.EMB_URL:
+            Path(dest).write_bytes(b"emb")
+            return
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w:bz2") as tf:
+            info = tarfile.TarInfo(diarize.SEG_MEMBER)
+            info.size = 64
+            tf.addfile(info, io.BytesIO(b"x" * 64))
+        Path(dest).write_bytes(buf.getvalue())
+
+    monkeypatch.setattr(diarize, "_download", fake_download)
+    with pytest.raises(RuntimeError, match="大きすぎ"):
+        diarize.ensure_models()
+    assert not (diarize.diarization_dir() / diarize.SEG_FILE).exists()      # 書き出さない
+    assert not (diarize.diarization_dir() / "segmentation.tar.bz2").exists()  # アーカイブも残さない
+
+
 def test_render_cut_audio_places_sped_chunks_by_cumulative_frames():
     sr = 3000
     samples = np.zeros(10 * sr, dtype=np.float32)
