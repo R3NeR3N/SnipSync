@@ -8,7 +8,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-import aebin  # noqa: E402
+from snipsync.core import aebin  # noqa: E402
 
 REAL_ASSET = aebin.asset          # フィクスチャが差し替える前の本物
 PAYLOAD = b"fake auto-editor binary"

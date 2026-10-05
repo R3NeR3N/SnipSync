@@ -4,8 +4,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from autoeditor import build_cut_cmd, build_extract_wav_cmd
-from subtitles import format_timestamp
+from snipsync.core.autoeditor import build_cut_cmd, build_extract_wav_cmd
+from snipsync.core.subtitles import format_timestamp
 
 
 def test_format_timestamp():

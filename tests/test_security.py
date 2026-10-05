@@ -10,11 +10,13 @@ from defusedxml.common import DefusedXmlException
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-import aebin  # noqa: E402
-import diarize  # noqa: E402
-import markers  # noqa: E402
-import models  # noqa: E402
-import safexml  # noqa: E402
+from snipsync.core import (  # noqa: E402
+    aebin,
+    diarize,
+    markers,
+    models,
+    safexml,
+)
 
 XXE = """<?xml version="1.0"?>
 <!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///C:/Windows/win.ini">]>
@@ -51,7 +53,7 @@ def test_marker_insertion_refuses_hostile_xml_without_touching_the_file(tmp_path
 
 
 def test_pipeline_xml_helpers_refuse_hostile_xml_without_touching_the_file(tmp_path):
-    import pipeline
+    from snipsync.core import pipeline
     p = tmp_path / "evil.fcpxml"
     p.write_text(XXE, encoding="utf-8")
     before = p.read_text(encoding="utf-8")
@@ -103,11 +105,11 @@ def test_kotoba_download_is_pinned_to_a_commit(tmp_path, monkeypatch):
 # ── プライバシー ───────────────────────────────────────────────────────────────
 
 def test_app_disables_hugging_face_telemetry_before_importing_faster_whisper():
-    src = (ROOT / "src" / "app.py").read_text(encoding="utf-8")
+    src = (ROOT / "src" / "snipsync" / "ui" / "app.py").read_text(encoding="utf-8")
     assert src.index("HF_HUB_DISABLE_TELEMETRY") < src.index("from faster_whisper import")
     if "HF_HUB_DISABLE_TELEMETRY" not in os.environ:
         pytest.importorskip("customtkinter")
-        import app  # noqa: F401
+        from snipsync.ui import app  # noqa: F401
         assert os.environ.get("HF_HUB_DISABLE_TELEMETRY") == "1"
 
 

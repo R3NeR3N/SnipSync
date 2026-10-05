@@ -2,7 +2,7 @@ name: Release
 
 # Stage gate for a standalone desktop app (dev workflow guide §5 / §10-2).
 # There is no server, so the dev -> staging -> prod split maps to release channels:
-#   dev      = local `python src/app.py`
+#   dev      = local `python -m snipsync`
 #   staging  = pre-release tag (vX.Y.Z-rc.N / -beta.N)  -> GitHub *pre-release*,  environment: staging
 #   prod     = stable tag      (vX.Y.Z)                 -> GitHub *release*,      environment: production
 # Tag format and -rc/-beta suffixes follow SemVer. Add required-reviewer
@@ -61,7 +61,7 @@ jobs:
       - name: Verify version tag matches APP_VERSION
         shell: bash
         run: |
-          ver=$(python -c "import sys; sys.path.insert(0,'src'); from version import APP_VERSION; print(APP_VERSION)")
+          ver=$(python -c "import sys; sys.path.insert(0,'src'); from snipsync.version import APP_VERSION; print(APP_VERSION)")
           tag="${GITHUB_REF_NAME#v}"
           if [[ "$tag" != "$ver" ]]; then
             echo "::error::Tag $GITHUB_REF_NAME does not match APP_VERSION $ver"; exit 1

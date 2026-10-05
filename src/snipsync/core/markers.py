@@ -22,8 +22,8 @@ import xml.etree.ElementTree as ET  # nosec B405 - 要素の組み立てと書�
 from fractions import Fraction
 from pathlib import Path
 
-import safexml
-from subtitles import speaker_label
+from snipsync.core import safexml
+from snipsync.core.subtitles import speaker_label
 
 
 def _frac(text: str) -> Fraction:

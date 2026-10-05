@@ -7,7 +7,7 @@ import pytest
 # Add src to sys.path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from presets import (
+from snipsync.presets import (
     SCHEMA_VERSION,
     _store_path,
     delete_preset,

@@ -11,10 +11,10 @@ from tkinter import filedialog, messagebox, ttk
 
 import customtkinter as ctk
 
-import theme as T
-import widgets as W
-from subtitle_edit import CueEditor, format_for_path, render, save
-from transcript import parse_srt
+from snipsync.core.subtitle_edit import CueEditor, format_for_path, render, save
+from snipsync.core.transcript import parse_srt
+from snipsync.ui import theme as T
+from snipsync.ui import widgets as W
 
 MAX_SPEAKERS = 6
 

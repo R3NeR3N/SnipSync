@@ -6,9 +6,9 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from subtitle_edit import CueEditor, format_for_path, render, save  # noqa: E402
-from subtitles import Cue  # noqa: E402
-from transcript import parse_srt  # noqa: E402
+from snipsync.core.subtitle_edit import CueEditor, format_for_path, render, save  # noqa: E402
+from snipsync.core.subtitles import Cue  # noqa: E402
+from snipsync.core.transcript import parse_srt  # noqa: E402
 
 
 def sample():
@@ -305,7 +305,7 @@ def test_render_can_leave_out_the_speaker_names_in_every_format():
 
 
 def test_save_honours_the_speaker_name_switch(tmp_path):
-    from subtitle_edit import save
+    from snipsync.core.subtitle_edit import save
     ed = CueEditor(sample())
     save(ed.cues, tmp_path / "a.srt", show_speakers=False)
     save(ed.cues, tmp_path / "b.srt")

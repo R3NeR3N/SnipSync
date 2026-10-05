@@ -143,7 +143,7 @@ git clone https://github.com/R3NeR3N/SnipSync.git
 cd SnipSync
 python -m venv .venv
 .venv\Scripts\python.exe -m pip install -e .
-.venv\Scripts\python.exe src\app.py
+.venv\Scripts\python.exe -m snipsync
 ```
 
 `python -m venv .venv` 会在 `SnipSync` 文件夹内创建独立环境，不会向系统全局安装任何东西。要清除时，删除 `.venv` 文件夹即可。
@@ -330,7 +330,7 @@ Subtitles 和 Export 标签页如下。
 
 | 软件包 | 用途 |
 |---|---|
-| auto-editor 31.x *（官方二进制，由 `src/aebin.py` 获取并校验）* | 静音/语音剪切及 NLE 导出引擎 |
+| auto-editor 31.x *（官方二进制，由 `src/snipsync/core/aebin.py` 获取并校验）* | 静音/语音剪切及 NLE 导出引擎 |
 | `faster-whisper` | AI 语音转文字（CTranslate2）及 Silero VAD |
 | `sherpa-onnx` | 说话人分离 |
 | `budoux` | 日语词组换行 |

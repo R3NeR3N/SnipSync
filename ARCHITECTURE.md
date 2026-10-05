@@ -1,40 +1,46 @@
 # ARCHITECTURE.md — 構造と処理フロー
 
-> 現状のディレクトリ構造・処理パイプラインと、AI 駆動開発に適した**目標構造**を定義する。
+> ディレクトリ構造と、処理パイプラインを定義する。
 > 構造を変えたら必ず更新。
 
 ---
 
-## 1. 現状のディレクトリ構造
+## 1. ディレクトリ構造
 
 ```
 SnipSync/
-├── src/                    # flat 配置（パッケージ化は未実施）
-│   ├── app.py              # メインウィンドウ（モニター・設定タブ・実行・ログ）+ バッチ実行
-│   ├── widgets.py          # 部品（Btn / Choice / CutMap / Legend ほか）。色・書体は theme から
-│   ├── cudalibs.py         # GPU 用の NVIDIA ライブラリ（cuBLAS・cuDNN）の取得（版・SHA-256 固定。UI に依存しない）
-│   ├── player.py           # 編集後の音の再生（EditedAudio・倍速変換・Player。UI に依存しない）
-│   ├── preview.py          # カットマップ用の計算（auto-editor の区間を取得。UI に依存しない）
-│   ├── subtitle_edit.py    # 字幕の編集ロジック（CueEditor・書き出し文字列の生成。UI に依存しない）
-│   ├── subtitle_editor.py  # 字幕の確認・編集ウィンドウ（表 + 編集欄 + txt/md/srt タブ）
-│   ├── assets/fonts/       # 同梱フォント（BIZ UD ゴシック, SIL OFL）
-│   ├── assets/icon/        # アプリアイコン（.ico / .png）。scripts/make_icon.py で生成
-│   ├── pipeline.py         # 処理全体のオーケストレーション（run_pipeline）
-│   ├── aebin.py            # auto-editor 31.x バイナリの取得・SHA-256 検証・同梱版の解決
-│   ├── autoeditor.py       # auto-editor コマンド組み立て / fps・長さ・解像度の取得（PyAV 代替あり）
-│   ├── subtitles.py        # 字幕: 境界計算・文節改行・話者付与・Cue/SRT
-│   ├── vad.py              # 音声読み込み（全トラック加算）・VAD・v1 chunks 生成
-│   ├── audiocut.py         # chunks から字幕用のカット後音声を自前で組み立てる
-│   ├── safexml.py          # XML を defusedxml で読む（DOCTYPE・エンティティを拒否）
-│   ├── diarize.py          # 話者分離（sherpa-onnx・モデル取得と SHA-256 検証）
-│   ├── models.py           # Whisper モデル登録（kotoba の alignment_heads 補正を含む）
-│   ├── markers.py          # マーカー（FCPXML / xmeml へ挿入。Resolve 向けは .edl に書く）
-│   ├── transcript.py       # .txt / .md 生成・SRT 読み込み
-│   ├── waveform.py         # 波形ピーク・カット統計（描画は widgets.CutMap）
-│   ├── theme.py            # デザイントークン（色・書体・角丸・間隔。理由は DESIGN.md）
-│   ├── i18n.py / presets.py / version.py
+├── src/
+│   └── snipsync/                 # パッケージ（`python -m snipsync` で起動）
+│       ├── __init__.py           # __version__（version.APP_VERSION から）
+│       ├── __main__.py           # 入口（PyInstaller の起動スクリプトも、これ）
+│       ├── version.py            # APP_VERSION（バージョンの唯一の定義）
+│       ├── i18n.py / i18n_tips.py  # 文言の辞書（ja / en）と、簡易ヘルプの文言
+│       ├── presets.py            # 設定の保存・呼び出し
+│       ├── assets/               # 同梱フォント（BIZ UD ゴシック, SIL OFL）・アイコン（.ico / .png。scripts/make_icon.py で生成）
+│       ├── core/                 # 画面に依存しない処理（ui を import しない）
+│       │   ├── pipeline.py       # 処理全体のオーケストレーション（run_pipeline）
+│       │   ├── aebin.py          # auto-editor 31.x バイナリの取得・SHA-256 検証・同梱版の解決
+│       │   ├── autoeditor.py     # auto-editor コマンド組み立て / fps・長さ・解像度の取得（PyAV 代替あり）
+│       │   ├── subtitles.py      # 字幕: 境界計算・文節改行・話者付与・時刻補正・Cue/SRT
+│       │   ├── subtitle_edit.py  # 字幕の編集ロジック（CueEditor・書き出し文字列の生成）
+│       │   ├── transcript.py     # .txt / .md 生成・SRT 読み込み
+│       │   ├── vad.py            # 音声読み込み（全トラック加算）・VAD・v1 chunks 生成
+│       │   ├── audiocut.py       # chunks から字幕用のカット後音声を自前で組み立てる
+│       │   ├── diarize.py        # 話者分離（sherpa-onnx・モデル取得と SHA-256 検証）
+│       │   ├── models.py         # Whisper モデル登録（kotoba の alignment_heads 補正を含む）
+│       │   ├── markers.py        # マーカー（FCPXML / xmeml へ挿入。Resolve 向けは .edl に書く）
+│       │   ├── safexml.py        # XML を defusedxml で読む（DOCTYPE・エンティティを拒否）
+│       │   ├── waveform.py       # 波形ピーク・カット統計（描画は ui/widgets.CutMap）
+│       │   ├── preview.py        # カットマップ用の計算（auto-editor の区間を取得）
+│       │   ├── player.py         # 編集後の音の再生（EditedAudio・倍速変換・Player）
+│       │   └── cudalibs.py       # GPU 用の NVIDIA ライブラリ（cuBLAS・cuDNN）の取得（版・SHA-256 固定）
+│       └── ui/                   # 画面（core を使う）
+│           ├── app.py            # メインウィンドウ（モニター・設定タブ・実行・ログ）+ バッチ実行
+│           ├── subtitle_editor.py  # 字幕の確認・編集ウィンドウ（表 + 編集欄 + txt/md/srt タブ）
+│           ├── widgets.py        # 部品（Btn / Choice / CutMap / Legend ほか）。色・書体は theme から
+│           └── theme.py          # デザイントークン（色・書体・角丸・間隔。理由は DESIGN.md）
 ├── tests/                  # pytest（subprocess / transcribe はモック）
-├── build/app.spec          # PyInstaller（budoux / sherpa_onnx を collect_all、auto-editor は build/vendor、フォントは src/assets から同梱）
+├── build/app.spec          # PyInstaller（budoux / sherpa_onnx を collect_all、auto-editor は build/vendor、フォントは src/snipsync/assets から同梱）
 ├── scripts/fetch_auto_editor.py  # 同梱用の auto-editor を取得（SHA-256 検証）
 ├── scripts/make_icon.py    # アプリアイコンの生成（Pillow。実行時は不要）
 ├── pyproject.toml          # 直接依存の単一ソース
@@ -42,42 +48,17 @@ SnipSync/
 ```
 
 ### 残っている課題
-1. `src/snipsync/` へのパッケージ化は未実施（§2 の目標構造）。
-2. auto-editor は 31.7.2 に固定（`aebin.AE_VERSION`）。ライセンスキー無しではレンダリングが 3200×1800 に縮小される（タイムライン出力は無制限）。版を上げるときは SHA-256・フラグ・カット結果・NLE 出力を再検証する。
+1. auto-editor は 31.7.2 に固定（`aebin.AE_VERSION`）。ライセンスキー無しではレンダリングが 3200×1800 に縮小される（タイムライン出力は無制限）。版を上げるときは SHA-256・フラグ・カット結果・NLE 出力を再検証する。
 
 ---
 
-## 2. 目標ディレクトリ構造（提案）
+## 2. 構造の方針
 
-責務ごとにモジュール分割し、AI が安全に部分編集できる粒度にする。
-
-```
-SnipSync/
-├── src/
-│   └── snipsync/
-│       ├── __init__.py        # __version__ = "0.2.0" を一元管理
-│       ├── __main__.py        # エントリポイント（python -m snipsync）
-│       ├── config.py          # 定数: EXPORT_MODES, デフォルト値, パス解決
-│       ├── i18n.py            # I18N 辞書 + t() ヘルパ（ja/en）
-│       ├── core/
-│       │   ├── autoeditor.py  # auto-editor 呼び出し（無音カット/XML出力/WAV抽出）
-│       │   ├── subtitles.py   # faster-whisper による .srt 生成
-│       │   └── pipeline.py    # カット→WAV→文字起こし のオーケストレーション
-│       └── ui/
-│           ├── app.py         # SnipSyncApp（ウィンドウ・レイアウト）
-│           ├── theme.py       # 配色/フォント定数（DESIGN.md と対応）
-│           └── widgets.py     # ドロップゾーン等の再利用ウィジェット
-├── tests/
-│   ├── test_subtitles.py      # format_timestamp 等の単体テスト
-│   ├── test_pipeline.py       # コマンド組み立ての検証（subprocess はモック）
-│   └── fixtures/              # サンプル wav/動画
-├── build/                     # PyInstaller 設定（現状維持）
-├── docs/                      # ユーザー向け詳細ドキュメント
-├── pyproject.toml             # 直接依存・メタ情報（requirements.txt から移行）
-└── requirements-lock.txt      # 再現用フルフリーズ（自動生成）
-```
-
-> ⚠ これは**目標**であり、本タスクでは未実施。分割は別タスクで段階的に行う（一度に壊さない）。
+- **依存の向きは `ui → core` だけ。** `core` は `ui`（画面）を import しない。`tests/test_architecture.py` が検査する。
+- **import は、パッケージの絶対パスで書く**（`from snipsync.core import vad`）。相対 import は使わない。PyInstaller と、試験の `monkeypatch`（`"snipsync.core.pipeline.xxx"`）の指定を、単純に保つため。
+- **起動は `python -m snipsync`**（`pip install -e .` のあと）。PyInstaller は `src/snipsync/__main__.py` を起動スクリプトにする。起動時に静的には見つからない import（関数の中で読み込むもの）は、`build/app.spec` の `hiddenimports` に、モジュール名を足す。
+- **アセットは `snipsync/assets/`。** `ui/theme.asset_path()` が、開発時は `snipsync/` の直下、EXE では `sys._MEIPASS` から探す。アセットを足したら、`build/app.spec` の `datas` と、`pyproject.toml` の `package-data` を確認する。
+- **当初の目標案との違い**: `config.py`（定数の集約）は作っていない。定数は、使う側（`app.py` の `EXPORT_KEYS`、`pipeline` の出力の拡張子）にあり、共有の必要が出たら集約する。`core/` には、案の 3 モジュールのほか、画面に依存しない処理をすべて置いた。`tests/fixtures/` は作っていない。再現用のフルフリーズは、`requirements.txt` のまま。
 
 ---
 
@@ -114,25 +95,7 @@ SnipSync/
 
 ---
 
-## 4. 主要モジュール責務（現状 app.py 内の論理ブロック）
+## 4. 技術的 TODO（優先度順）
 
-| 論理ブロック | 現在の場所 | 目標の移動先 |
-|---|---|---|
-| `resource_path` / `get_auto_editor_path` | app.py 上部 | `config.py` |
-| `I18N` 辞書 / `t()` | app.py 上部 | `i18n.py` |
-| 配色定数 (`ACCENT` 等) | app.py 上部 | `ui/theme.py` |
-| `format_timestamp` | app.py | `core/subtitles.py` |
-| `SnipSyncApp._build_*` | app.py | `ui/app.py` + `ui/widgets.py` |
-| `_worker`（auto-editor 呼出） | app.py | `core/autoeditor.py` |
-| `_worker`（whisper 呼出） | app.py | `core/subtitles.py` |
-| オーケストレーション | `_worker` | `core/pipeline.py` |
-
----
-
-## 5. 技術的 TODO（優先度順）
-
-1. **`__version__` 一元化** — タイトル/README/CHANGELOG のズレを構造的に解消。
-2. **Whisper 言語の自動判定対応** — `language="ja"` 固定を解除、UI に言語選択を追加。
-3. **モノリス分割** — §2 の構造へ段階移行。
-4. **単体テスト導入** — `format_timestamp` とコマンド組み立てから着手。
-5. **依存管理整理** — `pyproject.toml` に直接依存を切り出し。
+1. **Whisper の言語を、画面から指定できるようにする** — いまは自動判定のみ（`language=None`）。判定を外したいときの逃げ道がない。
+2. **定数の集約（`config.py`）** — `EXPORT_KEYS` などが、`app.py` と `pipeline` に分かれている。共有の必要が出たら、1 か所にまとめる。

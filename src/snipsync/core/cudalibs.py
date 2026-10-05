@@ -66,7 +66,7 @@ class CudaLibsFailed(Exception):
 
 def cuda_dir() -> Path:
     """取得した DLL の置き場（アプリ専用。モデルと同じ %APPDATA%\\SnipSync の下）。"""
-    from models import models_dir
+    from snipsync.core.models import models_dir
     return models_dir().parent / "cuda"
 
 

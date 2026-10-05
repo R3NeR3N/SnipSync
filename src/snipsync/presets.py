@@ -1,4 +1,4 @@
-# src/presets.py
+# src/snipsync/presets.py
 import json
 import os
 from pathlib import Path

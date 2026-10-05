@@ -8,14 +8,14 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from markers import (
+from snipsync.core.markers import (
     add_fcpxml_markers,
     add_markers,
     add_xmeml_markers,
     cut_point_markers,
     speaker_turn_markers,
 )
-from models import (
+from snipsync.core.models import (
     DEFAULT_MODEL,
     DISTIL_ALIGNMENT_HEADS,
     MODELS,
@@ -24,8 +24,15 @@ from models import (
     needs_download,
     patch_alignment_heads,
 )
-from subtitles import Cue
-from transcript import cues_to_md, cues_to_txt, hms, merge_turns, parse_srt, write_transcripts
+from snipsync.core.subtitles import Cue
+from snipsync.core.transcript import (
+    cues_to_md,
+    cues_to_txt,
+    hms,
+    merge_turns,
+    parse_srt,
+    write_transcripts,
+)
 
 CUES = [
     Cue(0.0, 2.0, "こんにちは、", 0),
@@ -74,7 +81,7 @@ def test_write_transcripts_creates_requested_files(tmp_path):
 
 
 def test_parse_srt_roundtrip():
-    from subtitles import format_srt
+    from snipsync.core.subtitles import format_srt
     parsed = parse_srt(format_srt(CUES))
     assert [(c.start, c.end, c.text) for c in parsed] == [(c.start, c.end, c.text) for c in CUES]
     multi = parse_srt("1\n00:00:01,000 --> 00:00:02,500\nline1\nline2\n\n2\nbroken\n")
@@ -170,7 +177,7 @@ def test_marker_builders():
 
 # ── models ─────────────────────────────────────────────────────────────────────
 def test_model_registry_is_consistent_with_i18n():
-    from i18n import I18N
+    from snipsync.i18n import I18N
     for lang in ("ja", "en"):
         assert set(MODELS) <= set(I18N[lang]["model_options"]), lang
         assert set(I18N[lang]["model_options"]) <= set(MODELS), lang
@@ -211,24 +218,24 @@ def test_needs_download_reflects_local_dir(tmp_path, monkeypatch):
     (d / "config.json").write_text("{}", encoding="utf-8")
     assert needs_download("kotoba-ja") is False
     # 名前指定のモデルは Hugging Face のキャッシュに揃っているかで決まる（ここでは偽の確認に差し替える）
-    monkeypatch.setattr("models._hf_cached", lambda repo: True)
+    monkeypatch.setattr("snipsync.core.models._hf_cached", lambda repo: True)
     assert needs_download("small") is False
 
 
 # ── i18n ──────────────────────────────────────────────────────────────────────
 def test_i18n_ja_en_have_identical_keys():
-    from i18n import I18N
+    from snipsync.i18n import I18N
     assert set(I18N["ja"]) == set(I18N["en"])
 
 
 @pytest.mark.parametrize("key", ["method_options", "silence_options", "export_options", "model_options"])
 def test_i18n_option_dicts_have_same_keys(key):
-    from i18n import I18N
+    from snipsync.i18n import I18N
     assert set(I18N["ja"][key]) == set(I18N["en"][key])
 
 
 def test_presets_keep_new_settings():
-    from presets import SETTING_KEYS, upsert_preset
+    from snipsync.presets import SETTING_KEYS, upsert_preset
     store = {}
     upsert_preset(store, "p", {k: 1 for k in SETTING_KEYS} | {"junk": 2})
     assert set(store["presets"]["p"]) == set(SETTING_KEYS)
@@ -240,10 +247,12 @@ def test_every_logged_message_has_a_placeholder_for_each_argument_passed():
     """tr("key", arg) に渡した引数が、文言の {} に入らず捨てられていないこと（完了ログからファイル名が消えていた不具合の再発防止）。"""
     import re
 
-    from i18n import I18N
+    from snipsync.i18n import I18N
     src = Path(__file__).parent.parent / "src"
     bad = []
-    for f in src.glob("*.py"):
+    files = sorted((src / "snipsync").rglob("*.py"))
+    assert files, "src/snipsync に Python ファイルが無い（検査が空振りになる）"
+    for f in files:
         for m in re.finditer(r'(?:tr|self\.t)\(\s*"(\w+)"\s*((?:,[^()]*(?:\([^()]*\))?[^()]*?)*)\)', f.read_text(encoding="utf-8")):
             key, rest = m.group(1), m.group(2)
             if key not in I18N["ja"] or not rest.strip():
@@ -258,16 +267,16 @@ def test_every_logged_message_has_a_placeholder_for_each_argument_passed():
 
 # ── 話者名つきのマーカーと、あとから足す話者交代のマーカー ───────────────────────────────
 def test_speaker_turn_markers_use_custom_names():
-    from markers import speaker_turn_markers
-    from subtitles import Cue
+    from snipsync.core.markers import speaker_turn_markers
+    from snipsync.core.subtitles import Cue
     cues = [Cue(0, 1, "a", 0), Cue(1, 2, "b", 0), Cue(2, 3, "c", 1)]
     assert speaker_turn_markers(cues, "ja", {0: "山田"}) == [(0, "山田"), (2, "話者2")]
     assert speaker_turn_markers(cues, "en") == [(0, "Speaker 1"), (2, "Speaker 2")]
 
 
 def test_add_speaker_markers_to_an_existing_timeline_keeps_the_cut_markers(tmp_path):
-    from markers import add_markers, add_speaker_markers
-    from subtitles import Cue
+    from snipsync.core.markers import add_markers, add_speaker_markers
+    from snipsync.core.subtitles import Cue
     xml = tmp_path / "t.xml"
     xml.write_text('<?xml version="1.0"?><xmeml version="5"><sequence><name>s</name><duration>300</duration>'
                    '<rate><timebase>30</timebase><ntsc>FALSE</ntsc></rate><media><video/></media></sequence></xmeml>',
@@ -280,8 +289,8 @@ def test_add_speaker_markers_to_an_existing_timeline_keeps_the_cut_markers(tmp_p
 
 
 def test_add_speaker_markers_without_speakers_adds_nothing(tmp_path):
-    from markers import add_speaker_markers
-    from subtitles import Cue
+    from snipsync.core.markers import add_speaker_markers
+    from snipsync.core.subtitles import Cue
     xml = tmp_path / "t.xml"
     xml.write_text("<xmeml/>", encoding="utf-8")
     assert add_speaker_markers(xml, [Cue(0, 1, "a", None)], "ja") == 0
@@ -300,7 +309,7 @@ def _edl_lines(path):
 
 
 def test_marker_edl_has_resolves_own_layout_with_color_name_and_one_frame_duration(tmp_path):
-    from markers import resolve_marks, write_marker_edl
+    from snipsync.core.markers import resolve_marks, write_marker_edl
     tl = _timeline_60(tmp_path)
     marks = resolve_marks([(1.5, "カット 1")], [(0.0, "話者1"), (4.0, "山田")])
     edl = tmp_path / "t_markers.edl"
@@ -315,7 +324,7 @@ def test_marker_edl_has_resolves_own_layout_with_color_name_and_one_frame_durati
 
 
 def test_marker_edl_follows_the_timeline_start_and_rate(tmp_path):
-    from markers import write_marker_edl
+    from snipsync.core.markers import write_marker_edl
     one_hour = _timeline_60(tmp_path, tc="3600s")                               # 開始 01:00:00:00 のタイムライン
     write_marker_edl(tmp_path / "a.edl", one_hour, [(1.0, "x", "ResolveColorBlue")])
     assert "01:00:01:00 01:00:01:01" in _edl_lines(tmp_path / "a.edl")[3]
@@ -326,7 +335,7 @@ def test_marker_edl_follows_the_timeline_start_and_rate(tmp_path):
 
 
 def test_marker_edl_keeps_names_on_one_line_and_skips_when_nothing_to_write(tmp_path):
-    from markers import write_marker_edl
+    from snipsync.core.markers import write_marker_edl
     tl = _timeline_60(tmp_path)
     write_marker_edl(tmp_path / "c.edl", tl, [(1.0, "a|b\nc", "ResolveColorBlue")])
     assert " |C:ResolveColorBlue |M:a/b c |D:1" in _edl_lines(tmp_path / "c.edl")      # 区切りの | と改行は入れない

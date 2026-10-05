@@ -143,7 +143,7 @@ git clone https://github.com/R3NeR3N/SnipSync.git
 cd SnipSync
 python -m venv .venv
 .venv\Scripts\python.exe -m pip install -e .
-.venv\Scripts\python.exe src\app.py
+.venv\Scripts\python.exe -m snipsync
 ```
 
 `python -m venv .venv` 는 `SnipSync` 폴더 안에 독립된 환경을 만들기 때문에 PC 전체에는 아무것도 설치되지 않습니다. 지울 때는 `.venv` 폴더를 삭제하면 됩니다.
@@ -330,7 +330,7 @@ Subtitles 탭과 Export 탭은 다음과 같습니다.
 
 | 패키지 | 용도 |
 |---|---|
-| auto-editor 31.x *(공식 바이너리. `src/aebin.py` 가 받아서 검증)* | 무음/음성 컷 및 NLE 내보내기 엔진 |
+| auto-editor 31.x *(공식 바이너리. `src/snipsync/core/aebin.py` 가 받아서 검증)* | 무음/음성 컷 및 NLE 내보내기 엔진 |
 | `faster-whisper` | AI 음성 인식(CTranslate2) 및 Silero VAD |
 | `sherpa-onnx` | 화자 분리 |
 | `budoux` | 일본어 문절 줄바꿈 |

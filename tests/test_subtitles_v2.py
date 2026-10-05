@@ -7,7 +7,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from subtitles import (
+from snipsync.core.subtitles import (
     Cue,
     build_cut_aligned_cues,
     chunks_to_boundaries,
@@ -96,7 +96,7 @@ def test_cut_aligned_cues_split_on_speaker_change_inside_one_cut():
 
 
 def test_cut_aligned_cues_without_speaker_matches_legacy_srt():
-    from subtitles import build_cut_aligned_srt
+    from snipsync.core.subtitles import build_cut_aligned_srt
     words = [(0.0, 0.9, "A"), (1.0, 1.9, "B"), (2.0, 2.9, "C"), (3.0, 3.9, "D")]
     srt = build_cut_aligned_srt(words, [(0.0, 4.0)], [0.0, 2.0])
     cues = build_cut_aligned_cues(words, [(0.0, 4.0)], [0.0, 2.0])
@@ -184,7 +184,7 @@ def test_chunks_to_boundaries_stay_within_one_frame_of_exact_time():
 
 
 # ── 字幕の時刻を、実際に声がある区間に合わせる補正 ───────────────────────────────────────
-from subtitles import refine_cue_times  # noqa: E402
+from snipsync.core.subtitles import refine_cue_times  # noqa: E402
 
 
 def C(a, b, t="x", s=None):

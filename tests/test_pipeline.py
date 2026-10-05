@@ -7,8 +7,8 @@ import pytest
 # Add src to sys.path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from pipeline import PipelineParams, _kill_tree, run_pipeline
-from subtitles import cuda_available, resolve_device
+from snipsync.core.pipeline import PipelineParams, _kill_tree, run_pipeline
+from snipsync.core.subtitles import cuda_available, resolve_device
 
 
 class DummyWord:
@@ -347,7 +347,7 @@ def test_pipeline_should_stop_mid_stream(temp_dirs, monkeypatch):
         kill_called = True
         proc.terminate()
 
-    monkeypatch.setattr("pipeline._kill_tree", mock_kill_tree)
+    monkeypatch.setattr("snipsync.core.pipeline._kill_tree", mock_kill_tree)
 
     monkeypatch.setattr(subprocess, "Popen", make_mock_popen(
         stdout_lines=["line1", "line2", "line3"]
@@ -746,12 +746,12 @@ def test_cuda_available(monkeypatch):
 
 def test_resolve_device(monkeypatch):
     # Mock cuda_available to return True
-    monkeypatch.setattr("subtitles.cuda_available", lambda: True)
+    monkeypatch.setattr("snipsync.core.subtitles.cuda_available", lambda: True)
     assert resolve_device(use_gpu=True) == ("cuda", "int8_float16")
     assert resolve_device(use_gpu=False) == ("cpu", "int8")
 
     # Mock cuda_available to return False
-    monkeypatch.setattr("subtitles.cuda_available", lambda: False)
+    monkeypatch.setattr("snipsync.core.subtitles.cuda_available", lambda: False)
     assert resolve_device(use_gpu=True) == ("cpu", "int8")
     assert resolve_device(use_gpu=False) == ("cpu", "int8")
 
@@ -772,7 +772,7 @@ def test_pipeline_gpu_fallback(temp_dirs, monkeypatch):
     ))
 
     # Mock cuda_available to return True
-    monkeypatch.setattr("subtitles.cuda_available", lambda: True)
+    monkeypatch.setattr("snipsync.core.subtitles.cuda_available", lambda: True)
 
     segments = [
         DummySegment(0.5, 2.3, "Fallback transcription test"),
@@ -840,7 +840,7 @@ def test_pipeline_gpu_fallback_lazy_generator(temp_dirs, monkeypatch):
         stdout_lines=["progress line"], write_output=mock_write
     ))
 
-    monkeypatch.setattr("subtitles.cuda_available", lambda: True)
+    monkeypatch.setattr("snipsync.core.subtitles.cuda_available", lambda: True)
 
     segments = [
         DummySegment(0.5, 2.3, "Fallback lazy generator test"),
@@ -901,7 +901,7 @@ def test_reorder_fcpxml_tracks_comprehensive(tmp_path):
     """多トラック fcpxml に対し、セグメント数維持、映像 primary、lane順、duration/start保持、gap非破壊などを検証する。"""
     import xml.etree.ElementTree as ET
 
-    from pipeline import _reorder_fcpxml_tracks
+    from snipsync.core.pipeline import _reorder_fcpxml_tracks
 
     # id順(r2,r4,r6,r8)とname順(r2=video, r6=_1, r8=_2, r4=_3)をズラしたテストデータ
     # 2セグメント(offset:0s/duration:10s, offset:15s/duration:5s)と、中間にgap(offset:10s/duration:5s)を配置
@@ -1007,7 +1007,7 @@ def test_reorder_fcpxml_tracks_comprehensive(tmp_path):
 
 def test_reorder_fcpxml_tracks_single_track_noop(tmp_path):
     """単トラック(wav 無し)fcpxml は並べ替え対象外 → False かつ無変更。"""
-    from pipeline import _reorder_fcpxml_tracks
+    from snipsync.core.pipeline import _reorder_fcpxml_tracks
 
     fcpxml = """<?xml version='1.0' encoding='utf-8'?>
 <fcpxml version="1.11">
@@ -1030,7 +1030,7 @@ def test_reorder_fcpxml_tracks_single_track_noop(tmp_path):
 
 def test_reorder_fcpxml_tracks_invalid_structure_noop(tmp_path):
     """異常なセグメント（video_id が複数、あるいは存在しないなど）が含まれる場合 → False かつ無変更。"""
-    from pipeline import _reorder_fcpxml_tracks
+    from snipsync.core.pipeline import _reorder_fcpxml_tracks
 
     # セグメント1には video_id (r2) クリップが存在しない
     fcpxml = """<?xml version='1.0' encoding='utf-8'?>
@@ -1058,7 +1058,7 @@ def test_reorder_fcpxml_tracks_invalid_structure_noop(tmp_path):
 def test_pipeline_cut_align_on(temp_dirs, monkeypatch):
     import json as _json
 
-    import pipeline as _pipeline_mod
+    from snipsync.core import pipeline as _pipeline_mod
     inp, out_dir = temp_dirs
     monkeypatch.setattr(_pipeline_mod, "probe_fps", lambda p: 60.0)
 
@@ -1158,7 +1158,7 @@ def test_pipeline_cut_align_off_keeps_natural(temp_dirs, monkeypatch):
 
 
 def test_pipeline_cut_align_no_fps_fallback(temp_dirs, monkeypatch):
-    import pipeline as _pipeline_mod
+    from snipsync.core import pipeline as _pipeline_mod
     inp, out_dir = temp_dirs
     monkeypatch.setattr(_pipeline_mod, "probe_fps", lambda p: None)
 
@@ -1218,7 +1218,7 @@ def _encoded(path: Path) -> str:
 
 
 def test_rewrite_fcpxml_track_paths_handles_percent_encoded_urls(tmp_path):
-    from pipeline import _rewrite_fcpxml_track_paths
+    from snipsync.core.pipeline import _rewrite_fcpxml_track_paths
     old = tmp_path / "録画 フォルダ" / "2026-06-20 11-04-28_tracks"
     new = tmp_path / "出力 先" / "2026-06-20 11-04-28_tracks"
     f = tmp_path / "t.fcpxml"
@@ -1230,7 +1230,7 @@ def test_rewrite_fcpxml_track_paths_handles_percent_encoded_urls(tmp_path):
 
 
 def test_rewrite_fcpxml_track_paths_still_handles_raw_and_backslash_forms(tmp_path):
-    from pipeline import _rewrite_fcpxml_track_paths
+    from snipsync.core.pipeline import _rewrite_fcpxml_track_paths
     old, new = tmp_path / "a" / "x_tracks", tmp_path / "b" / "x_tracks"
     for form in (str(old).replace("\\", "/"), str(old)):
         f = tmp_path / "t.fcpxml"
@@ -1240,7 +1240,7 @@ def test_rewrite_fcpxml_track_paths_still_handles_raw_and_backslash_forms(tmp_pa
 
 
 def test_rewrite_fcpxml_track_paths_reports_when_nothing_matched(tmp_path):
-    from pipeline import _rewrite_fcpxml_track_paths
+    from snipsync.core.pipeline import _rewrite_fcpxml_track_paths
     f = tmp_path / "t.fcpxml"
     f.write_text('<media-rep src="file:///Z:/somewhere/else/x_1.wav" />', encoding="utf-8")
     assert _rewrite_fcpxml_track_paths(f, tmp_path / "a_tracks", tmp_path / "b_tracks") is False

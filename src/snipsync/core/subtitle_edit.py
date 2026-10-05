@@ -11,8 +11,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from subtitles import Cue, format_srt
-from transcript import cues_to_md, cues_to_txt, join_text
+from snipsync.core.subtitles import Cue, format_srt
+from snipsync.core.transcript import cues_to_md, cues_to_txt, join_text
 
 FORMATS = ("txt", "md", "srt")
 MAX_HISTORY = 200

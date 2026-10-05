@@ -30,27 +30,39 @@ try:
 except ImportError:
     WHISPER_AVAILABLE = False
 
-import cudalibs
-import theme as T
-import widgets as W
-from aebin import get_auto_editor_path
-from autoeditor import MEDIA_EXTS
-from diarize import sherpa_available
-from i18n import I18N
-from markers import add_speaker_markers, resolve_marks, speaker_turn_markers, write_marker_edl
-from models import model_folder, models_dir
-from pipeline import PipelineParams, run_folder_name, run_pipeline
-from player import PLAY_SR, RATES, EditedAudio, Player, PlayerError, sounddevice_available
-from presets import delete_preset, load_store, save_store, set_last_used, upsert_preset
-from preview import CutSettings, compute_preview
-from subtitle_editor import SubtitleEditor
-from subtitles import (  # noqa: F401  (format_timestamp re-exported for tests)
+from snipsync.core import cudalibs
+from snipsync.core.aebin import get_auto_editor_path
+from snipsync.core.autoeditor import MEDIA_EXTS
+from snipsync.core.diarize import sherpa_available
+from snipsync.core.markers import (
+    add_speaker_markers,
+    resolve_marks,
+    speaker_turn_markers,
+    write_marker_edl,
+)
+from snipsync.core.models import model_folder, models_dir
+from snipsync.core.pipeline import PipelineParams, run_folder_name, run_pipeline
+from snipsync.core.player import (
+    PLAY_SR,
+    RATES,
+    EditedAudio,
+    Player,
+    PlayerError,
+    sounddevice_available,
+)
+from snipsync.core.preview import CutSettings, compute_preview
+from snipsync.core.subtitles import (  # noqa: F401  (format_timestamp re-exported for tests)
     cuda_available,
     cuda_libs_ready,
     format_timestamp,
 )
-from vad import decode_mix
-from version import APP_VERSION  # noqa: F401  (re-exported for tests)
+from snipsync.core.vad import decode_mix
+from snipsync.i18n import I18N
+from snipsync.presets import delete_preset, load_store, save_store, set_last_used, upsert_preset
+from snipsync.ui import theme as T
+from snipsync.ui import widgets as W
+from snipsync.ui.subtitle_editor import SubtitleEditor
+from snipsync.version import APP_VERSION  # noqa: F401  (re-exported for tests)
 
 EXPORT_KEYS = ("resolve", "premiere", "final-cut-pro", "media")
 SPEAKER_COUNTS = ("auto", "2", "3", "4", "5", "6")

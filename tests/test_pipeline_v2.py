@@ -14,7 +14,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 sys.path.insert(0, str(Path(__file__).parent))
 
-import pipeline as pl  # noqa: E402
+from snipsync.core import pipeline as pl  # noqa: E402
 from test_pipeline import DummySegment, DummyWord, make_mock_popen, stub_tr  # noqa: E402
 
 np = pytest.importorskip("numpy")
@@ -528,7 +528,7 @@ def test_refinement_can_be_turned_off_and_failure_to_detect_is_harmless(dirs, mo
 def test_run_folder_name_is_date_first_then_model():
     from datetime import datetime
 
-    from pipeline import run_folder_name
+    from snipsync.core.pipeline import run_folder_name
     when = datetime(2026, 10, 4, 19, 3, 57)
     assert run_folder_name("large-v3", when) == "2026-10-04_190357_large-v3"
     assert run_folder_name("kotoba-ja", when) == "2026-10-04_190357_kotoba-ja"

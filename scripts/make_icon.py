@@ -1,9 +1,9 @@
-"""アプリアイコン（src/assets/icon/）を作り直す。ロゴ（widgets.Logo）と同じ図形を、大きなタイルに置く。
+"""アプリアイコン（src/snipsync/assets/icon/）を作り直す。ロゴ（widgets.Logo）と同じ図形を、大きなタイルに置く。
 
     pip install pillow
     python scripts/make_icon.py
 
-理由は DESIGN.md「アプリアイコン」。色は src/theme.py のトークンから取る。
+理由は DESIGN.md「アプリアイコン」。色は src/snipsync/ui/theme.py のトークンから取る。
 """
 import sys
 from pathlib import Path
@@ -12,9 +12,9 @@ from PIL import Image, ImageDraw
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
-import theme as T  # noqa: E402
+from snipsync.ui import theme as T  # noqa: E402
 
-OUT = ROOT / "src" / "assets" / "icon"
+OUT = ROOT / "src" / "snipsync" / "assets" / "icon"
 BASE = 1024            # 描くときの大きさ。縮小して各サイズを作る（輪郭をなめらかにするため）
 SIZES = (16, 24, 32, 48, 64, 128, 256)
 

@@ -36,7 +36,7 @@ all_datas = [
     (str(CTK_DIR), 'customtkinter'),
     (str(DND_DIR), 'tkinterdnd2'),
     # 同梱フォント（BIZ UD ゴシック, SIL OFL）。theme.asset_path() が sys._MEIPASS/assets/fonts から読む。
-    (str(WORK_DIR / 'src' / 'assets'), 'assets'),
+    (str(WORK_DIR / 'src' / 'snipsync' / 'assets'), 'assets'),
 ] + fw_datas + ct_datas + tk_datas + av_datas + tr_datas + bx_datas + sh_datas + sd_datas + sdd_datas
 
 all_binaries = [
@@ -56,13 +56,17 @@ all_hiddenimports = [
     'huggingface_hub',
     'tqdm',
     'numpy',
-    'vad', 'audiocut', 'diarize', 'models', 'markers', 'transcript', 'waveform', 'aebin',
-    'theme', 'widgets', 'preview', 'subtitle_edit', 'subtitle_editor', 'player', 'cudalibs',
+    # 起動時に静的には見つからない（関数内で読み込む）ものを含め、パッケージの全モジュールを明示する
+    'snipsync', 'snipsync.i18n', 'snipsync.i18n_tips', 'snipsync.presets', 'snipsync.version',
+    'snipsync.core.vad', 'snipsync.core.audiocut', 'snipsync.core.diarize', 'snipsync.core.models',
+    'snipsync.core.markers', 'snipsync.core.transcript', 'snipsync.core.waveform', 'snipsync.core.aebin',
+    'snipsync.core.preview', 'snipsync.core.subtitle_edit', 'snipsync.core.player', 'snipsync.core.cudalibs',
+    'snipsync.ui.theme', 'snipsync.ui.widgets', 'snipsync.ui.subtitle_editor',
 ] + (fw_hiddenimports + ct_hiddenimports + tk_hiddenimports + av_hiddenimports + tr_hiddenimports
       + bx_hiddenimports + sh_hiddenimports + sd_hiddenimports + sdd_hiddenimports)
 
 a = Analysis(
-    [str(WORK_DIR / 'src' / 'app.py')],
+    [str(WORK_DIR / 'src' / 'snipsync' / '__main__.py')],
     pathex=[str(WORK_DIR / 'src')],
     binaries=all_binaries,
     datas=all_datas,
@@ -84,7 +88,7 @@ exe = EXE(
     a.datas,
     [],
     name='SnipSync',
-    icon=str(WORK_DIR / 'src' / 'assets' / 'icon' / 'snipsync.ico'),     # エクスプローラー・タスクバーのアイコン
+    icon=str(WORK_DIR / 'src' / 'snipsync' / 'assets' / 'icon' / 'snipsync.ico'),     # エクスプローラー・タスクバーのアイコン
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

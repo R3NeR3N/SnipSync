@@ -10,7 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-import aebin  # noqa: E402
+from snipsync.core import aebin  # noqa: E402
 
 
 def main() -> int:

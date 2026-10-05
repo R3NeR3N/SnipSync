@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 tk = pytest.importorskip("tkinter")
 pytest.importorskip("customtkinter")
 
-from subtitles import Cue  # noqa: E402
+from snipsync.core.subtitles import Cue  # noqa: E402
 
 CUES = [Cue(0.0, 2.0, "あいう", 0), Cue(2.0, 4.0, "えおか", 1), Cue(4.0, 6.0, "きくけ", 0)]
 
@@ -21,7 +21,7 @@ def _root(tmp_path_factory):
     cfg = tmp_path_factory.mktemp("cfg")
     mp.setenv("APPDATA", str(cfg))                       # 設定ファイルは一時フォルダへ（本物の設定を汚さない）
     mp.setenv("XDG_CONFIG_HOME", str(cfg))
-    import app as appmod
+    from snipsync.ui import app as appmod
 
     try:
         a = appmod.SnipSyncApp()
@@ -76,7 +76,7 @@ def test_main_window_builds_and_switches_tabs_and_language(app):
 
 
 def test_log_and_save_folder_use_the_font_that_draws_underscores(app):
-    import theme as T
+    from snipsync.ui import theme as T
     pump(app)
     assert app.console.cget("font").cget("family") == T.LITERAL_FAMILY
     assert app.folder_lbl.cget("font").cget("family") == T.LITERAL_FAMILY
@@ -124,7 +124,7 @@ def test_the_original_cues_are_never_mutated_by_editing(app):
 
 
 def test_review_editor_writes_nothing_until_saved_and_reports_the_outcome(app, tmp_path):
-    from subtitle_editor import SubtitleEditor
+    from snipsync.ui.subtitle_editor import SubtitleEditor
 
     dest = {"srt": tmp_path / "talk.srt", "txt": tmp_path / "talk.txt"}
     reported = {}
@@ -156,7 +156,7 @@ def test_review_editor_writes_nothing_until_saved_and_reports_the_outcome(app, t
 def test_review_editor_closed_without_saving_reports_not_saved(app, tmp_path, monkeypatch):
     from tkinter import messagebox
 
-    from subtitle_editor import SubtitleEditor
+    from snipsync.ui.subtitle_editor import SubtitleEditor
 
     dest = {"srt": tmp_path / "talk.srt"}
     reported = {}
@@ -173,7 +173,7 @@ def test_review_editor_closed_without_saving_reports_not_saved(app, tmp_path, mo
 def test_cancelling_the_close_prompt_keeps_the_review_window_open(app, tmp_path, monkeypatch):
     from tkinter import messagebox
 
-    from subtitle_editor import SubtitleEditor
+    from snipsync.ui.subtitle_editor import SubtitleEditor
 
     ed = SubtitleEditor(app, list(CUES), "talk", {"srt": tmp_path / "talk.srt"}, pending=True)
     app.review_win = ed
@@ -208,8 +208,8 @@ def _prepare_result(app, monkeypatch):
 
     import numpy as np
 
-    import player as pl
-    from preview import CutPreview
+    from snipsync.core import player as pl
+    from snipsync.core.preview import CutPreview
 
     class InlineThread:
         """テストは mainloop を回さない。スレッドから after() は呼べないので、その場で実行する。"""
@@ -220,7 +220,7 @@ def _prepare_result(app, monkeypatch):
         def start(self):
             self._target(*self._args)
 
-    import app as appmod
+    from snipsync.ui import app as appmod
     monkeypatch.setattr(appmod, "threading", types.SimpleNamespace(Thread=InlineThread, Event=threading.Event))
     monkeypatch.setattr(app, "player", pl.Player(lambda sr, cb, fin: _FakeStream(sr, cb, fin)))
     app.input_files = ["talk.wav"]
@@ -303,7 +303,7 @@ def test_rate_choice_applies_to_the_loaded_audio(app, monkeypatch):
 
 
 def test_speed_choices_go_up_to_four_times(app):
-    from player import RATES
+    from snipsync.core.player import RATES
     assert RATES[-1] == 4.0 and 3.0 in RATES
     assert {"3", "4"} <= set(app.rate_choice._choices)
 
@@ -327,9 +327,9 @@ def test_open_model_folder_opens_the_folder_of_the_selected_model(app, tmp_path,
     monkeypatch.setattr(os, "startfile", lambda p: opened.append(Path(p)), raising=False)
     app.model_key = "kotoba-ja"
     (tmp_path / "SnipSync" / "models").mkdir(parents=True, exist_ok=True)
-    import models
+    from snipsync.core import models
     monkeypatch.setattr(models, "models_dir", lambda: tmp_path / "SnipSync" / "models")
-    import app as appmod
+    from snipsync.ui import app as appmod
     monkeypatch.setattr(appmod, "models_dir", models.models_dir)
     monkeypatch.setattr(appmod, "model_folder", lambda key: tmp_path / "SnipSync" / "models" / "kotoba")
     app._open_model_folder()
@@ -424,7 +424,7 @@ def _prepare_start(app, monkeypatch, tmp_path, *, libs_ready, answer):
     import threading
     import types
 
-    import app as appmod
+    from snipsync.ui import app as appmod
 
     media = tmp_path / "talk.wav"
     media.write_bytes(b"x")
@@ -480,13 +480,13 @@ def test_with_gpu_parts_present_start_does_not_ask(app, tmp_path, monkeypatch):
 
 
 def test_gpu_part_fetch_failure_continues_on_the_cpu(app, monkeypatch):
-    import cudalibs
+    from snipsync.core import cudalibs
 
     def boom(**kw):
         raise cudalibs.CudaLibsFailed("timed out")
 
     monkeypatch.setattr(cudalibs, "download_libs", boom)
-    from pipeline import PipelineParams
+    from snipsync.core.pipeline import PipelineParams
     params = PipelineParams(margin=0.2, threshold=4.0, export_key="resolve", do_srt=True, model_size="small",
                             use_gpu=True)
     out = app._fetch_gpu_libs(params)
@@ -518,7 +518,7 @@ def test_stop_shows_immediate_feedback_even_when_the_stage_cannot_be_interrupted
 
 # ── 簡易ヘルプ（マウスを重ねると出る説明） ──────────────────────────────────────────
 def test_tooltip_shows_text_for_the_current_language_and_hides(app, monkeypatch):
-    import widgets as W
+    from snipsync.ui import widgets as W
     lbl = W.label(app, "x")
     state = {"text": "最初"}
     tt = W.Tooltip(lbl, lambda: state["text"])
@@ -535,7 +535,7 @@ def test_tooltip_shows_text_for_the_current_language_and_hides(app, monkeypatch)
 
 
 def test_only_one_tooltip_is_visible_and_the_inner_widgets_one_wins(app, monkeypatch):
-    import widgets as W
+    from snipsync.ui import widgets as W
     outer = ctk_frame = __import__("customtkinter").CTkFrame(app)
     inner = W.label(outer, "i")
     a = W.Tooltip(outer, "外側")
@@ -551,7 +551,7 @@ def test_only_one_tooltip_is_visible_and_the_inner_widgets_one_wins(app, monkeyp
 
 
 def test_main_window_controls_have_help_in_both_languages(app):
-    from i18n import I18N
+    from snipsync.i18n import I18N
     tip_keys = [k for k in I18N["ja"] if k.startswith("tip_")]
     assert len(tip_keys) >= 50
     for k in tip_keys:
@@ -635,7 +635,7 @@ def test_shortcut_help_lists_every_shortcut_and_follows_the_language(app):
 
 
 def test_close_note_is_shown_only_while_processing_waits_for_the_window(app, tmp_path):
-    from subtitle_editor import SubtitleEditor
+    from snipsync.ui.subtitle_editor import SubtitleEditor
     plain = _open_plain_editor(app)
     assert plain.close_note is None
     waiting = SubtitleEditor(app, list(CUES), "talk", {"srt": tmp_path / "a.srt"}, pending=True,
@@ -653,7 +653,7 @@ def test_close_note_is_shown_only_while_processing_waits_for_the_window(app, tmp
 def test_open_gpu_parts_folder_opens_the_folder_or_the_nearest_existing_one(app, tmp_path, monkeypatch):
     import os
 
-    import cudalibs
+    from snipsync.core import cudalibs
     opened = []
     monkeypatch.setattr(os, "startfile", lambda p: opened.append(Path(p)), raising=False)
     monkeypatch.setenv("APPDATA", str(tmp_path))
@@ -666,7 +666,7 @@ def test_open_gpu_parts_folder_opens_the_folder_or_the_nearest_existing_one(app,
 
 
 def test_tooltip_wrapping_keeps_words_whole_and_punctuation_off_line_starts():
-    import widgets as W
+    from snipsync.ui import widgets as W
     def measure(s):
         return sum(13 if ord(c) > 0x2E80 else 6 for c in s)
     text = "取得した GPU 用の部品の置き場を開きます。消しても他のアプリには影響せず、GPU を使うときにまた取得します。"
@@ -689,8 +689,8 @@ def _timeline(tmp_path):
 
 
 def test_speaker_markers_come_from_the_saved_edited_subtitles_with_custom_names(app, tmp_path):
-    from pipeline import PipelineResult
-    from subtitles import Cue
+    from snipsync.core.pipeline import PipelineResult
+    from snipsync.core.subtitles import Cue
     xml = _timeline(tmp_path)
     result = PipelineResult(ok=True, stopped=False, timeline_path=xml, srt_path=None, speaker_markers_pending=True)
     saved = [Cue(0.0, 2.0, "a", 1), Cue(2.0, 4.0, "b", 0)]          # 確認画面で話者を直した結果
@@ -701,7 +701,7 @@ def test_speaker_markers_come_from_the_saved_edited_subtitles_with_custom_names(
 
 
 def test_no_speaker_markers_when_the_subtitles_were_not_saved(app, tmp_path):
-    from pipeline import PipelineResult
+    from snipsync.core.pipeline import PipelineResult
     xml = _timeline(tmp_path)
     result = PipelineResult(ok=True, stopped=False, timeline_path=xml, srt_path=None, speaker_markers_pending=True)
     app._add_speaker_markers(result, {"saved": False, "info": {"saved_cues": None, "names": {}}})
@@ -709,7 +709,7 @@ def test_no_speaker_markers_when_the_subtitles_were_not_saved(app, tmp_path):
 
 
 def test_nothing_happens_when_no_markers_were_deferred(app, tmp_path):
-    from pipeline import PipelineResult
+    from snipsync.core.pipeline import PipelineResult
     xml = _timeline(tmp_path)
     result = PipelineResult(ok=True, stopped=False, timeline_path=xml, srt_path=None)
     app._add_speaker_markers(result, {"saved": True, "info": {"saved_cues": list(CUES), "names": {}}})
@@ -717,7 +717,7 @@ def test_nothing_happens_when_no_markers_were_deferred(app, tmp_path):
 
 
 def test_review_window_reports_the_cues_as_of_the_last_save(app, tmp_path):
-    from subtitle_editor import SubtitleEditor
+    from snipsync.ui.subtitle_editor import SubtitleEditor
     got = {}
     ed = SubtitleEditor(app, list(CUES), "talk", {"srt": tmp_path / "a.srt"}, pending=True,
                         on_closed=lambda cues, saved, paths, info: got.update(cues=cues, info=info, saved=saved))
@@ -740,7 +740,7 @@ def test_review_window_reports_the_cues_as_of_the_last_save(app, tmp_path):
 def test_review_window_reports_no_saved_cues_when_nothing_was_saved(app, tmp_path, monkeypatch):
     from tkinter import messagebox
 
-    from subtitle_editor import SubtitleEditor
+    from snipsync.ui.subtitle_editor import SubtitleEditor
     got = {}
     ed = SubtitleEditor(app, list(CUES), "talk", {"srt": tmp_path / "a.srt"}, pending=True,
                         on_closed=lambda cues, saved, paths, info: got.update(info=info, saved=saved))
@@ -788,7 +788,7 @@ def restore_settings(app):
 def _run_worker(app, monkeypatch, tmp_path, *, run_folder, out_dir):
     import types
 
-    import app as appmod
+    from snipsync.ui import app as appmod
 
     media = tmp_path / "talk.wav"
     media.write_bytes(b"x")
@@ -836,7 +836,7 @@ def test_run_folder_without_subtitles_is_the_date_only_and_follows_the_input_fol
 
 
 def test_run_folder_setting_is_saved_in_presets_and_restored(app):
-    from presets import SETTING_KEYS
+    from snipsync.presets import SETTING_KEYS
     assert "run_folder" in SETTING_KEYS
     app.run_folder_var.set(False)
     saved = app._collect_settings()
@@ -848,7 +848,7 @@ def test_run_folder_setting_is_saved_in_presets_and_restored(app):
 
 
 def test_resolve_speaker_markers_rewrite_the_edl_with_the_cut_points_kept(app, tmp_path):
-    from pipeline import PipelineResult
+    from snipsync.core.pipeline import PipelineResult
     timeline = tmp_path / "talk_snipsynced.fcpxml"
     timeline.write_text('<?xml version="1.0"?><fcpxml version="1.11"><resources><format id="r1" frameDuration="1/30s"/>'
                         '</resources><library><event name="e"><project name="p"><sequence tcStart="0s" format="r1">'
@@ -865,7 +865,7 @@ def test_resolve_speaker_markers_rewrite_the_edl_with_the_cut_points_kept(app, t
 
 
 def test_resolve_speaker_markers_are_skipped_when_the_subtitles_were_not_saved(app, tmp_path):
-    from pipeline import PipelineResult
+    from snipsync.core.pipeline import PipelineResult
     edl = tmp_path / "talk_markers.edl"
     edl.write_bytes(b"keep")
     result = PipelineResult(ok=True, stopped=False, timeline_path=tmp_path / "x.fcpxml", srt_path=None,
@@ -885,7 +885,7 @@ def test_a_run_folder_that_cannot_be_created_is_reported_and_does_not_leave_the_
 
 
 def test_resolve_speaker_markers_create_the_edl_when_there_were_no_cut_points(app, tmp_path):
-    from pipeline import PipelineResult
+    from snipsync.core.pipeline import PipelineResult
     timeline = tmp_path / "talk_snipsynced.fcpxml"
     timeline.write_text('<?xml version="1.0"?><fcpxml version="1.11"><resources><format id="r1" frameDuration="1/30s"/>'
                         '</resources><library><event name="e"><project name="p"><sequence tcStart="0s" format="r1">'

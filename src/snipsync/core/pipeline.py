@@ -7,9 +7,9 @@ from contextlib import nullcontext
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import safexml
-from audiocut import render_cut_audio, write_wav
-from autoeditor import (
+from snipsync.core import safexml
+from snipsync.core.audiocut import render_cut_audio, write_wav
+from snipsync.core.autoeditor import (
     AUDIO_EXTS,
     AUDIO_ONLY_TIMEBASE,
     AUDIO_RENDER_EXTS,
@@ -25,15 +25,15 @@ from autoeditor import (
     probe_fps,
     probe_resolution,
 )
-from diarize import diarize, sherpa_available
-from markers import (
+from snipsync.core.diarize import diarize, sherpa_available
+from snipsync.core.markers import (
     add_markers,
     cut_point_markers,
     resolve_marks,
     speaker_turn_markers,
     write_marker_edl,
 )
-from models import (
+from snipsync.core.models import (
     DownloadCancelled,
     DownloadFailed,
     get_spec,
@@ -41,7 +41,7 @@ from models import (
     needs_download,
     prepare_model,
 )
-from subtitles import (
+from snipsync.core.subtitles import (
     add_cuda_dll_dirs,
     build_cut_aligned_cues,
     chunks_to_boundaries,
@@ -53,8 +53,15 @@ from subtitles import (
     resolve_device,
     tag_words,
 )
-from transcript import write_transcripts
-from vad import SAMPLE_RATE, decode_mix, detect_speech, read_v1_chunks, speech_to_chunks, write_v1
+from snipsync.core.transcript import write_transcripts
+from snipsync.core.vad import (
+    SAMPLE_RATE,
+    decode_mix,
+    detect_speech,
+    read_v1_chunks,
+    speech_to_chunks,
+    write_v1,
+)
 
 CREATE_NEW_PROCESS_GROUP = 0x00000200 if sys.platform == "win32" else 0
 

@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 np = pytest.importorskip("numpy")
 
-import player as pl  # noqa: E402
+from snipsync.core import player as pl  # noqa: E402
 
 SR = 1000
 TB = 10.0

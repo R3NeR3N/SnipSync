@@ -10,10 +10,11 @@ ROOT = Path(__file__).parent.parent
 SRC = ROOT / "src"
 sys.path.insert(0, str(SRC))
 
-import theme as T  # noqa: E402
-from i18n import I18N  # noqa: E402
+from snipsync.i18n import I18N  # noqa: E402
+from snipsync.ui import theme as T  # noqa: E402
 
-PY_FILES = sorted(SRC.glob("*.py"))
+PY_FILES = sorted((SRC / "snipsync").rglob("*.py"))
+assert PY_FILES, "src/snipsync に Python ファイルが無い（検査が空振りになる）"
 
 
 # ── 配色: 読めること ──────────────────────────────────────────────────────────────────
@@ -84,7 +85,7 @@ def test_radius_and_spacing_tokens_follow_the_stated_scale():
 
 # ── 同梱フォント ─────────────────────────────────────────────────────────────────────
 def test_bundled_fonts_and_their_licence_are_present():
-    d = SRC / "assets" / "fonts"
+    d = SRC / "snipsync" / "assets" / "fonts"
     for name in T._FONT_FILES:
         f = d / name
         assert f.exists() and f.stat().st_size > 1_000_000, name
@@ -103,7 +104,7 @@ def test_font_roles_are_defined_and_use_the_resolved_families():
 def test_text_with_underscores_is_not_set_in_biz_ud():
     """BIZ UD は下線「_」が行の高さの外に出て、Tk に切り取られる（ファイル名が空白に見える）。DESIGN.md §4。"""
     assert not any("BIZ" in n for n in T._LITERAL_NAMES)
-    src = (SRC / "app.py").read_text(encoding="utf-8")
+    src = (SRC / "snipsync" / "ui" / "app.py").read_text(encoding="utf-8")
     assert re.search(r'self\.folder_lbl = W\.label\(row, "", "literal"', src)
     assert re.search(r'self\.console = ctk\.CTkTextbox\([^)]*font=T\.font\(ctk, "literal"\)', src, re.S)
 
@@ -153,19 +154,19 @@ def test_buttons_use_the_same_word_in_the_flow():
 
 # ── アプリアイコン ───────────────────────────────────────────────────────────────────
 def test_app_icon_is_bundled_with_all_standard_sizes():
-    ico = (SRC / "assets" / "icon" / "snipsync.ico").read_bytes()
+    ico = (SRC / "snipsync" / "assets" / "icon" / "snipsync.ico").read_bytes()
     reserved, kind, count = int.from_bytes(ico[0:2], "little"), int.from_bytes(ico[2:4], "little"), int.from_bytes(ico[4:6], "little")
     assert (reserved, kind) == (0, 1)
     sizes = {ico[6 + 16 * i] or 256 for i in range(count)}              # 幅（0 は 256）
     assert {16, 24, 32, 48, 64, 128, 256} <= sizes
-    assert (SRC / "assets" / "icon" / "snipsync.png").read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
+    assert (SRC / "snipsync" / "assets" / "icon" / "snipsync.png").read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
 
 
 def test_icon_and_header_logo_are_drawn_from_the_same_shapes():
     """アイコン（scripts/make_icon.py）とヘッダーのロゴ（widgets.Logo）は、同じ座標を使う。片方だけ直すと食い違う。"""
     shapes = ("3, 9, 15, 9, 11, 21, 3, 21", "19, 9, 27, 9, 27, 21, 15, 21", "18, 5, 9, 25")
     icon = (ROOT / "scripts" / "make_icon.py").read_text(encoding="utf-8")
-    logo = (SRC / "widgets.py").read_text(encoding="utf-8")
+    logo = (SRC / "snipsync" / "ui" / "widgets.py").read_text(encoding="utf-8")
     for s in shapes:
         assert s in icon and s in logo, s
 

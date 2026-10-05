@@ -9,7 +9,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-import cudalibs  # noqa: E402
+from snipsync.core import cudalibs  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -170,7 +170,7 @@ def test_a_partial_download_does_not_count_as_ready():
 
 # ── DLL の探索先への登録 ──
 def test_downloaded_dlls_are_added_to_the_dll_search_path(tmp_path, monkeypatch):
-    import subtitles
+    from snipsync.core import subtitles
     bin_dir = cudalibs.cuda_bin_dir()
     bin_dir.mkdir(parents=True)
     added = []
@@ -185,7 +185,7 @@ def test_downloaded_dlls_are_added_to_the_dll_search_path(tmp_path, monkeypatch)
 
 def test_dll_dirs_are_registered_again_after_a_later_download(tmp_path, monkeypatch):
     """起動時には何も無く、あとで取得した場合も、同じプロセスで効く。"""
-    import subtitles
+    from snipsync.core import subtitles
     added = []
     monkeypatch.setattr(subtitles, "_cuda_dll_registered", False)
     monkeypatch.setattr(subtitles.sys, "platform", "win32")

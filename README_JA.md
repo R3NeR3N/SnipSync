@@ -143,7 +143,7 @@ git clone https://github.com/R3NeR3N/SnipSync.git
 cd SnipSync
 python -m venv .venv
 .venv\Scripts\python.exe -m pip install -e .
-.venv\Scripts\python.exe src\app.py
+.venv\Scripts\python.exe -m snipsync
 ```
 
 `python -m venv .venv` は `SnipSync` フォルダの中に独立した環境を作るので、PC 全体には何もインストールされません。消すときは `.venv` フォルダを削除するだけです。
@@ -330,7 +330,7 @@ flowchart LR
 
 | パッケージ | 用途 |
 |---|---|
-| auto-editor 31.x *（公式バイナリ。`src/aebin.py` が取得・検証）* | 無音／音声のカットと NLE 出力のエンジン |
+| auto-editor 31.x *（公式バイナリ。`src/snipsync/core/aebin.py` が取得・検証）* | 無音／音声のカットと NLE 出力のエンジン |
 | `faster-whisper` | AI 音声認識（CTranslate2）と Silero VAD |
 | `sherpa-onnx` | 話者分離 |
 | `budoux` | 日本語の文節改行 |

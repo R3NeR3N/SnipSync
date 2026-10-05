@@ -11,9 +11,20 @@ import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from autoeditor import AUDIO_ONLY_TIMEBASE, build_v1_export_cmd, is_audio_only, probe_fps
-from vad import SAMPLE_RATE, decode_mix, detect_speech, read_v1_chunks, speech_to_chunks
-from waveform import chunk_regions, compute_peaks, preview_stats
+from snipsync.core.autoeditor import (
+    AUDIO_ONLY_TIMEBASE,
+    build_v1_export_cmd,
+    is_audio_only,
+    probe_fps,
+)
+from snipsync.core.vad import (
+    SAMPLE_RATE,
+    decode_mix,
+    detect_speech,
+    read_v1_chunks,
+    speech_to_chunks,
+)
+from snipsync.core.waveform import chunk_regions, compute_peaks, preview_stats
 
 PEAK_BINS = 2400
 

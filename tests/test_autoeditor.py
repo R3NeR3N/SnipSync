@@ -5,7 +5,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 import subprocess
 
-from autoeditor import probe_fps
+from snipsync.core.autoeditor import probe_fps
 
 
 def test_probe_fps_parses_rational(monkeypatch):
@@ -44,7 +44,7 @@ def test_probe_fps_exception_returns_none(monkeypatch):
 
 
 def test_build_v1_export_cmd_shape():
-    from autoeditor import build_v1_export_cmd
+    from snipsync.core.autoeditor import build_v1_export_cmd
     cmd = build_v1_export_cmd("auto-editor", "in.mp4", 0.2, 4.0, "out.json", 60.0)
     assert cmd[0] == "auto-editor"
     assert "--export" in cmd and cmd[cmd.index("--export") + 1] == "v1"
@@ -58,7 +58,7 @@ def test_build_v1_export_cmd_shape():
 
 def test_build_v1_export_cmd_keeps_ntsc_rational():
     # 旧実装は 59.94 を 60 へ丸め、NLE のフレーム格子（60000/1001）とずれていた。
-    from autoeditor import build_v1_export_cmd
+    from snipsync.core.autoeditor import build_v1_export_cmd
     cmd = build_v1_export_cmd("auto-editor", "in.mp4", 0.2, 4.0, "out.json", 59.94005994)
     assert cmd[cmd.index("-tb") + 1] == "60000/1001"
 
@@ -66,7 +66,7 @@ def test_build_v1_export_cmd_keeps_ntsc_rational():
 def test_format_timebase():
     from fractions import Fraction
 
-    from autoeditor import format_timebase
+    from snipsync.core.autoeditor import format_timebase
     assert format_timebase(30) == "30"
     assert format_timebase(30.0) == "30"
     assert format_timebase(29.97002997) == "30000/1001"
@@ -75,7 +75,7 @@ def test_format_timebase():
 
 
 def test_silent_speed_adds_when_inactive_to_all_builders():
-    from autoeditor import build_cut_cmd, build_extract_wav_cmd, build_v1_export_cmd
+    from snipsync.core.autoeditor import build_cut_cmd, build_extract_wav_cmd, build_v1_export_cmd
     c1 = build_cut_cmd("ae", "in.mp4", 0.2, 4.0, "premiere", "o.xml", silent_speed=8)
     c2 = build_extract_wav_cmd("ae", "in.mp4", 0.2, 4.0, "o.wav", silent_speed=8)
     c3 = build_v1_export_cmd("ae", "in.mp4", 0.2, 4.0, "o.json", 30, silent_speed=8)
@@ -84,19 +84,22 @@ def test_silent_speed_adds_when_inactive_to_all_builders():
 
 
 def test_default_commands_have_no_when_inactive():
-    from autoeditor import build_cut_cmd
+    from snipsync.core.autoeditor import build_cut_cmd
     assert "--when-inactive" not in build_cut_cmd("ae", "in.mp4", 0.2, 4.0, "resolve", "o.fcpxml")
 
 
 def test_media_export_omits_export_flag():
-    from autoeditor import EXPORT_MEDIA, build_cut_cmd
+    from snipsync.core.autoeditor import EXPORT_MEDIA, build_cut_cmd
     cmd = build_cut_cmd("ae", "in.mp4", 0.2, 4.0, EXPORT_MEDIA, "o.mp4")
     assert "--export" not in cmd
     assert cmd[cmd.index("--output") + 1] == "o.mp4"
 
 
 def test_chunk_builders_take_json_input():
-    from autoeditor import build_cut_cmd_from_chunks, build_extract_wav_cmd_from_chunks
+    from snipsync.core.autoeditor import (
+        build_cut_cmd_from_chunks,
+        build_extract_wav_cmd_from_chunks,
+    )
     c = build_cut_cmd_from_chunks("ae", "cuts.json", "premiere", "o.xml", tb=30000 / 1001)
     assert c[1] == "cuts.json"
     assert "--margin" not in c and "--edit" not in c
@@ -106,13 +109,13 @@ def test_chunk_builders_take_json_input():
 
 
 def test_is_audio_only():
-    from autoeditor import is_audio_only
+    from snipsync.core.autoeditor import is_audio_only
     assert is_audio_only("talk.WAV") and is_audio_only("a/b.m4a")
     assert not is_audio_only("movie.mp4")
 
 
 def test_probe_fps_falls_back_to_av(monkeypatch):
-    import autoeditor
+    from snipsync.core import autoeditor
 
     class R:
         stdout = ""
@@ -124,7 +127,7 @@ def test_probe_fps_falls_back_to_av(monkeypatch):
 
 def test_commands_silence_the_progress_bar():
     # 進捗バー（ANSI 制御文字）がログ欄を汚さないよう、全コマンドで --progress none
-    from autoeditor import (
+    from snipsync.core.autoeditor import (
         build_cut_cmd,
         build_cut_cmd_from_chunks,
         build_extract_wav_cmd,
@@ -144,14 +147,14 @@ def test_commands_silence_the_progress_bar():
 
 
 def test_audio_render_exts_exclude_encoders_missing_from_the_bundled_binary():
-    from autoeditor import AUDIO_RENDER_EXTS
+    from snipsync.core.autoeditor import AUDIO_RENDER_EXTS
     assert {".wav", ".flac", ".ogg", ".opus"} == set(AUDIO_RENDER_EXTS)
     for missing in (".mp3", ".m4a", ".aac"):
         assert missing not in AUDIO_RENDER_EXTS      # 実測: Could not open encoder
 
 
 def test_unlicensed_render_limit():
-    from autoeditor import exceeds_unlicensed_render_limit
+    from snipsync.core.autoeditor import exceeds_unlicensed_render_limit
     assert exceeds_unlicensed_render_limit((3840, 2160)) is True
     assert exceeds_unlicensed_render_limit((3200, 1800)) is False       # 上限ちょうどは縮小されない
     assert exceeds_unlicensed_render_limit((1920, 1080)) is False
@@ -164,7 +167,7 @@ import pytest  # noqa: E402
 @pytest.mark.parametrize("ext", [".mp4", ".mov", ".mkv", ".m4v", ".MP4"])
 def test_media_export_to_h264_containers_pins_the_video_profile(ext):
     """指定なしだと、B フレームのある録画で「Could not write packet」で失敗することがある（実測）。"""
-    from autoeditor import EXPORT_MEDIA, build_cut_cmd, build_cut_cmd_from_chunks
+    from snipsync.core.autoeditor import EXPORT_MEDIA, build_cut_cmd, build_cut_cmd_from_chunks
     for cmd in (build_cut_cmd("ae", "in.mp4", 0.2, 4.0, EXPORT_MEDIA, f"o{ext}"),
                 build_cut_cmd_from_chunks("ae", "cuts.json", EXPORT_MEDIA, f"o{ext}", tb=60)):
         assert cmd[cmd.index("-vprofile") + 1] == "high"
@@ -172,11 +175,11 @@ def test_media_export_to_h264_containers_pins_the_video_profile(ext):
 
 @pytest.mark.parametrize("output", ["o.webm", "o.wav", "o.flac", "o.opus"])
 def test_media_export_to_other_containers_does_not_set_a_video_profile(output):
-    from autoeditor import EXPORT_MEDIA, build_cut_cmd
+    from snipsync.core.autoeditor import EXPORT_MEDIA, build_cut_cmd
     assert "-vprofile" not in build_cut_cmd("ae", "in.mp4", 0.2, 4.0, EXPORT_MEDIA, output)
 
 
 def test_timeline_exports_and_audio_extraction_do_not_set_a_video_profile():
-    from autoeditor import build_cut_cmd, build_extract_wav_cmd
+    from snipsync.core.autoeditor import build_cut_cmd, build_extract_wav_cmd
     assert "-vprofile" not in build_cut_cmd("ae", "in.mp4", 0.2, 4.0, "resolve", "o.fcpxml")
     assert "-vprofile" not in build_extract_wav_cmd("ae", "in.mp4", 0.2, 4.0, "o.wav")

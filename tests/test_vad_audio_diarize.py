@@ -11,11 +11,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 np = pytest.importorskip("numpy")
 
-import diarize  # noqa: E402
-from audiocut import render_cut_audio, write_wav  # noqa: E402
-from autoeditor import CUT_SPEED  # noqa: E402
-from vad import read_v1_chunks, speech_to_chunks, write_v1  # noqa: E402
-from waveform import chunk_regions, compute_peaks, preview_stats  # noqa: E402
+from snipsync.core import diarize  # noqa: E402
+from snipsync.core.audiocut import render_cut_audio, write_wav  # noqa: E402
+from snipsync.core.autoeditor import CUT_SPEED  # noqa: E402
+from snipsync.core.vad import read_v1_chunks, speech_to_chunks, write_v1  # noqa: E402
+from snipsync.core.waveform import chunk_regions, compute_peaks, preview_stats  # noqa: E402
 
 # ── speech_to_chunks ───────────────────────────────────────────────────────────
 

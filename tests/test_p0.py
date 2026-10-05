@@ -5,7 +5,7 @@ from pathlib import Path
 # Add src to sys.path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from app import APP_VERSION, I18N, format_timestamp
+from snipsync.ui.app import APP_VERSION, I18N, format_timestamp
 
 
 def test_format_timestamp():
@@ -45,7 +45,7 @@ def test_version_consistency():
 
 def test_no_hardcoded_transcribe_language():
     project_root = Path(__file__).parent.parent
-    pipeline_py_path = project_root / "src" / "pipeline.py"
+    pipeline_py_path = project_root / "src" / "snipsync" / "core" / "pipeline.py"
 
     assert pipeline_py_path.exists()
     content = pipeline_py_path.read_text(encoding="utf-8")

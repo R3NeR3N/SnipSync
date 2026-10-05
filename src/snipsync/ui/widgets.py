@@ -5,7 +5,7 @@ import tkinter as tk
 
 import customtkinter as ctk
 
-import theme as T
+from snipsync.ui import theme as T
 
 # ── formatting ──────────────────────────────────────────────────────────────────────
 

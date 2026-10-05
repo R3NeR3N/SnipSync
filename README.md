@@ -143,7 +143,7 @@ git clone https://github.com/R3NeR3N/SnipSync.git
 cd SnipSync
 python -m venv .venv
 .venv\Scripts\python.exe -m pip install -e .
-.venv\Scripts\python.exe src\app.py
+.venv\Scripts\python.exe -m snipsync
 ```
 
 `python -m venv .venv` creates an isolated environment inside the `SnipSync` folder, so nothing is installed system-wide. To remove it, just delete the `.venv` folder.
@@ -330,7 +330,7 @@ Menu names can differ slightly between versions.
 
 | Package | Purpose |
 |---|---|
-| auto-editor 31.x *(official binary, fetched and verified by `src/aebin.py`)* | Silence/voice cut engine & NLE export |
+| auto-editor 31.x *(official binary, fetched and verified by `src/snipsync/core/aebin.py`)* | Silence/voice cut engine & NLE export |
 | `faster-whisper` | AI speech-to-text (CTranslate2) and Silero VAD |
 | `sherpa-onnx` | Speaker separation |
 | `budoux` | Japanese phrase-aware line breaks |

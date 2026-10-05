@@ -30,7 +30,7 @@ def add_cuda_dll_dirs() -> None:
     except ImportError:
         pass
     try:                                    # アプリが取得した DLL の置き場（cudalibs.py）
-        from cudalibs import cuda_bin_dir
+        from snipsync.core.cudalibs import cuda_bin_dir
         dirs.append(cuda_bin_dir())
     except Exception:
         pass

@@ -1,5 +1,5 @@
 """字幕（Cue 列）を読みやすい .txt / .md の文字起こしにする。"""
-from subtitles import Cue, speaker_label
+from snipsync.core.subtitles import Cue, speaker_label
 
 
 def hms(seconds: float) -> str:
@@ -85,7 +85,7 @@ def write_transcripts(cues, base_path, *, title: str, want_txt: bool, want_md: b
 
 def parse_srt(text: str) -> list[Cue]:
     """SRT 文字列 -> Cue 列（プレビュー用。話者は解釈せず、本文はそのまま保つ）。"""
-    from subtitles import parse_timestamp
+    from snipsync.core.subtitles import parse_timestamp
     cues: list[Cue] = []
     for block in text.replace("\r\n", "\n").strip().split("\n\n"):
         lines = [ln for ln in block.split("\n") if ln.strip() != ""]

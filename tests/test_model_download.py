@@ -11,7 +11,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 sys.path.insert(0, str(Path(__file__).parent))
 
-import models  # noqa: E402
+from snipsync.core import models  # noqa: E402
 
 pytest.importorskip("tqdm")
 
@@ -183,14 +183,14 @@ def test_prepare_model_downloads_only_when_missing(monkeypatch):
 
 def test_xet_is_disabled_before_hugging_face_is_imported():
     root = Path(__file__).parent.parent / "src"
-    app = (root / "app.py").read_text(encoding="utf-8")
+    app = (root / "snipsync" / "ui" / "app.py").read_text(encoding="utf-8")
     assert app.index("HF_HUB_DISABLE_XET") < app.index("from faster_whisper import")
-    assert "HF_HUB_DISABLE_XET" in (root / "models.py").read_text(encoding="utf-8")
+    assert "HF_HUB_DISABLE_XET" in (root / "snipsync" / "core" / "models.py").read_text(encoding="utf-8")
 
 
 # ── パイプラインでの扱い ──
 def _run_with_failing_model(monkeypatch, error):
-    import pipeline as pl
+    from snipsync.core import pipeline as pl
     from test_pipeline_v2 import Recorder, base_params, run
 
     np = pytest.importorskip("numpy")

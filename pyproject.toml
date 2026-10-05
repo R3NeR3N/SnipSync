@@ -8,7 +8,7 @@ license = { text = "MIT" }
 
 # Direct runtime dependencies only. The full pinned set lives in
 # requirements.txt (treat as the generated lock).
-# auto-editor is NOT a pip dependency: PyPI stops at 29.3.1, so src/aebin.py fetches the
+# auto-editor is NOT a pip dependency: PyPI stops at 29.3.1, so src/snipsync/core/aebin.py fetches the
 # pinned official release (SHA-256 verified). FFmpeg is bundled inside it; no PATH setup needed.
 dependencies = [
     "faster-whisper>=1,<2",
@@ -42,10 +42,17 @@ gpu = [
 ]
 
 [project.scripts]
-snipsync = "app:main"
+snipsync = "snipsync.ui.app:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+snipsync = ["assets/**/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["src"]
 
 [tool.ruff]
 line-length = 100
@@ -54,11 +61,11 @@ src = ["src", "tests"]
 
 [tool.ruff.lint.per-file-ignores]
 # app.py は faster_whisper を import する前に環境変数を設定する必要がある（E402 を許可）
-"src/app.py" = ["E402"]
+"src/snipsync/ui/app.py" = ["E402"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP"]
 # Baseline ignores: stylistic rules deferred so the first green CI does not
-# require reflowing the legacy app.py monolith. Tighten as the split lands
-# (ARCHITECTURE §2). E501=line length, E701=compound stmt, B007=unused loop var.
+# require reflowing the legacy app.py monolith. Tighten them gradually.
+# E501=line length, E701=compound stmt, B007=unused loop var.
 ignore = ["E501", "E701", "B007"]

@@ -15,8 +15,8 @@ import threading
 from dataclasses import dataclass
 from fractions import Fraction
 
-from audiocut import render_cut_audio
-from autoeditor import CUT_SPEED
+from snipsync.core.audiocut import render_cut_audio
+from snipsync.core.autoeditor import CUT_SPEED
 
 PLAY_SR = 24000                       # 聞いて確かめるための音質。16 kHz（VAD 用）より自然で、長尺でもメモリを食わない
 RATES = (0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0)

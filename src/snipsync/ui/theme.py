@@ -68,7 +68,7 @@ def asset_path(rel: str) -> Path:
     try:
         base = Path(sys._MEIPASS)  # type: ignore[attr-defined]
     except AttributeError:
-        base = Path(__file__).parent
+        base = Path(__file__).resolve().parent.parent   # snipsync/（assets/ がある）
     return base / rel
 
 

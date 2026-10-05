@@ -4,7 +4,7 @@ Writing rules (DESIGN.md §6): say what the control does, in the user's words; a
 performs and the log/toast afterwards uses the same word; sentence case; no emoji (status is carried by
 colour, and emoji glyphs fall back to a different font).
 """
-from version import APP_VERSION
+from snipsync.version import APP_VERSION
 
 I18N = {
     "ja": {
@@ -468,7 +468,7 @@ I18N = {
 }
 
 # 簡易ヘルプとショートカットの案内は、量が多いので別ファイルに置く（i18n_tips.py）
-from i18n_tips import TIPS  # noqa: E402
+from snipsync.i18n_tips import TIPS  # noqa: E402
 
 for _lang, _strings in TIPS.items():
     I18N[_lang].update(_strings)
