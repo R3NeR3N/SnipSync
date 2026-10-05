@@ -13,7 +13,16 @@ sys.path.insert(0, str(ROOT / "src"))
 from snipsync.core import aebin  # noqa: E402
 
 
+def _utf8_console() -> None:
+    """CI の Windows の端末は cp1252 で、日本語のログを print すると UnicodeEncodeError で落ちる（リリースが失敗した）。"""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure:
+            reconfigure(encoding="utf-8", errors="replace")
+
+
 def main() -> int:
+    _utf8_console()
     dest = ROOT / "build" / "vendor" / aebin.BUNDLED_NAME
     _, _, expected = aebin.asset()
     if dest.exists() and aebin.sha256_of(dest) == expected:

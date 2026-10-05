@@ -627,3 +627,22 @@ def test_every_external_program_is_started_without_a_console_window(monkeypatch,
         assert seen[key]["creationflags"] & autoeditor.CREATE_NO_WINDOW, key
     assert autoeditor.CREATE_NO_WINDOW == 0x08000000
     assert preview.CREATE_NO_WINDOW is autoeditor.CREATE_NO_WINDOW or preview.CREATE_NO_WINDOW == 0x08000000
+
+
+def test_fetch_script_prints_japanese_even_on_a_cp1252_console(monkeypatch):
+    """CI（Windows）の端末は cp1252。日本語のログで落ちると、リリースの自動処理が止まる（実際に起きた）。"""
+    import importlib.util
+    import io
+
+    spec = importlib.util.spec_from_file_location("fetch_auto_editor", Path(__file__).parent.parent / "scripts" / "fetch_auto_editor.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    raw = io.BytesIO()
+    console = io.TextIOWrapper(raw, encoding="cp1252", errors="strict", write_through=True)
+    monkeypatch.setattr(sys, "stdout", console)
+    monkeypatch.setattr(sys, "stderr", console)
+    with pytest.raises(UnicodeEncodeError):
+        print("auto-editor を取得しています")                       # 直す前は、これで落ちる
+    mod._utf8_console()
+    print("auto-editor を取得しています")
+    assert "取得".encode() in raw.getvalue()
