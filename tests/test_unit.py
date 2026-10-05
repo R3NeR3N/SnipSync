@@ -4,8 +4,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from subtitles import format_timestamp
-from autoeditor import build_cut_cmd, build_extract_wav_cmd
+from snipsync.core.autoeditor import build_cut_cmd, build_extract_wav_cmd
+from snipsync.core.subtitles import format_timestamp
 
 
 def test_format_timestamp():
@@ -27,8 +27,7 @@ def test_build_cut_cmd():
         "--margin", "0.200s",
         "--edit", "audio:threshold=4.0%",
         "--export", "resolve",
-        "--output", "out.fcpxml",
-        "--no-open",
+        "--progress", "none", "--output", "out.fcpxml", "--no-open",
     ]
 
 
@@ -40,13 +39,12 @@ def test_build_extract_wav_cmd():
         "--edit", "audio:threshold=4.0%",
         "-vn", "-sn", "-dn",
         "--mix-audio-streams",
-        "--output", "tmp.wav",
-        "--no-open",
+        "--progress", "none", "--output", "tmp.wav", "--no-open",
     ]
 
 
 def test_cut_and_extract_share_margin_threshold():
-    """PITFALLS P-2: cut and subtitle WAV must use identical margin/threshold."""
+    """Cut and subtitle WAV must use identical margin/threshold."""
     cut = build_cut_cmd("ae", "in.mp4", 0.35, 7.5, "premiere", "o.xml")
     wav = build_extract_wav_cmd("ae", "in.mp4", 0.35, 7.5, "t.wav")
     # margin + edit args identical in both

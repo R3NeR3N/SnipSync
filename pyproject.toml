@@ -1,27 +1,71 @@
 [project]
 name = "snipsync"
-version = "1.0.0"
+version = "0.2.0"
 description = "Silent video auto-cutter & subtitle generator with NLE timeline export (Windows GUI)."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 
 # Direct runtime dependencies only. The full pinned set lives in
-# requirements.txt (treat as the generated lock; AGENTS.md §3). FFmpeg must be
-# on PATH (external, not a Python dep).
+# requirements.txt (treat as the generated lock).
+# auto-editor is NOT a pip dependency: PyPI stops at 29.3.1, so src/snipsync/core/aebin.py fetches the
+# pinned official release (SHA-256 verified). FFmpeg is bundled inside it; no PATH setup needed.
 dependencies = [
-    "auto-editor>=29,<30",
     "faster-whisper>=1,<2",
+    # PyAV: faster-whisper の依存。19 系は faster-whisper 1.2.1 の decode_audio が
+    # TypeError(metadata_errors) で落ちる（実測）ため 17 系に固定する。
+    "av>=17,<18",
+    "numpy",
+    # XML（FCPXML / Premiere XML）を安全に読む（XXE 対策）
+    "defusedxml>=0.7.1,<1",
     "customtkinter>=5,<6",
     "tkinterdnd2",
+    # 日本語字幕の文節改行（Google BudouX・純Python）
+    "budoux>=0.7,<1",
+    # 話者分離（onnxruntime のみで動く。PyTorch/トークン不要）
+    "sherpa-onnx>=1.12,<2",
+    # 編集後の音の再生（PortAudio 同梱の Windows 用 wheel がある）
+    "sounddevice>=0.5,<1",
 ]
 
 [project.optional-dependencies]
 build = ["pyinstaller>=6,<7"]
-dev = ["pytest>=7"]
+dev = ["pytest>=7", "ruff>=0.6"]
+# Opt-in GPU (CUDA 12) acceleration for faster-whisper on Windows. These wheels
+# ship cuBLAS/cuDNN/cudart DLLs *inside* the venv (site-packages/nvidia/*/bin) so
+# the host stays clean. subtitles.add_cuda_dll_dirs() registers them at runtime.
+# NOT bundled in the distributed EXE; install with: pip install -e ".[gpu]"
+gpu = [
+    "nvidia-cublas-cu12",
+    "nvidia-cudnn-cu12",
+    "nvidia-cuda-runtime-cu12",
+]
 
-[project.scripts]
-snipsync = "app:main"
+[project.gui-scripts]          # 画面のあるアプリ。Windows で、コンソールの窓を出さない
+snipsync = "snipsync.ui.app:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+snipsync = ["assets/**/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["src", "tests"]
+
+[tool.ruff.lint.per-file-ignores]
+# app.py は faster_whisper を import する前に環境変数を設定する必要がある（E402 を許可）
+"src/snipsync/ui/app.py" = ["E402"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+# Baseline ignores: stylistic rules deferred so the first green CI does not
+# require reflowing the legacy app.py monolith. Tighten them gradually.
+# E501=line length, E701=compound stmt, B007=unused loop var.
+ignore = ["E501", "E701", "B007"]

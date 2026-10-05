@@ -1,0 +1,47 @@
+{
+  // SnipSync dev container (dev workflow guide §5.5).
+  // Isolates the toolchain from the host; one config works locally AND in
+  // GitHub Codespaces. Scope: tests, ruff, and AI-agent work.
+  //
+  // NOTE: SnipSync is a CustomTkinter GUI. The window itself cannot render in a
+  // headless container -> final 目視確認 (AGENTS.md §8 DoD #1) still runs on the
+  // Windows host. python3-tk is installed so the modules still *import* and the
+  // full pytest suite passes inside the container.
+  //
+  // Host vs container split (AGENTS.md §3): the Windows host uses a .venv with the
+  // FULL deps (auto-editor + faster-whisper) for GUI 目視確認 and the real pipeline.
+  // This container stays deliberately LEAN -- the test suite mocks subprocess and
+  // transcribe, so it installs only ruff/pytest/customtkinter below. It does NOT
+  // run `pip install -e .[dev]`, which would pull the heavy runtime deps and slow
+  // the build for zero test benefit. The .venv is the pollution boundary; this
+  // container is for tests / lint / AI-agent work.
+  "name": "SnipSync",
+  "image": "mcr.microsoft.com/devcontainers/python:3.12-bookworm",
+
+  "features": {
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+
+  // ffmpeg = auto-editor runtime prerequisite (CONTEXT.md §7); python3-tk = Tk
+  // backend so customtkinter imports under test.
+  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg python3-tk && python -m pip install --upgrade pip ruff pytest customtkinter numpy budoux defusedxml",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "charliermarsh.ruff"
+      ],
+      "settings": {
+        "python.testing.pytestEnabled": true,
+        "python.testing.pytestArgs": ["tests"],
+        "[python]": {
+          "editor.defaultFormatter": "charliermarsh.ruff",
+          "editor.codeActionsOnSave": {
+            "source.organizeImports": "explicit"
+          }
+        }
+      }
+    }
+  }
+}

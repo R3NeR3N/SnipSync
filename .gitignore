@@ -18,7 +18,11 @@ env/
 
 # --- Distribution / Build ---
 dist/
-build/
+# build/ は PyInstaller の生成物置き場だが、設定（app.spec・フック）は追跡する。
+# build/vendor/ には同梱用の auto-editor（scripts/fetch_auto_editor.py が取得）が入る。
+build/*
+!build/app.spec
+!build/build_hooks/
 *.egg-info/
 *.egg
 MANIFEST
@@ -62,3 +66,15 @@ tests/*.mp4
 tests/*.mov
 tests/*.avi
 tests/*.mkv
+
+# --- 作業用の文書（リモートへは載せない。手元には残る）---
+# 公開するのは README* / LICENSE / CHANGELOG.md / DESIGN.md / ARCHITECTURE.md とコード。
+/AGENTS.md
+/CLAUDE.md
+/CONTEXT.md
+/MEMORY.md
+/PITFALLS.md
+/ROADMAP.md
+/CONTRIBUTING.md
+/docs/handoff/
+/docs/superpowers/
