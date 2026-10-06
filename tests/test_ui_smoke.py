@@ -907,3 +907,52 @@ def test_resolve_speaker_markers_create_the_edl_when_there_were_no_cut_points(ap
     saved = [Cue(0.0, 2.0, "a", 0), Cue(2.0, 5.0, "b", 1)]
     app._add_speaker_markers(result, {"saved": True, "info": {"saved_cues": saved, "names": {}}})
     assert edl.exists() and edl.read_bytes().decode("utf-8").count("|D:1") == 2 == result.markers_added
+
+
+def _open_editor_with_result(app, monkeypatch):
+    _prepare_result(app, monkeypatch)
+    app.last_cues, app.last_title = list(CUES), "demo"
+    app._open_editor()
+    pump(app, 10)
+    return app.editor_win
+
+
+@needs_audio
+def test_clicking_a_cue_time_plays_the_main_preview_from_that_cue(app, monkeypatch):
+    ed = _open_editor_with_result(app, monkeypatch)
+    ed._play_cue(1)                                                  # 2 番目の字幕（頭は編集後 2.0 秒）
+    assert _wait(app, lambda: app.player.playing)
+    assert app.player.position >= 2.0 - 0.05
+    assert app.cutmap.canvas.find_withtag("playhead")                # 本体の再生位置の線が動く
+
+
+@needs_audio
+def test_clicking_a_cue_time_while_already_playing_jumps_without_pausing(app, monkeypatch):
+    ed = _open_editor_with_result(app, monkeypatch)
+    app._play_toggle()
+    assert _wait(app, lambda: app.player.playing)
+    ed._play_cue(2)
+    assert app.player.playing and app.player.position >= 4.0 - 0.05
+
+
+@needs_audio
+def test_a_ctrl_or_shift_click_on_the_time_column_only_selects(app, monkeypatch):
+    import types
+    ed = _open_editor_with_result(app, monkeypatch)
+    monkeypatch.setattr(ed, "_time_cell_at", lambda _e: 1)
+    ed._on_tree_click(types.SimpleNamespace(x=0, y=0, state=0x4))      # Ctrl
+    ed._on_tree_click(types.SimpleNamespace(x=0, y=0, state=0x1))      # Shift
+    assert not app.player.loaded
+    ed._on_tree_click(types.SimpleNamespace(x=0, y=0, state=0))
+    assert _wait(app, lambda: app.player.playing)
+
+
+def test_clicking_a_cue_time_without_a_ready_preview_says_why(app, monkeypatch):
+    monkeypatch.setattr(app, "_preview_result", None)                # 前のテストの結果を引き継がない
+    app.last_cues, app.last_title = list(CUES), "demo"
+    app._open_editor()
+    pump(app, 10)
+    ed = app.editor_win
+    ed._play_cue(0)
+    expected = "tr_unavailable" if app.player is None else "ed_play_not_ready"
+    assert ed.status.cget("text") == app.t(expected)

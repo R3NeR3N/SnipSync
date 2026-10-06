@@ -937,6 +937,23 @@ class SnipSyncApp(_Base):
     def _seek_source(self, source_sec: float):
         self._with_player(lambda: self.player.seek_source(source_sec))
 
+    def play_from(self, edited_sec: float) -> str | None:
+        """編集後の時刻 edited_sec へ再生位置を移し、そこから再生する（字幕編集ウィンドウから呼ぶ）。
+        できないときは、利用者に見せる文言のキーを返す。"""
+        if self.player is None:
+            return "tr_unavailable"
+        if self._audio_loading:
+            return "tr_busy"
+        if not self._transport_ready():
+            return "ed_play_not_ready"
+
+        def go():
+            self.player.seek(edited_sec)
+            self.player.play()
+
+        self._with_player(go)
+        return None
+
     def _on_rate(self, key):
         self.play_rate = float(key)
         if self.player is None or not self.player.loaded:

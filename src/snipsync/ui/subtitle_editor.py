@@ -158,6 +158,8 @@ class SubtitleEditor(ctk.CTkToplevel):
             self.tree.tag_configure(f"s{i}", background=T.blend(T.SPEAKERS[i], T.WELL, 0.13))
         self.tree.tag_configure("changed", foreground=T.PENCIL)
         self.tree.bind("<<TreeviewSelect>>", lambda _e: self._on_select())
+        self.tree.bind("<ButtonRelease-1>", self._on_tree_click)
+        self.tree.bind("<Motion>", self._on_tree_motion)
 
         # 空の状態（字幕が無いとき表の上に出す）
         self.empty = ctk.CTkFrame(well, fg_color=T.WELL, corner_radius=0)
@@ -177,6 +179,7 @@ class SubtitleEditor(ctk.CTkToplevel):
         self.detail_title.grid(row=0, column=0, sticky="w")
         self.detail_time = W.label(head, "", "mono", T.DUST)
         self.detail_time.grid(row=0, column=1, sticky="w", padx=T.S4)
+        self.detail_time.bind("<Button-1>", lambda _e: self._play_selected())
         self.time_note = W.caption(head, self.t("ed_time_note"))
         self.time_note.grid(row=0, column=2, sticky="e")
         self.text = ctk.CTkTextbox(self.detail, height=86, wrap="word", undo=False, corner_radius=T.R_CONTROL,
@@ -310,6 +313,33 @@ class SubtitleEditor(ctk.CTkToplevel):
         self._sel = self._sels[0] if len(self._sels) == 1 else None
         self._load_detail()
 
+    # ── 時刻を押して、本体のプレビューで再生する ───────────────────────────────────────
+    def _time_cell_at(self, event) -> int | None:
+        """event の位置が「時刻」列のセルなら、その字幕の番号。違えば None。"""
+        if self.tree.identify_region(event.x, event.y) != "cell" or self.tree.identify_column(event.x) != "#1":
+            return None
+        row = self.tree.identify_row(event.y)
+        return int(row) if row else None
+
+    def _on_tree_motion(self, event):
+        self.tree.configure(cursor="hand2" if self._time_cell_at(event) is not None else "")
+
+    def _on_tree_click(self, event):
+        if event.state & 0x5:              # Shift / Ctrl は、複数選択の操作。再生はしない
+            return
+        i = self._time_cell_at(event)
+        if i is not None:
+            self._play_cue(i)
+
+    def _play_selected(self):
+        if self._sel is not None:
+            self._play_cue(self._sel)
+
+    def _play_cue(self, i: int):
+        key = self.app.play_from(self.editor.cue(i).start)
+        if key:
+            self.flash(self.t(key))
+
     def _speaker_values(self) -> list[str]:
         top = max([MAX_SPEAKERS, *(sp + 1 for sp in self.editor.speakers())])
         return [self.t("ed_speaker_none")] + [self._speaker_name(i) for i in range(top)]
@@ -345,6 +375,7 @@ class SubtitleEditor(ctk.CTkToplevel):
             self.speaker_var.set(self.t("ed_speaker_mixed"))
         elif n:
             self.speaker_var.set(values[0 if shared is None else shared + 1])
+        self.detail_time.configure(cursor="hand2" if single else "")
         self._load_name()
         for b in (self.btn_split, self.btn_merge):
             b.enable(single)
@@ -545,6 +576,7 @@ class SubtitleEditor(ctk.CTkToplevel):
             (self.btn_split, "tip_ed_split"), (self.btn_merge, "tip_ed_merge"), (self.btn_delete, "tip_ed_delete"),
             (self.ts_switch, "tip_ed_timestamps"), (self.sp_switch, "tip_ed_speaker_names"), (self.btn_open, "tip_ed_open"), (self.btn_copy, "tip_ed_copy"),
             (self.btn_save_as, "tip_ed_save_as"), (self.btn_save, "tip_ed_save"),
+            (self.detail_time, "tip_ed_time"),
         ]
         for widget, key in pairs:
             W.tip(widget, (lambda k=key: self.t(k)))
