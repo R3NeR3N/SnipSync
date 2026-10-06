@@ -26,6 +26,8 @@ dependencies = [
     "sherpa-onnx>=1.12,<2",
     # 編集後の音の再生（PortAudio 同梱の Windows 用 wheel がある）
     "sounddevice>=0.5,<1",
+    # 更新の確認で、版の新旧を比べる（huggingface_hub も使う）
+    "packaging>=21",
 ]
 
 [project.optional-dependencies]

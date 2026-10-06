@@ -30,7 +30,7 @@ try:
 except ImportError:
     WHISPER_AVAILABLE = False
 
-from snipsync.core import cudalibs
+from snipsync.core import cudalibs, updater
 from snipsync.core.aebin import get_auto_editor_path
 from snipsync.core.autoeditor import MEDIA_EXTS
 from snipsync.core.diarize import sherpa_available
@@ -62,6 +62,7 @@ from snipsync.presets import delete_preset, load_store, save_store, set_last_use
 from snipsync.ui import theme as T
 from snipsync.ui import widgets as W
 from snipsync.ui.subtitle_editor import SubtitleEditor
+from snipsync.ui.update_dialog import UpdateDialog, collect
 from snipsync.version import APP_VERSION  # noqa: F401  (re-exported for tests)
 
 EXPORT_KEYS = ("resolve", "premiere", "final-cut-pro", "media")
@@ -97,6 +98,7 @@ class SnipSyncApp(_Base):
         self.last_out_dir: Path | None = None
         self.editor_win = None
         self.review_win = None               # 処理中に開く、保存前の確認ウィンドウ
+        self.update_win = None               # 更新の確認画面
         self.running = False
         self.stop_requested = False
         self._reg: list = []                 # (widget, i18n key): 言語切り替えで文言を差し替える
@@ -188,7 +190,7 @@ class SnipSyncApp(_Base):
             (self.btn_start, "tip_start"), (self.btn_stop, "tip_stop"), (self.btn_open_out, "tip_open_out"),
             (self.btn_review, "tip_open_review"), (self.btn_log_clear, "tip_log_clear"),
             (self.btn_model_folder, "tip_model_folder"), (self.btn_gpu_folder, "tip_gpu_folder"),
-            (self.btn_change, "tip_folder"),
+            (self.btn_change, "tip_folder"), (self.btn_updates, "tip_updates"),
         ]
         if self.player is not None:
             pairs += [(self.btn_prev, "tip_prev"), (self.btn_play, "tip_play"), (self.btn_next, "tip_next"),
@@ -203,8 +205,10 @@ class SnipSyncApp(_Base):
         W.Logo(bar).grid(row=0, column=0, padx=(0, T.S2))
         W.label(bar, "SnipSync", "wordmark").grid(row=0, column=1, sticky="w")
         W.caption(bar, f"v{APP_VERSION}").grid(row=0, column=2, sticky="w", padx=(T.S3, 0), pady=(T.S2, 0))
+        self.btn_updates = self.reg(W.Btn(bar, "", self.open_updates, kind="ghost", height=30), "upd_btn")
+        self.btn_updates.grid(row=0, column=3, sticky="e", padx=(0, T.S2))
         self.lang_choice = W.Choice(bar, LANGS, command=self._on_lang_change, height=30)
-        self.lang_choice.grid(row=0, column=3, sticky="e")
+        self.lang_choice.grid(row=0, column=4, sticky="e")
         self.lang_choice.set_key(self.lang)
 
     def _build_monitor(self):
@@ -1027,12 +1031,19 @@ class SnipSyncApp(_Base):
         self.preset_var.set(self.t("preset_none"))
         self._update_preset_menu()
 
+    def confirm_close_editors(self) -> bool:
+        """開いている字幕ウィンドウの、未保存の変更を捨ててよいか確かめる（やめるなら False）。"""
+        return all(win._confirm_discard() for win in self._open_editors())
+
     def _on_close(self):
         if self.player is not None:
             self.player.close()
-        for win in self._open_editors():
-            if not win._confirm_discard():
-                return
+        if not self.confirm_close_editors():
+            return
+        self.exit_now()
+
+    def exit_now(self):
+        """確認なしで、設定を保存して終了する。"""
         try:
             store = load_store()
             set_last_used(store, self._collect_settings())
@@ -1040,6 +1051,35 @@ class SnipSyncApp(_Base):
         except Exception as e:
             print(f"Error saving presets on close: {e}", file=sys.stderr)
         self.destroy()
+
+    # ── 更新 ────────────────────────────────────────────────────────────────────────
+    def open_updates(self):
+        """「更新」ボタン: 更新の確認画面を開き、すぐ確認する。"""
+        if self.update_win is not None and self.update_win.winfo_exists():
+            self.update_win.lift()
+            return
+        self.update_win = UpdateDialog(self)
+
+    def auto_check_updates(self):
+        """起動時の自動確認（1 日に 1 回まで）。新しい版があるときだけ、確認画面を開く。通信できなくても何も出さない。"""
+        state = updater.load_state()
+        if not updater.check_due(state):
+            return
+
+        def work():
+            found = collect(state, manual=False)
+            state["last_check"] = time.time()
+            updater.save_state(state)
+            try:
+                self.after(0, lambda: self._auto_checked(found))
+            except (tk.TclError, RuntimeError):          # 確認の間にアプリが閉じられた
+                pass
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _auto_checked(self, found):
+        if found.has_news and not self.running and (self.update_win is None or not self.update_win.winfo_exists()):
+            self.update_win = UpdateDialog(self, found)
 
     # ── 処理 ────────────────────────────────────────────────────────────────────────
     def _start_process(self):
@@ -1316,9 +1356,11 @@ def main():
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("R3NeR3N.SnipSync")
         except Exception:
             pass
+    updater.cleanup_old()                    # 前回の更新で残った古い exe を片付ける
     app = SnipSyncApp()
     if not WHISPER_AVAILABLE:
         app._log(app.t("log_whisper_unavailable"), "warn")
+    app.after(2500, app.auto_check_updates)  # 起動の動作が落ち着いてから、更新を確認する
     app.mainloop()
 
 

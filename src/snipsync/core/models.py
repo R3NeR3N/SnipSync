@@ -227,16 +227,90 @@ def download_model(key: str, *, on_progress=None, should_stop=None, poll: float 
     return str(target) if target else box["path"]
 
 
+def _cached_snapshot(repo: str) -> str | None:
+    """取得済みのモデルが入っているフォルダ（ネットワークには出ない）。無ければ None。"""
+    try:
+        from huggingface_hub import snapshot_download
+        return snapshot_download(repo, allow_patterns=ALLOW_PATTERNS, local_files_only=True)  # nosec B615 - 取得済みの場所を引くだけ
+    except Exception:
+        return None
+
+
 def prepare_model(key: str, *, on_progress=None, should_stop=None) -> str:
-    """WhisperModel に渡す名前またはローカルパスを返す。未取得なら取得し、必要なら config を補正する。"""
+    """WhisperModel に渡すローカルパスを返す。未取得なら取得し、必要なら config を補正する。
+
+    取得済みなら、そのフォルダを直接渡す。名前を渡すと faster-whisper が実行のたびに Hugging Face へ問い合わせ、
+    新しい版があれば利用者に断りなく取り直してしまうため。更新は、利用者が許可したときだけ行う（find_model_updates）。
+    """
     spec = get_spec(key)
     if needs_download(key):
         path = download_model(key, on_progress=on_progress, should_stop=should_stop)
+    elif spec.local_dir:
+        path = str(models_dir() / spec.local_dir)
     else:
-        path = str(models_dir() / spec.local_dir) if spec.local_dir else spec.source
+        path = _cached_snapshot(repo_id(spec)) or spec.source
     if spec.patch_alignment_heads:
         patch_alignment_heads(Path(path) / "config.json")
     return path
+
+
+# ── モデルの更新確認 ─────────────────────────────────────────────────────────────────────
+INFO_TIMEOUT = 10
+
+
+@dataclass(frozen=True)
+class ModelUpdate:
+    key: str
+    repo: str
+    local: str            # 手元のコミット
+    remote: str           # Hugging Face の最新のコミット
+    size: int             # model.bin の大きさ（不明なら 0）。取り直しの目安
+
+
+@dataclass(frozen=True)
+class ModelCheck:
+    updates: list
+    checked: int          # 確認できたモデルの数
+    failed: int           # 通信などで確認できなかったモデルの数
+
+
+def local_revision(key: str) -> str | None:
+    """手元のモデルのコミット。取得済みでなければ None。kotoba は ModelSpec.revision で固定なので対象外（None）。"""
+    spec = get_spec(key)
+    if spec.local_dir:
+        return None
+    try:
+        return (model_folder(key) / "refs" / "main").read_text(encoding="utf-8").strip() or None
+    except OSError:
+        return None
+
+
+def _remote_info(repo: str) -> tuple[str, int]:
+    """(最新のコミット, model.bin の大きさ)。通信できなければ例外。"""
+    from huggingface_hub import HfApi
+    info = HfApi().model_info(repo, files_metadata=True, timeout=INFO_TIMEOUT)  # nosec B615 - 読み取りだけ
+    size = next((int(s.size or 0) for s in (info.siblings or []) if s.rfilename == "model.bin"), 0)
+    return info.sha, size
+
+
+def find_model_updates(keys=None, *, remote_info=_remote_info) -> ModelCheck:
+    """取得済みのモデルのうち、Hugging Face に新しいコミットがあるものを返す。ダウンロードはしない。"""
+    updates, checked, failed = [], 0, 0
+    for key in (keys if keys is not None else MODELS):
+        spec = get_spec(key)
+        local = local_revision(key)
+        if spec.local_dir or not local or needs_download(key):
+            continue
+        repo = repo_id(spec)
+        try:
+            remote, size = remote_info(repo)
+        except Exception:
+            failed += 1
+            continue
+        checked += 1
+        if remote and remote != local:
+            updates.append(ModelUpdate(key, repo, local, remote, size))
+    return ModelCheck(updates, checked, failed)
 
 
 def lang_hint(key: str):

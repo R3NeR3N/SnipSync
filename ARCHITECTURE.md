@@ -33,10 +33,12 @@ SnipSync/
 │       │   ├── waveform.py       # 波形ピーク・カット統計（描画は ui/widgets.CutMap）
 │       │   ├── preview.py        # カットマップ用の計算（auto-editor の区間を取得）
 │       │   ├── player.py         # 編集後の音の再生（EditedAudio・倍速変換・Player）
-│       │   └── cudalibs.py       # GPU 用の NVIDIA ライブラリ（cuBLAS・cuDNN）の取得（版・SHA-256 固定）
+│       │   ├── cudalibs.py       # GPU 用の NVIDIA ライブラリ（cuBLAS・cuDNN）の取得（版・SHA-256 固定）
+│       │   └── updater.py        # 本体の更新（GitHub の最新版の確認・SHA-256 照合つき取得・動作中の exe の差し替え）。モデルの更新確認は models.py
 │       └── ui/                   # 画面（core を使う）
 │           ├── app.py            # メインウィンドウ（モニター・設定タブ・実行・ログ）+ バッチ実行
-│           ├── subtitle_editor.py  # 字幕の確認・編集ウィンドウ（表 + 編集欄 + txt/md/srt タブ）
+│           ├── subtitle_editor.py  # 字幕の確認・編集ウィンドウ（表 + 編集欄 + txt/md/srt タブ）。時刻を押すと本体のプレビューを再生
+│           ├── update_dialog.py  # 更新の確認画面（本体・AI モデル。許可されたものだけ更新）
 │           ├── widgets.py        # 部品（Btn / Choice / CutMap / Legend ほか）。色・書体は theme から
 │           └── theme.py          # デザイントークン（色・書体・角丸・間隔。理由は DESIGN.md）
 ├── tests/                  # pytest（subprocess / transcribe はモック）

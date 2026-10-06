@@ -956,3 +956,220 @@ def test_clicking_a_cue_time_without_a_ready_preview_says_why(app, monkeypatch):
     ed._play_cue(0)
     expected = "tr_unavailable" if app.player is None else "ed_play_not_ready"
     assert ed.status.cget("text") == app.t(expected)
+
+
+# ── 更新の確認画面 ────────────────────────────────────────────────────────────────────
+def _release(version="0.3.0", sha="a" * 64, url="https://github.com/R3NeR3N/SnipSync/releases/download/v0.3.0/SnipSync.exe"):
+    from snipsync.core.updater import Release
+    return Release(version, f"v{version}", "新機能のお知らせ", "https://github.com/R3NeR3N/SnipSync/releases/tag/v0.3.0",
+                   url, 1_000_000, sha)
+
+
+def _model_update(key="small"):
+    from snipsync.core.models import ModelUpdate
+    return ModelUpdate(key, "Systran/faster-whisper-small", "aaa", "bbb", 484_000_000)
+
+
+class _InlineThread:
+    def __init__(self, target=None, args=(), daemon=None):
+        self._target, self._args = target, args
+
+    def start(self):
+        self._target(*self._args)
+
+
+@pytest.fixture
+def dialog_env(app, monkeypatch, tmp_path):
+    """更新画面を、通信せず・設定ファイルを汚さず・スレッドを使わずに動かす。"""
+    import types
+
+    from snipsync.ui import update_dialog as ud
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+    monkeypatch.setattr(ud, "threading", types.SimpleNamespace(Thread=_InlineThread))
+    opened = []
+    yield types.SimpleNamespace(ud=ud, opened=opened)
+    if app.update_win is not None and app.update_win.winfo_exists():
+        app.update_win.destroy()
+    app.update_win = None
+
+
+def _texts(dlg):
+    out = []
+
+    def walk(w):
+        for c in w.winfo_children():
+            try:
+                out.append(c.cget("text"))
+            except Exception:
+                pass
+            walk(c)
+
+    walk(dlg.body)
+    return " ".join(x for x in out if isinstance(x, str))
+
+
+def test_update_dialog_offers_the_download_page_when_the_app_cannot_replace_itself(app, dialog_env):
+    ud = dialog_env.ud
+    found = ud.Findings(release=_release(), latest="0.3.0", model_updates=[_model_update()], models_checked=1)
+    dlg = ud.UpdateDialog(app, found)
+    pump(app, 10)
+    assert dlg.btn_install is None                                   # ソース実行: 入れ替えは申し出ない
+    assert len(dlg._model_buttons) == 2                              # モデル: 「更新」と「通知しない」
+    assert app.t("upd_open_page") in _texts(dlg)
+
+
+def test_skipping_a_version_is_remembered_and_closes_the_dialog(app, dialog_env):
+    from snipsync.core import updater
+    ud = dialog_env.ud
+    dlg = ud.UpdateDialog(app, ud.Findings(release=_release(), latest="0.3.0"))
+    pump(app, 10)
+    dlg._skip_app()
+    state = updater.load_state()
+    assert state["skip_version"] == "0.3.0"
+    none = ud.models.ModelCheck([], 0, 0)
+    assert ud.collect(state, manual=False, fetch=_release, check_models=lambda: none).release is None   # 自動では出さない
+    assert ud.collect(state, manual=True, fetch=_release, check_models=lambda: none).release is not None  # 手動では出す
+
+
+def test_collect_reports_only_newer_releases_and_unskipped_models():
+    from snipsync.core.updater import UpdateError
+    from snipsync.ui import update_dialog as ud
+    state = {"skip_version": "", "skip_models": {"small": "bbb"}}
+    check = ud.models.ModelCheck([_model_update("small"), _model_update("tiny")], 2, 0)
+    found = ud.collect(state, manual=False, fetch=lambda: _release("0.1.0"), check_models=lambda: check)
+    assert found.release is None and found.latest == "0.1.0"
+    assert [m.key for m in found.model_updates] == ["tiny"]           # small は「通知しない」済み
+    assert found.has_news
+
+    def offline():
+        raise UpdateError("offline")
+
+    found = ud.collect(state, manual=True, fetch=offline, check_models=lambda: ud.models.ModelCheck([], 0, 1))
+    assert found.app_error == "offline" and found.release is None and found.models_failed == 1
+    assert not found.has_news
+
+
+def test_update_dialog_checks_on_open_and_says_when_everything_is_current(app, dialog_env, monkeypatch):
+    ud = dialog_env.ud
+    monkeypatch.setattr(ud, "collect", lambda state, manual: ud.Findings(latest="0.2.0", models_checked=2))
+    dlg = ud.UpdateDialog(app)
+    pump(app, 10)
+    texts = _texts(dlg)
+    assert app.t("upd_uptodate", "0.2.0") in texts and app.t("upd_models_latest") in texts
+    assert not dlg.busy
+
+
+def test_updating_a_model_downloads_it_and_removes_it_from_the_list(app, dialog_env, monkeypatch):
+    ud = dialog_env.ud
+    calls = []
+    monkeypatch.setattr(ud.models, "download_model", lambda key, on_progress=None, should_stop=None: calls.append(key))
+    m = _model_update()
+    dlg = ud.UpdateDialog(app, ud.Findings(model_updates=[m], models_checked=1))
+    pump(app, 10)
+    dlg._update_model(m)
+    pump(app, 10)
+    assert calls == ["small"] and dlg.findings.model_updates == [] and not dlg.busy
+    assert dlg.status.cget("text") == app.t("upd_model_done", "small")
+
+
+def test_a_failed_model_update_keeps_it_in_the_list_and_reports_the_reason(app, dialog_env, monkeypatch):
+    ud = dialog_env.ud
+
+    def boom(key, on_progress=None, should_stop=None):
+        raise ud.models.DownloadFailed("disk full")
+
+    monkeypatch.setattr(ud.models, "download_model", boom)
+    m = _model_update()
+    dlg = ud.UpdateDialog(app, ud.Findings(model_updates=[m], models_checked=1))
+    dlg._update_model(m)
+    pump(app, 10)
+    assert dlg.findings.model_updates == [m] and not dlg.busy
+    assert dlg.status.cget("text") == app.t("upd_failed", "disk full")
+
+
+def test_nothing_is_updated_while_a_job_is_running(app, dialog_env, monkeypatch):
+    ud = dialog_env.ud
+    monkeypatch.setattr(ud.models, "download_model", lambda *a, **k: pytest.fail("must not download"))
+    monkeypatch.setattr(app, "running", True)
+    m = _model_update()
+    dlg = ud.UpdateDialog(app, ud.Findings(model_updates=[m], models_checked=1))
+    dlg._update_model(m)
+    assert dlg.status.cget("text") == app.t("upd_busy_running")
+
+
+def _install_env(app, ud, monkeypatch, tmp_path, *, confirm=True, swap=None):
+    events = []
+    monkeypatch.setattr(ud.updater, "can_install", lambda r, exe=None: True)
+    monkeypatch.setattr(ud.updater, "current_exe", lambda: tmp_path / "SnipSync.exe")
+    monkeypatch.setattr(ud.updater, "download", lambda r, dest, **k: events.append("download"))
+    monkeypatch.setattr(ud.updater, "swap_and_relaunch", swap or (lambda new: events.append("swap")))
+    monkeypatch.setattr(app, "confirm_close_editors", lambda: events.append("confirm") or confirm)
+    monkeypatch.setattr(app, "exit_now", lambda: events.append("exit"))
+    return events
+
+
+def test_installing_downloads_swaps_and_exits_only_after_unsaved_edits_are_settled(app, dialog_env, monkeypatch, tmp_path):
+    ud = dialog_env.ud
+    events = _install_env(app, ud, monkeypatch, tmp_path)
+    dlg = ud.UpdateDialog(app, ud.Findings(release=_release(), latest="0.3.0"))
+    pump(app, 10)
+    assert dlg.btn_install is not None
+    dlg._install()
+    pump(app, 10)
+    assert events == ["download", "confirm", "swap", "exit"]
+
+
+def test_installing_is_abandoned_when_the_user_keeps_unsaved_subtitles(app, dialog_env, monkeypatch, tmp_path):
+    ud = dialog_env.ud
+    events = _install_env(app, ud, monkeypatch, tmp_path, confirm=False)
+    dlg = ud.UpdateDialog(app, ud.Findings(release=_release(), latest="0.3.0"))
+    dlg._install()
+    pump(app, 10)
+    assert events == ["download", "confirm"] and not dlg.busy        # 入れ替えない・終了しない
+
+
+def test_a_failed_swap_reports_the_reason_and_keeps_the_app_running(app, dialog_env, monkeypatch, tmp_path):
+    ud = dialog_env.ud
+
+    def swap(new):
+        raise ud.updater.UpdateError("locked")
+
+    events = _install_env(app, ud, monkeypatch, tmp_path, swap=swap)
+    dlg = ud.UpdateDialog(app, ud.Findings(release=_release(), latest="0.3.0"))
+    dlg._install()
+    pump(app, 10)
+    assert "exit" not in events and dlg.status.cget("text") == app.t("upd_failed", "locked")
+
+
+def test_the_auto_check_stays_quiet_unless_something_is_new(app, monkeypatch):
+    from snipsync.ui import update_dialog as ud
+    opened = []
+    monkeypatch.setattr("snipsync.ui.app.UpdateDialog", lambda a, f=None: opened.append(f))
+    monkeypatch.setattr(app, "update_win", None)
+    app._auto_checked(ud.Findings(latest="0.2.0"))
+    assert opened == []
+    news = ud.Findings(release=_release(), latest="0.3.0")
+    monkeypatch.setattr(app, "running", True)                        # 処理中は、画面を割り込ませない
+    app._auto_checked(news)
+    assert opened == []
+    monkeypatch.setattr(app, "running", False)
+    app._auto_checked(news)
+    assert opened == [news]
+
+
+def test_the_header_has_an_updates_button_that_follows_the_language(app):
+    pump(app)
+    assert app.btn_updates.cget("text") == app.t("upd_btn")
+    app._on_lang_change("en")
+    assert app.btn_updates.cget("text") == "Updates"
+    app._on_lang_change("ja")
+
+
+def test_release_notes_show_the_current_language_without_markdown_marks():
+    from snipsync.ui.update_dialog import notes_for
+    body = "## 日本語\n\n**新機能**: [README](https://example.com) と `SnipSync.exe`\n\n\n\n### 使い方\n\n---\n\n## English\n\n**New**: see [README](https://example.com)\n"
+    ja, en = notes_for(body, "ja"), notes_for(body, "en")
+    assert ja.startswith("新機能: README と SnipSync.exe") and "使い方" in ja and "New" not in ja
+    assert en == "New: see README" and "新機能" not in en
+    assert "#" not in ja and "**" not in ja and "`" not in ja and "\n\n\n" not in ja
+    assert notes_for("plain text only", "ja") == "plain text only"          # 2 部構成でなければ、そのまま

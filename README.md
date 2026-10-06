@@ -125,6 +125,8 @@ No Python installation required. SnipSync ships as a single `.exe` file.
 >
 > The GPU components are SnipSync's own copy. They are not installed into Windows or any other app, so **deleting them is safe**. Other apps are not affected. SnipSync simply asks again the next time you use the GPU (the CPU works without them).
 
+**Updates:** Once a day at startup, SnipSync asks GitHub whether a newer version exists, and asks Hugging Face whether the Whisper models you have downloaded have changed. If so, an **Updates** window opens, and nothing is replaced until you press its button. You can turn the check off, or run it by hand (**Check now**), from the **Updates** button at the top right. The requests are ordinary GitHub and Hugging Face API calls; none of your files or settings are sent. A new SnipSync is taken from the official GitHub release and installed only if its SHA-256 matches. After a model update, the old copy stays on disk.
+
 ---
 
 ### Option B: Run from Source
@@ -323,7 +325,7 @@ Menu names can differ slightly between versions.
 - **OS:** Windows 10 / 11 (64-bit)
 - **RAM:** 4 GB minimum; 8 GB+ recommended for `medium` and larger models
 - **Disk:** about 0.1–3 GB for the Whisper model you choose (first run only)
-- **Internet:** Only for first-run downloads (Whisper models, speaker-separation models)
+- **Internet:** For first-run downloads (Whisper models, speaker-separation models) and the once-a-day update check (it can be turned off)
 - **GPU:** (Optional) NVIDIA GPU. The components it needs (cuBLAS, cuDNN) are not bundled in the EXE; they are downloaded on first use, with your permission.
 
 ### Development (source users)
