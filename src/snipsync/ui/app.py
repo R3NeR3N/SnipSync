@@ -51,6 +51,8 @@ from snipsync.core.player import (
     sounddevice_available,
 )
 from snipsync.core.preview import CutSettings, compute_preview
+from snipsync.core.session import Session, session_path, write_session
+from snipsync.core.subtitle_edit import CueEditor
 from snipsync.core.subtitles import (  # noqa: F401  (format_timestamp re-exported for tests)
     cuda_available,
     cuda_libs_ready,
@@ -95,6 +97,8 @@ class SnipSyncApp(_Base):
         self.last_cues: list = []
         self.last_title = ""
         self.last_paths: dict = {}
+        self.last_source = ""                # 最後に処理した動画（編集の続きのセッションに残す）
+        self._run_settings: dict = {}        # 最後の処理の設定
         self.last_out_dir: Path | None = None
         self.editor_win = None
         self.review_win = None               # 処理中に開く、保存前の確認ウィンドウ
@@ -191,6 +195,7 @@ class SnipSyncApp(_Base):
             (self.btn_review, "tip_open_review"), (self.btn_log_clear, "tip_log_clear"),
             (self.btn_model_folder, "tip_model_folder"), (self.btn_gpu_folder, "tip_gpu_folder"),
             (self.btn_change, "tip_folder"), (self.btn_updates, "tip_updates"),
+            (self.btn_open_saved, "tip_open_saved"),
         ]
         if self.player is not None:
             pairs += [(self.btn_prev, "tip_prev"), (self.btn_play, "tip_play"), (self.btn_next, "tip_next"),
@@ -478,8 +483,10 @@ class SnipSyncApp(_Base):
         self.btn_open_out = self.reg(W.Btn(row, "", self._open_output, height=44), "btn_open_out")
         self.btn_open_out.grid(row=0, column=3, padx=(0, T.S2))
         self.btn_open_out.enable(False)
+        self.btn_open_saved = self.reg(W.Btn(row, "", self.open_saved, height=44), "btn_open_saved")
+        self.btn_open_saved.grid(row=0, column=4, padx=(0, T.S2))
         self.btn_review = self.reg(W.Btn(row, "", self._open_editor, height=44), "btn_review")
-        self.btn_review.grid(row=0, column=4)
+        self.btn_review.grid(row=0, column=5)
         self.btn_review.enable(False)        # 字幕ができるまで押せない（空の編集画面を開かせない）
         self.progress = ctk.CTkProgressBar(self, mode="determinate", height=3, corner_radius=0, fg_color=T.EDGE,
                                            progress_color=T.PENCIL)
@@ -1112,6 +1119,7 @@ class SnipSyncApp(_Base):
         self.progress.configure(mode="indeterminate")
         self.progress.start()
         run_folder = self.run_folder_var.get()      # 画面の値は、この（画面の）スレッドで読む
+        self._run_settings = self._collect_settings()
         threading.Thread(target=self._worker, args=(files, params, fetch_gpu_libs, run_folder), daemon=True).start()
 
     def _worker(self, files, params, fetch_gpu_libs=False, run_folder=False):
@@ -1132,7 +1140,7 @@ class SnipSyncApp(_Base):
         run_name = run_folder_name(params.model_size, datetime.now(), with_model=params.do_srt) if run_folder else None
         stems = [f.stem for f in files]
         model_cache: dict = {}           # バッチ中は Whisper モデルを読み込み直さない
-        finished, last_out, last_result = 0, None, None
+        finished, last_out, last_result, last_inp = 0, None, None, None
         total = len(files)
         for idx, inp in enumerate(files, start=1):
             if self.stop_requested:
@@ -1153,16 +1161,19 @@ class SnipSyncApp(_Base):
                                   on_log=self._log, should_stop=lambda: self.stop_requested, tr=self.t,
                                   model_cache=model_cache, on_progress=self._progress_threadsafe)
             if result.pending_paths and not result.stopped:
-                self._review_and_wait(result, inp.stem if stem is None else stem)
+                self._review_and_wait(result, inp.stem if stem is None else stem, str(inp))
+            elif result.ok and not result.stopped and result.srt_path and result.cues:
+                self._save_run_session(result, inp)          # 確認なしで書いた字幕も、あとで続きを編集できるように
             if result.ok and not result.stopped:
                 finished += 1
-                last_out, last_result = out_dir, result
+                last_out, last_result, last_inp = out_dir, result, inp
         model_cache.clear()
         self.running = False
         if last_result is not None:
             self.last_cues = list(last_result.cues)
             self.last_title = Path(last_result.timeline_path).stem if last_result.timeline_path else ""
             self.last_out_dir = last_out
+            self.last_source = str(last_inp)
             paths = {}
             if last_result.srt_path:
                 paths["srt"] = last_result.srt_path
@@ -1173,7 +1184,16 @@ class SnipSyncApp(_Base):
             self._log(self.t("log_batch_done", finished) if total > 1 else self.t("log_done_all"), "success")
         self.after(0, self._reset_ui)
 
-    def _review_and_wait(self, result, title: str):
+    def _save_run_session(self, result, source):
+        """書き出した字幕のそばに、編集の続きを残すファイル（セッション）を書く。"""
+        try:
+            write_session(session_path(result.srt_path), Session(
+                title=Path(result.srt_path).stem, source=str(source), settings=self._run_settings,
+                editor=CueEditor(result.cues).export_state()))
+        except OSError as exc:
+            self._log(self.t("log_session_failed", exc), "warn")
+
+    def _review_and_wait(self, result, title: str, source: str = ""):
         """字幕を保存する前に確認・編集ウィンドウを開き、閉じるまで処理を止める（ワーカースレッドで呼ぶ）。
 
         保存した宛先だけを result に反映する。保存しなかった字幕はファイルにならない。
@@ -1186,7 +1206,7 @@ class SnipSyncApp(_Base):
             done.set()
 
         self._log(self.t("log_review_wait"), "info")
-        self.after(0, lambda: self._open_review(result, title, finished))
+        self.after(0, lambda: self._open_review(result, title, finished, source))
         while not done.wait(0.2):
             if self.stop_requested:       # 停止しても窓は残り、保存はできる
                 return
@@ -1224,9 +1244,9 @@ class SnipSyncApp(_Base):
         if count:
             self._log(self.t("log_markers_speaker_added", count), "success")
 
-    def _open_review(self, result, title: str, on_closed):
+    def _open_review(self, result, title: str, on_closed, source: str = ""):
         self.review_win = SubtitleEditor(self, result.cues, title, result.pending_paths, pending=True,
-                                         on_closed=on_closed)
+                                         on_closed=on_closed, source=source, settings=self._run_settings)
         self.review_win.focus()
 
     # ── AI モデルの取得 ──────────────────────────────────────────────────────────────
@@ -1346,7 +1366,29 @@ class SnipSyncApp(_Base):
             self.editor_win.lift()
             self.editor_win.focus()
             return
-        self.editor_win = SubtitleEditor(self, self.last_cues, self.last_title, self.last_paths)
+        self.editor_win = SubtitleEditor(self, self.last_cues, self.last_title, self.last_paths,
+                                         source=self.last_source, settings=self._run_settings)
+
+    def open_saved(self):
+        """「出力済みを開く」: 保存した編集セッション（.snipsync.json）か .srt を選び、編集画面で開く。"""
+        if not self._editor_alive():
+            self.editor_win = SubtitleEditor(self)
+        else:
+            self.editor_win.lift()
+            self.editor_win.focus()
+        self.editor_win.open_file()
+
+    def restore_context(self, source: str, settings: dict) -> str | None:
+        """セッションを開いたとき、元の動画とカットの設定を本体へ戻す（時刻を押しての再生のため）。
+        動画が見つからなければ、利用者に見せる文言のキーを返す。"""
+        if settings:
+            self._apply_settings(settings)
+        if not source:
+            return None
+        if not Path(source).exists():
+            return "ed_session_source_missing"
+        self._set_files([source])
+        return None
 
 
 def main():

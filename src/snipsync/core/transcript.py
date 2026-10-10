@@ -1,4 +1,6 @@
 """字幕（Cue 列）を読みやすい .txt / .md の文字起こしにする。"""
+import re
+
 from snipsync.core.subtitles import Cue, speaker_label
 
 
@@ -83,8 +85,21 @@ def write_transcripts(cues, base_path, *, title: str, want_txt: bool, want_md: b
     return written
 
 
-def parse_srt(text: str) -> list[Cue]:
-    """SRT 文字列 -> Cue 列（プレビュー用。話者は解釈せず、本文はそのまま保つ）。"""
+_SPEAKER_PREFIX = re.compile(r"^(?:話者|Speaker )(\d+)(?:：|: ?)", re.IGNORECASE)
+
+
+def split_speaker_prefix(text: str):
+    """本文の頭の「話者N：」/「Speaker N: 」を (話者の番号（0 始まり）, 残りの本文) にする。無ければ (None, text)。"""
+    m = _SPEAKER_PREFIX.match(text)
+    if not m or int(m.group(1)) < 1:
+        return None, text
+    return int(m.group(1)) - 1, text[m.end():]
+
+
+def parse_srt(text: str, speakers: bool = False) -> list[Cue]:
+    """SRT 文字列 -> Cue 列。speakers=False（プレビュー用）は、本文をそのまま保つ。
+    speakers=True は、本文の頭の「話者N：」を話者として読み、本文から外す（書き出した字幕を開き直して、続きを編集する用）。
+    話者名を付けた字幕（「山田：」など）は、番号に戻せないので、本文のまま。"""
     from snipsync.core.subtitles import parse_timestamp
     cues: list[Cue] = []
     for block in text.replace("\r\n", "\n").strip().split("\n\n"):
@@ -100,5 +115,9 @@ def parse_srt(text: str) -> list[Cue]:
             start, end = parse_timestamp(a), parse_timestamp(b)
         except ValueError:
             continue
-        cues.append(Cue(start, end, "\n".join(lines[time_idx + 1:]), None))
+        body = "\n".join(lines[time_idx + 1:])
+        speaker = None
+        if speakers:
+            speaker, body = split_speaker_prefix(body)
+        cues.append(Cue(start, end, body, speaker))
     return cues

@@ -259,7 +259,11 @@ While **Review before saving** is on (the default), processing pauses at the sub
 | ⑤ | Change the speaker (for all selected rows at once) and type a speaker name such as "Yamada" |
 | ⑥ | Split at the cursor, merge with the next subtitle, restore the original, delete |
 | ⑦ | **Include timestamps** (`.txt` / `.md`) and **Show speaker names**. They change what is saved and copied |
-| ⑧ | **Save**. **Save as…**, **Copy** and **Open SRT…** are next to it |
+| ⑧ | **Save**. **Save as…**, **Copy** and **Open…** are next to it |
+
+- **Speakers tab:** lists each speaker with their speaking time, cue count and share. Speaker separation can split one person into dozens of labels. Select the labels that are the same person and **Merge** them into one; **Listen** plays the speaker's longest cue in the main window so you can tell whose voice it is; **Set name** names a speaker. Two automatic helpers move tiny labels (less than 30 seconds in total, by default) and short remarks between two turns of the same speaker to the nearest speaker in time, after showing you how many speakers remain. **Renumber** orders speakers by speaking time. Every step can be undone.
+- **Click a time** (in the list, or above the text box) to play the main window's preview from that subtitle. It works when the video is chosen in the main window and the cut map is shown.
+- **Pick up where you left off:** saving also writes `<name>.snipsync.json` next to the output. **Open saved…** (main window) or **Open…** (editor) reads it back after you restart the app: speaker names, the marks for changed rows, the source video and the cut settings come back. An `.srt` alone can be opened too; its `Speaker N:` prefixes are read as speakers, but names, change marks and the video are not kept.
 
 <p align="center"><img src="docs/images/editor_en.gif" width="640" alt="Using the review window: select several rows, change their speaker at once, name the speaker, check the .srt preview, and turn off speaker names"></p>
 

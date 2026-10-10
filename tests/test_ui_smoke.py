@@ -1173,3 +1173,211 @@ def test_release_notes_show_the_current_language_without_markdown_marks():
     assert en == "New: see README" and "新機能" not in en
     assert "#" not in ja and "**" not in ja and "`" not in ja and "\n\n\n" not in ja
     assert notes_for("plain text only", "ja") == "plain text only"          # 2 部構成でなければ、そのまま
+
+
+# ── 話者の一覧・整理、編集セッションの保存と復元 ───────────────────────────────────────────
+def _fragmented_cues():
+    out, t = [], 0.0
+    for i in range(4):
+        out.append(Cue(t, t + 20, "Aの長い発言" * 5, 0))
+        t += 20
+        out.append(Cue(t, t + 1, "うん", 10 + i))
+        t += 1
+        out.append(Cue(t, t + 20, "Aの続きの長い発言" * 5, 0))
+        t += 20
+        out.append(Cue(t, t + 25, "Bの長い発言" * 5, 1))
+        t += 25
+    return out
+
+
+def _open_speakers(app, cues=None):
+    app.last_cues, app.last_title = list(cues or _fragmented_cues()), "demo"
+    app._open_editor()
+    pump(app, 10)
+    ed = app.editor_win
+    ed.view.set_key("speakers")
+    ed._show_view()
+    pump(app, 5)
+    return ed
+
+
+def test_speaker_view_lists_speakers_by_speaking_time(app):
+    ed = _open_speakers(app)
+    rows = ed.spk_tree.get_children()
+    assert len(rows) == 6 and rows[0] == "0" and rows[1] == "1"            # 話者0（A）、話者1（B）、小さなラベル 4 つ
+    assert ed.spk_tree.set("0", "cues") == 8 or ed.spk_tree.set("0", "cues") == "8"
+    assert "%" in ed.spk_tree.set("0", "share")
+    assert ed.btn_spk_merge.cget("state") == "disabled" and ed.btn_spk_listen.cget("state") == "disabled"
+
+
+def test_merging_selected_speakers_into_a_target_and_undoing(app):
+    ed = _open_speakers(app)
+    ed.spk_tree.selection_set("10", "11")
+    ed._spk_selection_changed()
+    assert ed.btn_spk_merge.cget("state") == "normal"
+    ed.spk_target_var.set(next(k for k, v in ed._spk_targets.items() if v == 0))
+    ed._spk_merge()
+    assert sorted({c.speaker for c in ed.editor.cues}) == [0, 1, 12, 13]
+    assert ed.status.cget("text") == app.t("ed_spk_merged", 6, 4)
+    assert len(ed.spk_tree.get_children()) == 4                              # 一覧も更新された
+    ed.undo()
+    assert len(ed.spk_tree.get_children()) == 6
+
+
+def test_merging_with_nothing_selected_says_so(app):
+    ed = _open_speakers(app)
+    ed._spk_merge()
+    assert ed.status.cget("text") == app.t("ed_spk_pick") and not ed.editor.dirty
+
+
+def test_renaming_a_speaker_from_the_list(app):
+    ed = _open_speakers(app)
+    ed.spk_tree.selection_set("1")
+    ed._spk_selection_changed()
+    ed.spk_name_var.set("佐藤")
+    ed._spk_rename()
+    assert ed.editor.names == {1: "佐藤"} and ed.spk_tree.set("1", "who") == "佐藤"
+
+
+def test_auto_cleanup_shows_the_counts_first_and_only_applies_when_confirmed(app, monkeypatch):
+    from snipsync.ui import subtitle_editor as se
+    ed = _open_speakers(app)
+    asked = []
+    monkeypatch.setattr(se.messagebox, "askyesno", lambda title, text, **k: asked.append(text) or False)
+    ed.spk_min_var.set("5")
+    ed._spk_small()
+    assert asked == [app.t("ed_spk_confirm", 6, 2, 4)] and not ed.editor.dirty        # 断ったので、何も変わらない
+    monkeypatch.setattr(se.messagebox, "askyesno", lambda *a, **k: True)
+    ed._spk_small()
+    assert sorted({c.speaker for c in ed.editor.cues}) == [0, 1] and ed.editor.dirty
+    ed._spk_small()                                                                    # もう対象が無い
+    assert ed.status.cget("text") == app.t("ed_spk_nothing")
+
+
+def test_sandwiched_cleanup_uses_the_character_limit_from_the_entry(app, monkeypatch):
+    from snipsync.ui import subtitle_editor as se
+    ed = _open_speakers(app)
+    monkeypatch.setattr(se.messagebox, "askyesno", lambda *a, **k: True)
+    ed.spk_chars_var.set("1")                                                          # 「うん」は 2 文字: 対象外
+    ed._spk_sandwiched()
+    assert ed.status.cget("text") == app.t("ed_spk_nothing")
+    ed.spk_chars_var.set("abc")                                                        # 数でなければ、初期値（10 字）
+    ed._spk_sandwiched()
+    assert sorted({c.speaker for c in ed.editor.cues}) == [0, 1]
+
+
+def test_renumber_from_the_list(app):
+    ed = _open_speakers(app)
+    ed.editor.merge_speakers([0], 10)                                                  # 長い話者が、番号 10 になる
+    ed._after_speaker_change()
+    ed._spk_renumber()
+    assert ed.spk_tree.get_children()[0] == "0" and ed.status.cget("text") == app.t("ed_spk_renumbered")
+
+
+def test_speaker_view_says_so_when_no_cue_has_a_speaker(app):
+    ed = _open_speakers(app, [Cue(0, 2, "あ", None), Cue(2, 4, "い", None)])
+    assert ed.spk_tree.get_children() == () and ed.spk_note.cget("text") == app.t("ed_spk_empty")
+
+
+def test_saving_writes_a_session_next_to_the_output_and_opening_it_restores_everything(app, tmp_path, monkeypatch):
+    from snipsync.core import session as sess
+    from snipsync.ui.subtitle_editor import SubtitleEditor
+    ed = SubtitleEditor(app, _fragmented_cues(), "talk", {"srt": tmp_path / "talk.srt", "txt": tmp_path / "talk.txt"},
+                        pending=True, source=str(tmp_path / "talk.mp4"), settings={"margin": 0.3, "threshold": 5.0})
+    app.review_win = ed
+    pump(app, 10)
+    ed.editor.rename_speaker(1, "佐藤")
+    ed.editor.merge_speakers([10, 11, 12, 13], 0)
+    ed.save()
+    pump(app, 5)
+    path = tmp_path / "talk.snipsync.json"
+    assert path.exists() and (tmp_path / "talk.srt").exists()
+    got = sess.read_session(path)
+    assert got.source == str(tmp_path / "talk.mp4") and got.settings == {"margin": 0.3, "threshold": 5.0}
+
+    calls = []
+    monkeypatch.setattr(app, "restore_context", lambda source, settings: calls.append((source, settings)))
+    ed.destroy()
+    app.review_win = None
+    ed2 = SubtitleEditor(app)
+    app.editor_win = ed2
+    ed2.open_path(path)                                                                # 再起動後を想定して、ファイルから開く
+    pump(app, 5)
+    assert sorted({c.speaker for c in ed2.editor.cues}) == [0, 1] and ed2.editor.names == {1: "佐藤"}
+    assert ed2.editor.is_changed(1) and not ed2.editor.dirty                           # 元の字幕との差（変更の印）も戻る
+    assert set(ed2.paths) == {"srt", "txt"} and ed2.stem == "talk"
+    assert calls == [(str(tmp_path / "talk.mp4"), {"margin": 0.3, "threshold": 5.0})]
+    assert ed2.status.cget("text") == app.t("ed_session_opened")
+    ed2.editor.dirty = False
+    ed2.destroy()
+    app.editor_win = None
+
+
+def test_opening_an_srt_reads_speakers_and_offers_the_sibling_session(app, tmp_path, monkeypatch):
+    from snipsync.core import session as sess
+    from snipsync.core.subtitle_edit import CueEditor
+    from snipsync.ui import subtitle_editor as se
+    srt = tmp_path / "talk.srt"
+    srt.write_text("1\n00:00:00,000 --> 00:00:02,000\n話者2：こんにちは\n\n2\n00:00:02,000 --> 00:00:04,000\n話者1：はい\n",
+                   encoding="utf-8")
+    app.last_cues, app.last_title = [], ""
+    ed = se.SubtitleEditor(app)
+    app.editor_win = ed
+    pump(app, 5)
+    ed.open_path(srt)                                                                  # セッションが無ければ、そのまま .srt
+    assert [(c.speaker, c.text) for c in ed.editor.cues] == [(1, "こんにちは"), (0, "はい")]
+    saved = CueEditor([Cue(0, 2, "セッション側", 0)])
+    sess.write_session(sess.session_path(srt), sess.Session(title="talk", editor=saved.export_state()))
+    asked = []
+    monkeypatch.setattr(se.messagebox, "askyesno", lambda title, text, **k: asked.append(title) or False)
+    ed.open_path(srt)                                                                  # 「いいえ」: .srt だけを開く
+    assert asked == [app.t("ed_session_ask_title")] and ed.editor.cues[0].text == "こんにちは"
+    monkeypatch.setattr(se.messagebox, "askyesno", lambda *a, **k: True)
+    ed.open_path(srt)                                                                  # 「はい」: セッションで開く
+    assert ed.editor.cues[0].text == "セッション側"
+    ed.destroy()
+    app.editor_win = None
+
+
+def test_a_broken_session_is_reported_and_the_editor_keeps_its_content(app, tmp_path, monkeypatch):
+    from snipsync.ui import subtitle_editor as se
+    shown = []
+    monkeypatch.setattr(se.messagebox, "showerror", lambda title, text, **k: shown.append(text))
+    ed = _open_speakers(app)
+    bad = tmp_path / "bad.snipsync.json"
+    bad.write_text("{oops", encoding="utf-8")
+    ed.open_path(bad)
+    assert shown and len(ed.editor) == len(_fragmented_cues())
+
+
+def test_restore_context_applies_settings_and_selects_the_video_when_it_exists(app, tmp_path, monkeypatch):
+    video = tmp_path / "talk.wav"
+    video.write_bytes(b"x")
+    chosen = []
+    monkeypatch.setattr(app, "_set_files", lambda files: chosen.append(files))
+    assert app.restore_context(str(video), {"margin": 0.35, "threshold": 6.0}) is None
+    assert chosen == [[str(video)]] and app.margin_var.get() == 0.35 and app.threshold_var.get() == 6.0
+    assert app.restore_context(str(tmp_path / "gone.mp4"), {}) == "ed_session_source_missing"
+    assert app.restore_context("", {}) is None
+
+
+def test_a_run_without_review_still_leaves_a_session_behind(app, tmp_path):
+    from snipsync.core import session as sess
+
+    class R:
+        srt_path = tmp_path / "out.srt"
+        cues = _fragmented_cues()
+
+    app._run_settings = {"margin": 0.2, "threshold": 4.0, "output_dir": "x"}
+    app._save_run_session(R, tmp_path / "talk.mp4")
+    got = sess.read_session(tmp_path / "out.snipsync.json")
+    assert got.source == str(tmp_path / "talk.mp4") and got.settings == {"margin": 0.2, "threshold": 4.0}
+    assert len(got.editor["items"]) == len(_fragmented_cues())
+
+
+def test_open_saved_button_exists_and_follows_the_language(app):
+    pump(app)
+    assert app.btn_open_saved.cget("text") == app.t("btn_open_saved")
+    app._on_lang_change("en")
+    assert app.btn_open_saved.cget("text") == "Open saved…"
+    app._on_lang_change("ja")

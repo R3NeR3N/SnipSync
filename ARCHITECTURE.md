@@ -22,7 +22,9 @@ SnipSync/
 │       │   ├── aebin.py          # auto-editor 31.x バイナリの取得・SHA-256 検証・同梱版の解決
 │       │   ├── autoeditor.py     # auto-editor コマンド組み立て / fps・長さ・解像度の取得（PyAV 代替あり）
 │       │   ├── subtitles.py      # 字幕: 境界計算・文節改行・話者付与・時刻補正・Cue/SRT
-│       │   ├── subtitle_edit.py  # 字幕の編集ロジック（CueEditor・書き出し文字列の生成）
+│       │   ├── subtitle_edit.py  # 字幕の編集ロジック（CueEditor・話者の統合・状態の保存と復元・書き出し文字列の生成）
+│       │   ├── session.py        # 編集セッション（<名前>.snipsync.json）の保存・復元。壊れたファイルは SessionError
+│       │   ├── speaker_cleanup.py  # 話者ラベルの自動整理の計画（小さな話者・挟まれた短い発言）
 │       │   ├── transcript.py     # .txt / .md 生成・SRT 読み込み
 │       │   ├── vad.py            # 音声読み込み（全トラック加算）・VAD・v1 chunks 生成
 │       │   ├── audiocut.py       # chunks から字幕用のカット後音声を自前で組み立てる

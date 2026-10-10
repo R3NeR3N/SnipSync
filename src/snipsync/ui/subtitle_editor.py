@@ -11,12 +11,27 @@ from tkinter import filedialog, messagebox, ttk
 
 import customtkinter as ctk
 
+from snipsync.core.session import (
+    SUFFIX as SESSION_SUFFIX,
+)
+from snipsync.core.session import (
+    Session,
+    SessionError,
+    is_session_path,
+    read_session,
+    session_path,
+    write_session,
+)
+from snipsync.core.speaker_cleanup import count_after, plan_sandwiched, plan_small_speakers
 from snipsync.core.subtitle_edit import CueEditor, format_for_path, render, save
 from snipsync.core.transcript import parse_srt
 from snipsync.ui import theme as T
 from snipsync.ui import widgets as W
 
 MAX_SPEAKERS = 6
+SMALL_SPEAKER_SECONDS = 30      # 話者の自動整理の初期値: 発話の合計がこれに満たない話者を、近い話者へ寄せる
+SANDWICHED_CHARS = 10           # 同: 前後を同じ話者に挟まれた、これ以下の字数の発言を寄せる
+SPEAKER_TARGETS = 30            # 「まとめる」先の候補は、よく話した順の上位だけ
 
 
 def _hms(sec: float) -> str:
@@ -26,7 +41,7 @@ def _hms(sec: float) -> str:
 
 class SubtitleEditor(ctk.CTkToplevel):
     def __init__(self, app, cues=(), title: str = "", paths: dict | None = None, *, pending: bool = False,
-                 on_closed=None):
+                 on_closed=None, source: str = "", settings: dict | None = None):
         """pending=True: 字幕ファイルはまだ無い（処理は保存前で止まっている）。最初の保存で paths へ書く。
         on_closed(cues, saved, paths, info): 閉じたときに、編集後の字幕・保存したか・保存先を受け取る。
         info["saved_cues"] / info["names"] は、最後に保存した時点の字幕と話者名（保存していなければ None / {}）。"""
@@ -41,6 +56,8 @@ class SubtitleEditor(ctk.CTkToplevel):
         self.saved_cues = None                              # 最後に保存した時点の字幕（ファイルの中身と同じ）
         self.saved_names: dict = {}
         self._on_closed = on_closed
+        self.source = source                                # 元の動画（編集の続きと、時刻を押しての再生のため、セッションに残す）
+        self.settings = dict(settings or {})                # そのときのカットの設定
         self._sel: int | None = None          # 1件だけ選んでいるときの番号
         self._sels: list[int] = []            # 選んでいる件（複数のことがある）
         self._loading = False
@@ -101,6 +118,7 @@ class SubtitleEditor(ctk.CTkToplevel):
         self.body.columnconfigure(0, weight=1)
         self.body.rowconfigure(0, weight=1)
         self._build_edit_view()
+        self._build_speaker_view()
         self._build_preview_view()
 
         # 下段: 保存まわり
@@ -117,7 +135,7 @@ class SubtitleEditor(ctk.CTkToplevel):
         self.sp_switch.grid(row=0, column=1, sticky="w", padx=(T.S4, 0))
         self.status = W.caption(foot)
         self.status.grid(row=0, column=1, sticky="w", padx=T.S4)
-        self.btn_open = W.Btn(foot, self.t("ed_open"), self.open_srt)
+        self.btn_open = W.Btn(foot, self.t("ed_open"), self.open_file)
         self.btn_open.grid(row=0, column=2, padx=(0, T.S2))
         self.btn_copy = W.Btn(foot, self.t("ed_copy"), self.copy)
         self.btn_copy.grid(row=0, column=3, padx=(0, T.S2))
@@ -131,7 +149,8 @@ class SubtitleEditor(ctk.CTkToplevel):
             self.close_note.grid(row=1, column=0, columnspan=6, sticky="w", pady=(T.S2, 0))
 
     def _view_options(self) -> dict:
-        return {"edit": self.t("ed_view_edit"), "txt": ".txt", "md": ".md", "srt": ".srt"}
+        return {"edit": self.t("ed_view_edit"), "speakers": self.t("ed_view_speakers"), "txt": ".txt", "md": ".md",
+                "srt": ".srt"}
 
     def _build_edit_view(self):
         self.edit_view = ctk.CTkFrame(self.body, fg_color="transparent")
@@ -164,7 +183,7 @@ class SubtitleEditor(ctk.CTkToplevel):
         # 空の状態（字幕が無いとき表の上に出す）
         self.empty = ctk.CTkFrame(well, fg_color=T.WELL, corner_radius=0)
         W.label(self.empty, self.t("ed_empty"), "body", T.DUST).pack(pady=(60, T.S3))
-        W.Btn(self.empty, self.t("ed_open"), self.open_srt).pack()
+        W.Btn(self.empty, self.t("ed_open"), self.open_file).pack()
         self._empty_label = self.empty.winfo_children()[0]
         self._empty_btn = self.empty.winfo_children()[1]
 
@@ -212,6 +231,199 @@ class SubtitleEditor(ctk.CTkToplevel):
         self.btn_delete.pack(side="right")
         self.split_hint = W.caption(self.detail, self.t("ed_split_hint"))
         self.split_hint.grid(row=3, column=0, sticky="w", padx=T.S4, pady=(0, T.S3))
+
+    def _build_speaker_view(self):
+        """話者の一覧。同じ人のラベルをまとめたり、名前を付けたり、小さなラベルを自動で寄せたりする。"""
+        self.speaker_view = ctk.CTkFrame(self.body, fg_color="transparent")
+        self.speaker_view.grid(row=0, column=0, sticky="nsew")
+        self.speaker_view.columnconfigure(0, weight=1)
+        self.speaker_view.rowconfigure(1, weight=1)
+        self._spk_texts: list = []            # (部品, 文言のキー): 言語を切り替えたときに、文言を差し替える
+        self._spk_targets: dict = {}          # 「まとめる」先の表示名 -> 話者の番号
+
+        def txt(widget, key):
+            self._spk_texts.append((widget, key))
+            widget.configure(text=self.t(key))
+            return widget
+
+        self.spk_note = txt(W.caption(self.speaker_view, wraplength=880), "ed_spk_note")
+        self.spk_note.grid(row=0, column=0, sticky="w", pady=(0, T.S2))
+        well = ctk.CTkFrame(self.speaker_view, fg_color=T.WELL, corner_radius=T.R_PANEL)
+        well.grid(row=1, column=0, sticky="nsew")
+        well.columnconfigure(0, weight=1)
+        well.rowconfigure(0, weight=1)
+        self.spk_tree = ttk.Treeview(well, columns=("who", "time", "cues", "share"), show="headings",
+                                     style="Snip.Treeview", selectmode="extended")
+        self.spk_tree.grid(row=0, column=0, sticky="nsew", padx=(T.S2, 0), pady=T.S2)
+        sb = ctk.CTkScrollbar(well, command=self.spk_tree.yview, fg_color=T.WELL, button_color=T.EDGE,
+                              button_hover_color=T.RAISED)
+        sb.grid(row=0, column=1, sticky="ns", padx=(0, T.S1), pady=T.S2)
+        self.spk_tree.configure(yscrollcommand=sb.set)
+        for col, width, anchor in (("who", 280, "w"), ("time", 110, "e"), ("cues", 90, "e"), ("share", 90, "e")):
+            self.spk_tree.column(col, width=width, stretch=col == "who", anchor=anchor)
+        for i in range(len(T.SPEAKERS)):
+            self.spk_tree.tag_configure(f"s{i}", background=T.blend(T.SPEAKERS[i], T.WELL, 0.13))
+        self.spk_tree.bind("<<TreeviewSelect>>", lambda _e: self._spk_selection_changed())
+
+        panel = ctk.CTkFrame(self.speaker_view, fg_color=T.PANEL, corner_radius=T.R_PANEL)
+        panel.grid(row=2, column=0, sticky="ew", pady=(T.S3, 0))
+        pad = dict(padx=T.S4)
+
+        row = ctk.CTkFrame(panel, fg_color="transparent")
+        row.grid(row=0, column=0, sticky="ew", pady=(T.S3, T.S2), **pad)
+        self.btn_spk_listen = txt(W.Btn(row, "", self._spk_listen), "ed_spk_listen")
+        self.btn_spk_listen.pack(side="left", padx=(0, T.S4))
+        txt(W.caption(row), "ed_name").pack(side="left", padx=(0, T.S2))
+        self.spk_name_var = tk.StringVar()
+        self.spk_name_entry = W.entry(row, self.spk_name_var, width=130)
+        self.spk_name_entry.pack(side="left", padx=(0, T.S2))
+        self.spk_name_entry.bind("<Return>", lambda _e: self._spk_rename())
+        self.btn_spk_rename = txt(W.Btn(row, "", self._spk_rename), "ed_spk_rename")
+        self.btn_spk_rename.pack(side="left")
+
+        row = ctk.CTkFrame(panel, fg_color="transparent")
+        row.grid(row=1, column=0, sticky="ew", pady=(0, T.S2), **pad)
+        txt(W.caption(row), "ed_spk_merge_a").pack(side="left", padx=(0, T.S2))
+        self.spk_target_var = tk.StringVar()
+        self.spk_target_menu = W.menu(row, [""], variable=self.spk_target_var, width=220)
+        self.spk_target_menu.pack(side="left", padx=(0, T.S2))
+        self.btn_spk_merge = txt(W.Btn(row, "", self._spk_merge, kind="primary"), "ed_spk_merge")
+        self.btn_spk_merge.pack(side="left")
+
+        row = ctk.CTkFrame(panel, fg_color="transparent")
+        row.grid(row=2, column=0, sticky="ew", pady=(0, T.S2), **pad)
+        txt(W.caption(row), "ed_spk_small_a").pack(side="left", padx=(0, T.S2))
+        self.spk_min_var = tk.StringVar(value=str(SMALL_SPEAKER_SECONDS))
+        W.entry(row, self.spk_min_var, width=56, justify="right").pack(side="left", padx=(0, T.S2))
+        txt(W.caption(row), "ed_spk_small_b").pack(side="left", padx=(0, T.S3))
+        self.btn_spk_small = txt(W.Btn(row, "", self._spk_small), "ed_spk_apply")
+        self.btn_spk_small.pack(side="left")
+
+        row = ctk.CTkFrame(panel, fg_color="transparent")
+        row.grid(row=3, column=0, sticky="ew", pady=(0, T.S2), **pad)
+        txt(W.caption(row), "ed_spk_sand_a").pack(side="left", padx=(0, T.S2))
+        self.spk_chars_var = tk.StringVar(value=str(SANDWICHED_CHARS))
+        W.entry(row, self.spk_chars_var, width=56, justify="right").pack(side="left", padx=(0, T.S2))
+        txt(W.caption(row), "ed_spk_sand_b").pack(side="left", padx=(0, T.S3))
+        self.btn_spk_sand = txt(W.Btn(row, "", self._spk_sandwiched), "ed_spk_apply")
+        self.btn_spk_sand.pack(side="left")
+
+        row = ctk.CTkFrame(panel, fg_color="transparent")
+        row.grid(row=4, column=0, sticky="ew", pady=(0, T.S3), **pad)
+        self.btn_spk_renum = txt(W.Btn(row, "", self._spk_renumber), "ed_spk_renumber")
+        self.btn_spk_renum.pack(side="left")
+
+    # ── 話者の一覧 ─────────────────────────────────────────────────────────────────
+    def _fill_speakers(self):
+        """いまの字幕から、話者の一覧を作り直す（選んでいた話者は、残っていれば選び直す）。"""
+        keep = set(self.spk_tree.selection())
+        self.spk_tree.delete(*self.spk_tree.get_children())
+        stats = self.editor.speaker_stats()
+        total = sum(s.seconds for s in stats) or 1.0
+        for st in stats:
+            name = self._speaker_name(st.speaker)
+            self.spk_tree.insert("", "end", iid=str(st.speaker), tags=(f"s{st.speaker % len(T.SPEAKERS)}",),
+                                 values=(name, _hms(st.seconds), st.cues, f"{st.seconds / total * 100:.1f}%"))
+        for col, key in (("who", "ed_col_speaker"), ("time", "ed_spk_col_time"), ("cues", "ed_spk_col_cues"),
+                         ("share", "ed_spk_col_share")):
+            self.spk_tree.heading(col, text=self.t(key), anchor="w" if col == "who" else "e")
+        keep = [i for i in keep if self.spk_tree.exists(i)]
+        if keep:
+            self.spk_tree.selection_set(*keep)
+        self.spk_note.configure(text=self.t("ed_spk_note" if stats else "ed_spk_empty"))
+        top = stats[:SPEAKER_TARGETS]                     # まとめ先の候補は、よく話した順の上位だけ
+        names = [self._speaker_name(s.speaker) for s in top]
+        self._spk_targets = {}
+        labels = []
+        for st, name in zip(top, names, strict=True):
+            label = name if names.count(name) == 1 else f"{name} ({st.speaker + 1})"
+            labels.append(label)
+            self._spk_targets[label] = st.speaker
+        self.spk_target_menu.configure(values=labels or [""])
+        if self.spk_target_var.get() not in self._spk_targets:
+            self.spk_target_var.set(labels[0] if labels else "")
+        self._spk_selection_changed()
+
+    def _spk_selected(self) -> list[int]:
+        return [int(i) for i in self.spk_tree.selection()]
+
+    def _spk_selection_changed(self):
+        sel = self._spk_selected()
+        one = len(sel) == 1
+        self.btn_spk_listen.enable(bool(sel))
+        self.btn_spk_rename.enable(one)
+        self.btn_spk_merge.enable(bool(sel))
+        if one:
+            self.spk_name_var.set(self.editor.names.get(sel[0], ""))
+        elif not sel:
+            self.spk_name_var.set("")
+
+    def _spk_listen(self):
+        """選んだ話者の、いちばん長い字幕を、本体のプレビューで再生する（誰の声かを確かめる）。"""
+        sel = set(self._spk_selected())
+        for st in self.editor.speaker_stats():
+            if st.speaker in sel:
+                self._play_cue(st.longest)
+                return
+
+    def _spk_rename(self):
+        sel = self._spk_selected()
+        if len(sel) == 1 and self.editor.rename_speaker(sel[0], self.spk_name_var.get()):
+            self._after_speaker_change()
+
+    def _spk_merge(self):
+        sel = self._spk_selected()
+        target = self._spk_targets.get(self.spk_target_var.get())
+        if not sel:
+            self.flash(self.t("ed_spk_pick"))
+            return
+        if target is None:
+            return
+        before = len(self.editor.speakers())
+        if self.editor.merge_speakers(sel, target):
+            self._after_speaker_change()
+            self.flash(self.t("ed_spk_merged", before, len(self.editor.speakers())))
+
+    @staticmethod
+    def _number(var, default, cast=float):
+        try:
+            value = cast(var.get().strip())
+        except ValueError:
+            return default
+        return value if value >= 0 else default
+
+    def _apply_plan(self, plan: dict):
+        """計画を見せて、よければ適用する（話者のラベルの数と、変わる字幕の数を、先に知らせる）。"""
+        if not plan:
+            self.flash(self.t("ed_spk_nothing"))
+            return
+        cues = self.editor.cues
+        before, after = len(self.editor.speakers()), count_after(cues, plan)
+        if not messagebox.askyesno(self.t("ed_spk_confirm_title"),
+                                   self.t("ed_spk_confirm", before, after, len(plan)), parent=self):
+            return
+        if self.editor.reassign(plan):
+            self._after_speaker_change()
+            self.flash(self.t("ed_spk_merged", before, after))
+
+    def _spk_small(self):
+        seconds = self._number(self.spk_min_var, SMALL_SPEAKER_SECONDS)
+        self._apply_plan(plan_small_speakers(self.editor.cues, seconds))
+
+    def _spk_sandwiched(self):
+        chars = self._number(self.spk_chars_var, SANDWICHED_CHARS, int)
+        self._apply_plan(plan_sandwiched(self.editor.cues, chars))
+
+    def _spk_renumber(self):
+        if self.editor.renumber_speakers():
+            self._after_speaker_change()
+            self.flash(self.t("ed_spk_renumbered"))
+
+    def _after_speaker_change(self):
+        self._refresh_rows()
+        self._load_detail()
+        self._update_chrome()
+        self._show_view()
 
     def _build_preview_view(self):
         self.preview_view = ctk.CTkFrame(self.body, fg_color="transparent")
@@ -284,7 +496,11 @@ class SubtitleEditor(ctk.CTkToplevel):
     def _show_view(self):
         key = self.view.get_key()
         editing = key == "edit"
-        if editing:
+        if key == "speakers":
+            self.speaker_view.tkraise()
+            self.ts_switch.configure(state="disabled")
+            self._fill_speakers()
+        elif editing:
             self.edit_view.tkraise()
             self.ts_switch.configure(state="disabled")
         else:
@@ -576,7 +792,9 @@ class SubtitleEditor(ctk.CTkToplevel):
             (self.btn_split, "tip_ed_split"), (self.btn_merge, "tip_ed_merge"), (self.btn_delete, "tip_ed_delete"),
             (self.ts_switch, "tip_ed_timestamps"), (self.sp_switch, "tip_ed_speaker_names"), (self.btn_open, "tip_ed_open"), (self.btn_copy, "tip_ed_copy"),
             (self.btn_save_as, "tip_ed_save_as"), (self.btn_save, "tip_ed_save"),
-            (self.detail_time, "tip_ed_time"),
+            (self.detail_time, "tip_ed_time"), (self.btn_spk_listen, "tip_ed_spk_listen"),
+            (self.btn_spk_merge, "tip_ed_spk_merge"), (self.btn_spk_small, "tip_ed_spk_small"),
+            (self.btn_spk_sand, "tip_ed_spk_sand"), (self.btn_spk_renum, "tip_ed_spk_renumber"),
         ]
         for widget, key in pairs:
             W.tip(widget, (lambda k=key: self.t(k)))
@@ -603,6 +821,7 @@ class SubtitleEditor(ctk.CTkToplevel):
         self._mark_saved()
         names = ", ".join(written)
         self.flash(self.t("ed_saved", names))
+        self._write_session()
 
     def _mark_saved(self):
         self.editor.mark_saved()
@@ -630,6 +849,7 @@ class SubtitleEditor(ctk.CTkToplevel):
         self.stem = Path(path).stem
         self._mark_saved()
         self.flash(self.t("ed_saved", Path(path).name))
+        self._write_session()
 
     def copy(self):
         key = self.view.get_key()
@@ -638,18 +858,59 @@ class SubtitleEditor(ctk.CTkToplevel):
         self.clipboard_append(render(self.editor.cues, fmt, title=self.stem, **self._render_args()))
         self.flash(self.t("ed_copied"))
 
-    def open_srt(self):
+    def open_file(self):
+        """「開く」: 保存した編集セッション（.snipsync.json）か、.srt を選んで開く。"""
+        start = self.paths.get("srt") or next(iter(self.paths.values()), None)
+        path = filedialog.askopenfilename(
+            parent=self, title=self.t("ed_open_title"), initialdir=str(Path(start).parent) if start else None,
+            filetypes=[(self.t("ed_open_types"), "*.snipsync.json *.srt"), ("All files", "*.*")])
+        if path:
+            self.open_path(path)
+
+    def open_path(self, path):
+        """path を開く。セッションなら、話者名・変更の印・元の動画とカットの設定まで戻す。.srt は、字幕と話者だけ。"""
         if not self._confirm_discard():
             return
-        path = filedialog.askopenfilename(parent=self, filetypes=[("SRT", "*.srt"), ("All files", "*.*")])
-        if not path:
+        path = Path(path)
+        try:
+            if is_session_path(path):
+                self._open_session(path)
+                return
+            sibling = session_path(path)
+            if sibling.exists() and messagebox.askyesno(self.t("ed_session_ask_title"), self.t("ed_session_ask"),
+                                                        parent=self):
+                self._open_session(sibling)
+                return
+            cues = parse_srt(path.read_text(encoding="utf-8-sig"), speakers=True)
+        except (OSError, UnicodeDecodeError, SessionError) as exc:
+            messagebox.showerror(self.t("err_title"), self.t("ed_open_failed", exc), parent=self)
+            return
+        self.load(cues, path.stem, {"srt": path})
+        self.source, self.settings = "", {}
+
+    def _open_session(self, path: Path):
+        session = read_session(path)
+        base = str(path)[:-len(SESSION_SUFFIX)]
+        paths = {ext: Path(f"{base}.{ext}") for ext in ("srt", "txt", "md") if Path(f"{base}.{ext}").exists()}
+        self.editor = CueEditor.from_state(session.editor)
+        self.stem = session.title or Path(base).name
+        self.paths = paths
+        self.source, self.settings = session.source, dict(session.settings)
+        self.pending = False
+        self._refresh_all()
+        problem = self.app.restore_context(session.source, session.settings)
+        self.flash(self.t(problem) if problem else self.t("ed_session_opened"))
+
+    def _write_session(self):
+        """保存したあとに、編集の続きを残すファイル（出力のそばの .snipsync.json）を書く。失敗しても、保存は成功のまま。"""
+        base = self.paths.get("srt") or next(iter(self.paths.values()), None)
+        if base is None:
             return
         try:
-            cues = parse_srt(Path(path).read_text(encoding="utf-8-sig"))
-        except (OSError, UnicodeDecodeError) as exc:
-            messagebox.showerror(self.t("err_title"), str(exc), parent=self)
-            return
-        self.load(cues, Path(path).stem, {"srt": Path(path)})
+            write_session(session_path(base), Session(title=self.stem, source=self.source, settings=self.settings,
+                                                      editor=self.editor.export_state()))
+        except OSError as exc:
+            self.flash(self.t("ed_session_failed", exc))
 
     def load(self, cues, title: str = "", paths: dict | None = None):
         self.editor = CueEditor(cues)
@@ -705,6 +966,9 @@ class SubtitleEditor(ctk.CTkToplevel):
             self.close_help()
             self._open_help()
         self.preview_note.configure(text=self.t("ed_preview_note"))
+        for widget, key in self._spk_texts:
+            widget.configure(text=self.t(key))
+        self._fill_speakers()
         self._empty_label.configure(text=self.t("ed_empty"))
         self._empty_btn.configure(text=self.t("ed_open"))
         sel = self._sel

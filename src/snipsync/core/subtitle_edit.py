@@ -18,6 +18,14 @@ FORMATS = ("txt", "md", "srt")
 MAX_HISTORY = 200
 
 
+@dataclass(frozen=True)
+class SpeakerStat:
+    speaker: int
+    seconds: float       # 発話時間の合計
+    cues: int            # 字幕の件数
+    longest: int         # いちばん長い字幕の番号（聞いて、誰かを確かめる用）
+
+
 @dataclass
 class _Item:
     cue: Cue
@@ -63,6 +71,25 @@ class CueEditor:
         """文字入力のまとまりをここで区切る（次の入力は、元に戻すで別の1回分になる）。"""
         self._last_key = None
 
+    # ── 保存と復元（セッション） ──
+    def export_state(self) -> dict:
+        """いまの内容を、JSON にできる形で返す（元の字幕、現在の字幕と出どころ、話者名）。"""
+        return {
+            "original": [[c.start, c.end, c.text, c.speaker] for c in self._orig],
+            "items": [[i.cue.start, i.cue.end, i.cue.text, i.cue.speaker, list(i.ids)] for i in self._items],
+            "names": {str(k): v for k, v in self.names.items()},
+        }
+
+    @classmethod
+    def from_state(cls, state: dict) -> CueEditor:
+        """export_state の結果から、編集セッションを作る。復元した直後は「未保存の変更なし」。"""
+        ed = cls()
+        ed._orig = [Cue(s, e, t, sp) for s, e, t, sp in state["original"]]
+        ed._items = [_Item(Cue(s, e, t, sp), tuple(ids)) for s, e, t, sp, ids in state["items"]]
+        ed.names = {int(k): v for k, v in state.get("names", {}).items()}
+        ed._saved = ed._state()
+        return ed
+
     # ── 参照 ──
     def __len__(self) -> int:
         return len(self._items)
@@ -87,6 +114,22 @@ class CueEditor:
 
     def speaker_name(self, speaker: int | None, default: str) -> str:
         return self.names.get(speaker, default) if speaker is not None else ""
+
+    def speaker_stats(self) -> list[SpeakerStat]:
+        """話者ごとの発話時間・件数。発話時間の長い順。"""
+        acc: dict[int, list] = {}                       # 話者 -> [秒, 件数, 最長の長さ, 最長の番号]
+        for idx, item in enumerate(self._items):
+            c = item.cue
+            if c.speaker is None:
+                continue
+            span = max(0.0, c.end - c.start)
+            row = acc.setdefault(c.speaker, [0.0, 0, -1.0, idx])
+            row[0] += span
+            row[1] += 1
+            if span > row[2]:
+                row[2], row[3] = span, idx
+        return sorted((SpeakerStat(s, r[0], r[1], r[3]) for s, r in acc.items()),
+                      key=lambda x: (-x.seconds, x.speaker))
 
     @property
     def dirty(self) -> bool:
@@ -149,6 +192,45 @@ class CueEditor:
         self._push()
         for i in targets:
             self._items[i].cue.speaker = speaker
+        self._break()
+        return True
+
+    def reassign(self, mapping: dict) -> bool:
+        """{字幕の番号: 話者} をまとめて適用する（元に戻すは 1 回分）。1 件でも変わったら True。"""
+        targets = {i: s for i, s in mapping.items() if 0 <= i < len(self._items) and self._items[i].cue.speaker != s}
+        if not targets:
+            return False
+        self._push()
+        for i, s in targets.items():
+            self._items[i].cue.speaker = s
+        self._break()
+        return True
+
+    def merge_speakers(self, sources, target: int) -> bool:
+        """sources の話者の字幕を、すべて target の話者にする。sources の名前は捨て、target の名前を残す。"""
+        src = {s for s in sources if s != target}
+        if not src or not any(i.cue.speaker in src for i in self._items):
+            return False
+        self._push()
+        for item in self._items:
+            if item.cue.speaker in src:
+                item.cue.speaker = target
+        for s in src:
+            self.names.pop(s, None)
+        self._break()
+        return True
+
+    def renumber_speakers(self) -> bool:
+        """話者の番号を、発話時間の長い順に 0, 1, 2.. へ振り直す（名前も付いて行く）。"""
+        order = [st.speaker for st in self.speaker_stats()]
+        mapping = {old: new for new, old in enumerate(order)}
+        if all(old == new for old, new in mapping.items()):
+            return False
+        self._push()
+        for item in self._items:
+            if item.cue.speaker is not None:
+                item.cue.speaker = mapping[item.cue.speaker]
+        self.names = {mapping[s]: n for s, n in self.names.items() if s in mapping}
         self._break()
         return True
 
