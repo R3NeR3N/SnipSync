@@ -24,6 +24,7 @@ SnipSync/
 │       │   ├── subtitles.py      # 字幕: 境界計算・文節改行・話者付与・時刻補正・Cue/SRT
 │       │   ├── subtitle_edit.py  # 字幕の編集ロジック（CueEditor・話者の統合・状態の保存と復元・書き出し文字列の生成）
 │       │   ├── session.py        # 編集セッション（<名前>.snipsync.json）の保存・復元。壊れたファイルは SessionError
+│       │   ├── punctuation.py    # 句読点（見本文・語の時刻からの補い・字幕 .srt から除く）。日本語のみ
 │       │   ├── speaker_cleanup.py  # 話者ラベルの自動整理の計画（小さな話者・挟まれた短い発言）
 │       │   ├── transcript.py     # .txt / .md 生成・SRT 読み込み
 │       │   ├── vad.py            # 音声読み込み（全トラック加算）・VAD・v1 chunks 生成

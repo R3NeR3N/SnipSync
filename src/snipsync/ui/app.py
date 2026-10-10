@@ -138,6 +138,7 @@ class SnipSyncApp(_Base):
         self.md_var = tk.BooleanVar(value=False)
         self.review_var = tk.BooleanVar(value=True)      # 字幕を保存する前に確認・編集する（無人の一括処理ではオフ）
         self.markers_var = tk.BooleanVar(value=False)
+        self.punct_var = tk.BooleanVar(value=True)         # 句読点を補う（字幕 .srt には付けない）
         self.run_folder_var = tk.BooleanVar(value=True)    # 処理ごとに「日時_モデル名」のフォルダーを作って、その中へ書く
         self.speaker_labels = True           # 画面には出さない（既定どおり話者名を付ける）。プリセットには残す
 
@@ -464,8 +465,10 @@ class SnipSyncApp(_Base):
             col = ctk.CTkFrame(p, fg_color="transparent")
             self.txt_switch = self.reg(W.switch(col, "", self.txt_var), "extra_txt")
             self.md_switch = self.reg(W.switch(col, "", self.md_var), "extra_md")
+            self.punct_switch = self.reg(W.switch(col, "", self.punct_var), "extra_punct")
             self.markers_switch = self.reg(W.switch(col, "", self.markers_var), "extra_markers")
-            for s, key in ((self.txt_switch, "tip_txt"), (self.md_switch, "tip_md"), (self.markers_switch, "tip_markers")):
+            for s, key in ((self.txt_switch, "tip_txt"), (self.md_switch, "tip_md"), (self.punct_switch, "tip_punct"),
+                           (self.markers_switch, "tip_markers")):
                 s.pack(anchor="w", pady=(0, T.S2))
                 self._tip(s, key)
             return col
@@ -571,7 +574,8 @@ class SnipSyncApp(_Base):
             "gpu": self.gpu_var.get(), "snap_srt": self.snap_var.get(), "cut_mode": self.cut_mode,
             "silence": self.silence, "speed": self._speed(), "hotwords": self.glossary_var.get(),
             "diarize": self.diarize_var.get(), "speakers": self.speakers, "speaker_labels": self.speaker_labels,
-            "markers": self.markers_var.get(), "line_chars": self.line_chars(), "txt": self.txt_var.get(),
+            "markers": self.markers_var.get(), "punctuate": self.punct_var.get(), "line_chars": self.line_chars(),
+            "txt": self.txt_var.get(),
             "md": self.md_var.get(), "review": self.review_var.get(), "run_folder": self.run_folder_var.get(),
         }
 
@@ -614,6 +618,8 @@ class SnipSyncApp(_Base):
             self.speaker_labels = bool(s["speaker_labels"])
         if "markers" in s:
             self.markers_var.set(s["markers"])
+        if "punctuate" in s:
+            self.punct_var.set(bool(s["punctuate"]))
         if "line_chars" in s:
             self.chars_var.set(int(s["line_chars"]))
         if "txt" in s:
@@ -639,6 +645,7 @@ class SnipSyncApp(_Base):
             hotwords=self.glossary_var.get(), diarize=self.diarize_var.get() and sherpa_available(),
             num_speakers=-1 if self.speakers == "auto" else int(self.speakers),
             speaker_labels=self.speaker_labels, markers=self.markers_var.get() and self.export_key != "media",
+            punctuate=self.punct_var.get(),
             line_chars=self.line_chars(), txt=self.txt_var.get(), md=self.md_var.get(), ui_lang=self.lang,
             hold_subtitles=self.review_var.get() and self.srt_var.get(),
         )
@@ -662,6 +669,7 @@ class SnipSyncApp(_Base):
         sw(self.md_switch, srt_on)
         sw(self.review_switch, srt_on)
         sw(self.markers_switch, self.export_key != "media")
+        sw(self.punct_switch, srt_on)
         vad = self.cut_mode == "vad"
         sw(self.threshold_row.slider, not vad)
         self.threshold_row.value.configure(text_color=T.DUST if vad else T.CHALK)

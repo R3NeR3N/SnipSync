@@ -47,6 +47,7 @@ from snipsync.core.models import (
     needs_download,
     prepare_model,
 )
+from snipsync.core.punctuation import prompt_for, punctuate_words, strip_subtitle_punctuation
 from snipsync.core.subtitles import (
     add_cuda_dll_dirs,
     build_cut_aligned_cues,
@@ -272,6 +273,7 @@ class PipelineParams:
     md: bool = False                 # 文字起こしを .md でも書き出す
     refine_timing: bool = True       # 字幕の時刻を、実際に声がある区間（VAD）に合わせて補正する
     tidy_speakers: bool = True       # 人数が自動のとき、発話の少ないラベルを、声が近い大きなラベルへ寄せる
+    punctuate: bool = True           # 句読点を補う（日本語。文字起こしと編集画面の本文。字幕 .srt には付けない）
     hold_subtitles: bool = False     # 字幕（.srt/.txt/.md）をここでは書かず、確認・編集してから呼び出し側が保存する
     out_stem: str | None = None      # 出力ファイル名の幹（バッチで同名を避ける用）
     ui_lang: str = "ja"
@@ -310,6 +312,16 @@ def _output_ext(export_key: str, inp: Path) -> str:
         "premiere": ".xml",
         "final-cut-pro": ".fcpxml",
     }.get(export_key, ".xml")
+
+
+def _detect_language(model, wav_path):
+    """冒頭 30 秒から、言語を判定する（失敗したら None）。見本文を、言語に合わせて選ぶために使う。"""
+    try:
+        from faster_whisper.audio import decode_audio
+        audio = decode_audio(str(wav_path), sampling_rate=16000)[:30 * 16000]
+        return model.detect_language(audio)[0]
+    except Exception:
+        return None
 
 
 def _tidy_labels(samples, turns, on_log, tr):
@@ -586,7 +598,7 @@ def run_pipeline(
                 on_log(tr("log_srt_analyze", params.model_size), "info")
                 try:
                     device, compute_type = resolve_device(params.use_gpu)
-                    want_words = params.snap_srt or params.diarize or params.line_chars > 0
+                    want_words = params.snap_srt or params.diarize or params.line_chars > 0 or params.punctuate
                     spec = get_spec(params.model_size)
 
                     # モデルの取得は、デコードの試行（GPU 失敗時の CPU やり直し）より前に1回だけ行う。
@@ -628,6 +640,11 @@ def run_pipeline(
                             model = _get_model(dev, ctype)
                             kwargs = dict(beam_size=5, language=None, word_timestamps=want_words)
                             kwargs.update(spec.transcribe_kwargs)
+                            if params.punctuate and "language" not in spec.transcribe_kwargs and spec.langs != "en":
+                                lang = _detect_language(model, temp_wav)
+                                prompt = prompt_for(lang)
+                                if prompt:                       # 句読点入りの見本文で、句読点を増やす（日本語のみ）
+                                    kwargs.update(initial_prompt=prompt, language=lang)
                             hot = _hotwords(params.hotwords)
                             if hot:
                                 kwargs["hotwords"] = hot
@@ -691,7 +708,7 @@ def run_pipeline(
                                 break
                             start = format_timestamp(segment.start)
                             end = format_timestamp(segment.end)
-                            text = segment.text.strip()
+                            text = strip_subtitle_punctuation(segment.text.strip())
                             if srt_file:
                                 srt_file.write(f"{i}\n{start} --> {end}\n{text}\n\n")
                             on_log(f"  [{start} -> {end}] {text}", "muted")
@@ -759,6 +776,8 @@ def run_pipeline(
                         boundaries = get_boundaries()
                         if boundaries:
                             words = tag_words(srt_words, turns, detected_lang) if turns else srt_words
+                            if params.punctuate:
+                                words = punctuate_words(words, detected_lang)
                             cues = build_cut_aligned_cues(
                                 words, srt_natural_segs, boundaries,
                                 max_chars=params.line_chars, lang=detected_lang) or None
@@ -767,7 +786,7 @@ def run_pipeline(
                                 on_log(tr("log_srt_cut_aligned"), "muted")
                     if cues is None:
                         cues = cues_from_segments(seg_tuples, turns, max_chars=params.line_chars,
-                                                  lang=detected_lang)
+                                                  lang=detected_lang, punctuate=params.punctuate)
                     refined = False
                     if cues and speech_ranges:
                         try:
@@ -783,7 +802,7 @@ def run_pipeline(
                     if cues and not params.hold_subtitles and (aligned or turns or refined or params.line_chars > 0):
                         srt = format_srt(cues, max_chars=params.line_chars, lang=detected_lang,
                                          speaker_labels=bool(turns) and params.speaker_labels,
-                                         ui_lang=params.ui_lang)
+                                         ui_lang=params.ui_lang, strip_punct=True)
                         if srt.strip():
                             result.srt_path.write_text(srt, encoding="utf-8")
                 except Exception:

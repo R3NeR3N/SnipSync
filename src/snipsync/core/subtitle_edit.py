@@ -310,7 +310,8 @@ def render(cues, fmt: str, *, timestamps: bool = True, line_chars: int = 0, ui_l
     cues = [c for c in cues if c.text.strip()]
     speakers = show_speakers and any(c.speaker is not None for c in cues)
     if fmt == "srt":
-        return format_srt(cues, max_chars=line_chars, speaker_labels=speakers, ui_lang=ui_lang, names=names)
+        return format_srt(cues, max_chars=line_chars, speaker_labels=speakers, ui_lang=ui_lang, names=names,
+                          strip_punct=True)
     if fmt == "md":
         return cues_to_md(cues, title=title or "subtitles", timestamps=timestamps, speakers=speakers,
                           ui_lang=ui_lang, names=names)

@@ -104,7 +104,7 @@ def test_render_formats_reflect_edits_and_speakers():
     ed = CueEditor(sample())
     ed.set_text(0, "こんばんは、")
     srt = render(ed.cues, "srt")
-    assert "話者1：こんばんは、" in srt and "00:00:00,000 --> 00:00:02,000" in srt
+    assert "話者1：こんばんは" in srt and "、" not in srt and "00:00:00,000 --> 00:00:02,000" in srt     # 字幕に句読点は付けない
     assert render(ed.cues, "txt").splitlines()[0].startswith("[00:00:00] 話者1：こんばんは、")
     assert render(ed.cues, "md", title="t").startswith("# t\n")
     assert "[00:00:00]" not in render(ed.cues, "txt", timestamps=False)
@@ -131,7 +131,8 @@ def test_save_writes_each_format_and_srt_roundtrips(tmp_path):
     ed.set_text(2, "お願いいたします。")
     for ext in ("srt", "txt", "md"):
         assert save(ed.cues, tmp_path / f"out.{ext}") == ext
-        assert "お願いいたします。" in (tmp_path / f"out.{ext}").read_text(encoding="utf-8")
+        body = (tmp_path / f"out.{ext}").read_text(encoding="utf-8")
+        assert ("お願いいたします" in body) and (("お願いいたします。" in body) == (ext != "srt"))   # 句読点は、字幕（.srt）には付けない
     back = parse_srt((tmp_path / "out.srt").read_text(encoding="utf-8"))
     assert [(c.start, c.end) for c in back] == [(0.0, 2.0), (2.0, 6.0), (6.5, 8.0)]
 
@@ -267,7 +268,7 @@ def test_rename_speaker_applies_to_every_cue_of_that_speaker_in_all_outputs():
     ed = CueEditor(sample())
     assert ed.rename_speaker(0, "  山田  ") is True and ed.names == {0: "山田"}
     srt = render(ed.cues, "srt", names=ed.names)
-    assert "山田：こんにちは、" in srt and "山田：今日は説明します。" in srt and "話者2：お願いします。" in srt
+    assert "山田：こんにちは" in srt and "山田：今日は説明します" in srt and "話者2：お願いします" in srt
     assert "山田：" in render(ed.cues, "txt", names=ed.names)
     md = render(ed.cues, "md", title="t", names=ed.names)
     assert "## 山田" in md and "- 話者: 山田、話者2" in md
@@ -286,7 +287,7 @@ def test_speaker_name_falls_back_to_the_default():
 def test_english_labels_use_custom_names_too():
     ed = CueEditor(sample())
     ed.rename_speaker(1, "Bob")
-    assert "Bob: お願いします。" in render(ed.cues, "srt", ui_lang="en", names=ed.names)
+    assert "Bob: お願いします\n" in render(ed.cues, "srt", ui_lang="en", names=ed.names)
 
 
 def test_save_uses_the_names(tmp_path):

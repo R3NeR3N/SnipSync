@@ -5,6 +5,8 @@ import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 
+from snipsync.core.punctuation import punctuate_words, strip_subtitle_punctuation
+
 _cuda_dll_registered = False
 
 # v1 JSON の chunk で「カット」を表す速度値（auto-editor 仕様）
@@ -533,7 +535,7 @@ def refine_cue_times(cues, speech, boundaries=(), total=None, *, onset_slack: fl
 
 
 def cues_from_segments(segments, turns=None, *, max_chars: int = 0, max_lines: int = 2,
-                       lang: str | None = None):
+                       lang: str | None = None, punctuate: bool = False):
     """自然な whisper セグメントから Cue 列を作る（カット整合を使わない経路）。
 
     segments: [(start, end, text, words|None)]。turns があれば話者を付ける。
@@ -546,6 +548,8 @@ def cues_from_segments(segments, turns=None, *, max_chars: int = 0, max_lines: i
             continue
         if words and (turns or max_chars > 0):
             w4 = tag_words(words, turns, lang) if turns else words
+            if punctuate:
+                w4 = punctuate_words(w4, lang)
             groups: list[list] = []
             for sg in _group_by_speaker(w4):
                 groups.extend(_split_words_by_length(sg, max_chars, max_lines, lang))
@@ -559,11 +563,15 @@ def cues_from_segments(segments, turns=None, *, max_chars: int = 0, max_lines: i
 
 
 def format_srt(cues, *, max_chars: int = 0, lang: str | None = None,
-               speaker_labels: bool = False, ui_lang: str = "ja", names: dict | None = None) -> str:
-    """Cue 列 -> SRT 文字列。max_chars>0 で日本語の文節改行、speaker_labels で話者名を前置。"""
+               speaker_labels: bool = False, ui_lang: str = "ja", names: dict | None = None,
+               strip_punct: bool = False) -> str:
+    """Cue 列 -> SRT 文字列。max_chars>0 で日本語の文節改行、speaker_labels で話者名を前置。
+    strip_punct: 「、。」を除く（字幕には句読点を付けない慣習。文字起こし .txt / .md には残る）。"""
     out = []
     for idx, c in enumerate(cues, start=1):
         text = wrap_text(c.text, max_chars, lang) if max_chars > 0 else c.text
+        if strip_punct:
+            text = strip_subtitle_punctuation(text)
         if speaker_labels and c.speaker is not None:
             sep = "：" if ui_lang == "ja" else ": "
             text = f"{speaker_label(c.speaker, ui_lang, names)}{sep}{text}"
