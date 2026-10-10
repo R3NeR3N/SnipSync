@@ -6,7 +6,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from snipsync.core.subtitle_edit import render  # noqa: E402
 from snipsync.core.subtitles import Cue  # noqa: E402
-from snipsync.core.transcript import cues_to_md, cues_to_txt, reading_turns, write_transcripts  # noqa: E402
+from snipsync.core.transcript import (  # noqa: E402
+    cues_to_md,
+    cues_to_txt,
+    reading_turns,
+    write_transcripts,
+)
 
 
 def broken_sentence():
