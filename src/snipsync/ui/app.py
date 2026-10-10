@@ -68,7 +68,7 @@ from snipsync.ui.update_dialog import UpdateDialog, collect
 from snipsync.version import APP_VERSION  # noqa: F401  (re-exported for tests)
 
 EXPORT_KEYS = ("resolve", "premiere", "final-cut-pro", "media")
-SPEAKER_COUNTS = ("auto", "2", "3", "4", "5", "6")
+SPEAKER_COUNTS = ("auto", *(str(n) for n in range(2, 21)))     # 人数が分かっているときは、指定するのがいちばん正確
 LANGS = {"ja": "日本語", "en": "English"}
 
 if DND_AVAILABLE:

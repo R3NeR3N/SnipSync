@@ -26,7 +26,12 @@ from snipsync.core.autoeditor import (
     probe_fps,
     probe_resolution,
 )
-from snipsync.core.diarize import diarize, sherpa_available
+from snipsync.core.diarize import (
+    diarize,
+    label_embeddings,
+    merge_similar_small_labels,
+    sherpa_available,
+)
 from snipsync.core.markers import (
     add_markers,
     cut_point_markers,
@@ -266,6 +271,7 @@ class PipelineParams:
     txt: bool = False                # 文字起こしを .txt でも書き出す
     md: bool = False                 # 文字起こしを .md でも書き出す
     refine_timing: bool = True       # 字幕の時刻を、実際に声がある区間（VAD）に合わせて補正する
+    tidy_speakers: bool = True       # 人数が自動のとき、発話の少ないラベルを、声が近い大きなラベルへ寄せる
     hold_subtitles: bool = False     # 字幕（.srt/.txt/.md）をここでは書かず、確認・編集してから呼び出し側が保存する
     out_stem: str | None = None      # 出力ファイル名の幹（バッチで同名を避ける用）
     ui_lang: str = "ja"
@@ -304,6 +310,19 @@ def _output_ext(export_key: str, inp: Path) -> str:
         "premiere": ".xml",
         "final-cut-pro": ".fcpxml",
     }.get(export_key, ".xml")
+
+
+def _tidy_labels(samples, turns, on_log, tr):
+    """発話の少ないラベルを、声の特徴が近い大きなラベルへ寄せる。失敗しても、寄せる前の結果のまま進む。"""
+    try:
+        merged = merge_similar_small_labels(turns, label_embeddings(samples, turns, on_log=on_log))
+    except Exception:
+        on_log(tr("log_speaker_tidy_fail", traceback.format_exc().splitlines()[-1][:160]), "warn")
+        return turns
+    before, after = len({t[2] for t in turns}), len({t[2] for t in merged})
+    if after < before:
+        on_log(tr("log_speaker_tidy", before - after), "muted")
+    return merged
 
 
 def _hotwords(text: str) -> str | None:
@@ -703,8 +722,10 @@ def run_pipeline(
                         on_log(tr("log_diar_unavailable"), "warn")
                     else:
                         on_log(tr("log_speaker_start"), "info")
-                        turns_raw = diarize(decode_mix(temp_wav), num_speakers=params.num_speakers,
-                                            on_log=on_log)
+                        diar_samples = decode_mix(temp_wav)
+                        turns_raw = diarize(diar_samples, num_speakers=params.num_speakers, on_log=on_log)
+                        if params.tidy_speakers and params.num_speakers <= 0:
+                            turns_raw = _tidy_labels(diar_samples, turns_raw, on_log, tr)
                         turns = normalize_turns(turns_raw)
                         on_log(tr("log_speaker_done", len({t[2] for t in turns})), "muted")
                 except Exception:
@@ -737,7 +758,7 @@ def run_pipeline(
                     if params.snap_srt and srt_words:
                         boundaries = get_boundaries()
                         if boundaries:
-                            words = tag_words(srt_words, turns) if turns else srt_words
+                            words = tag_words(srt_words, turns, detected_lang) if turns else srt_words
                             cues = build_cut_aligned_cues(
                                 words, srt_natural_segs, boundaries,
                                 max_chars=params.line_chars, lang=detected_lang) or None

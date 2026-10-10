@@ -288,7 +288,7 @@ See [Importing into your editor](#importing-into-your-editor) below.
 | **Use GPU (CUDA)** | Optional. Needs an NVIDIA GPU. The first time, it asks before downloading the components (about 1.4 GB) |
 | **Split subtitles at cut boundaries** | Starts a new subtitle at every cut, so subtitles line up with your clips |
 | **Chars per subtitle line** | Wraps Japanese at natural phrase boundaries (BudouX) and keeps each subtitle to 2 lines. `0` turns it off (default `20`) |
-| **Separate speakers** | Labels who is speaking (`Speaker 1: …`) and starts a new subtitle when the speaker changes. Set **Speakers** if you know how many people there are |
+| **Separate speakers** | Labels who is speaking (`Speaker 1: …`) and starts a new subtitle when the speaker changes. Set **Speakers** (2 to 20) if you know how many people there are: that is the most accurate. On **Auto**, small speaker labels with a similar voice are merged into larger ones, and anything left can be fixed in the review window's Speakers tab |
 | **Also write .txt / .md** | Saves the whole transcript (with speakers and timestamps) next to the subtitles |
 | **Add markers** | Adds markers for every cut and every speaker change to the timeline. For Resolve only, they are written to a separate `<name>_markers.edl` file *(experimental — see notes)* |
 | **Glossary** | Comma-separated terms (names, product names) that Whisper should prefer |

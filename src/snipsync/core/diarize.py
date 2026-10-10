@@ -107,7 +107,21 @@ def ensure_models(on_log=None) -> tuple[Path, Path]:
     return seg, emb
 
 
-def diarize(samples, *, num_speakers: int = -1, cluster_threshold: float = 0.5,
+# 人数を指定しないときの、クラスタリングの閾値。小さいほど話者が増え、大きいほど減る。
+# 実測（2026-10・約 95 分・参加者約 8 人の録音の 30 分）: 0.5 は 103 ラベル、0.8 は 36 ラベル、1.0 は 15 ラベル。
+# 人数を 8 と指定した結果と時間で重ねた純度は、どれも同じ（別々の話者を 1 つにまとめた形跡は、この基準では見えない）。
+# ただし基準も同じモデルの結果なので、正解ではない。0.8 にとどめ、残りは、字幕の編集画面の話者タブで直せるようにする。
+AUTO_THRESHOLD = 0.8
+EMBED_MIN_SECONDS = 30.0            # 発話の合計がこれに満たないラベルは、声の近い大きなラベルへ寄せる候補
+# 寄せるのに必要な、声の特徴の近さ（コサイン類似度）。低いほど、よく寄せるが、誤りが増える。
+# 実測（上と同じ録音）: 0.5 は 36 → 23 ラベル、0.6 は 36 → 27 ラベルで、基準との純度の低下は 1 ポイント以内。
+EMBED_MIN_SIMILARITY = 0.6
+EMBED_MAX_SECONDS = 40.0            # ラベルの声の特徴を求めるのに使う、発話の長さの上限（長い発言から先に使う）
+EMBED_TURN_MIN = 0.8                # 短すぎる区間は、声の特徴が不安定なので使わない
+EMBED_TURN_MAX = 10.0
+
+
+def diarize(samples, *, num_speakers: int = -1, cluster_threshold: float = AUTO_THRESHOLD,
             on_log=None, progress=None):
     """16kHz mono float32 の音声から [(開始秒, 終了秒, 話者ID)] を返す（開始順）。
 
@@ -139,3 +153,57 @@ def diarize(samples, *, num_speakers: int = -1, cluster_threshold: float = 0.5,
 
     result = engine.process(samples, callback=_cb).sort_by_start_time()
     return [(r.start, r.end, r.speaker) for r in result]
+
+
+def label_embeddings(samples, turns, *, on_log=None) -> dict:
+    """ラベルごとの「声の特徴」（長さ 1 に揃えた平均）。{ラベル: ベクトル}。使える区間が無いラベルは入らない。
+    samples は 16kHz mono float32。長い区間から先に、合計 EMBED_MAX_SECONDS 秒まで使う。"""
+    import numpy as np
+    import sherpa_onnx
+    _seg, emb = ensure_models(on_log)
+    extractor = sherpa_onnx.SpeakerEmbeddingExtractor(
+        sherpa_onnx.SpeakerEmbeddingExtractorConfig(model=str(emb), num_threads=2))
+    spans: dict = {}
+    for s, e, k in turns:
+        spans.setdefault(k, []).append((s, e))
+    out = {}
+    for k, items in spans.items():
+        items.sort(key=lambda x: x[1] - x[0], reverse=True)
+        vecs, used = [], 0.0
+        for s, e in items:
+            if e - s < EMBED_TURN_MIN:
+                continue
+            take = min(e - s, EMBED_TURN_MAX)
+            stream = extractor.create_stream()
+            stream.accept_waveform(SAMPLE_RATE, samples[int(s * SAMPLE_RATE):int((s + take) * SAMPLE_RATE)])
+            stream.input_finished()
+            if extractor.is_ready(stream):
+                v = np.asarray(extractor.compute(stream), dtype=np.float32)
+                vecs.append(v / (np.linalg.norm(v) + 1e-9))
+            used += take
+            if used >= EMBED_MAX_SECONDS:
+                break
+        if vecs:
+            m = np.mean(vecs, axis=0)
+            out[k] = m / (np.linalg.norm(m) + 1e-9)
+    return out
+
+
+def merge_similar_small_labels(turns, vectors: dict, *, min_seconds: float = EMBED_MIN_SECONDS,
+                               min_similarity: float = EMBED_MIN_SIMILARITY):
+    """発話の合計が min_seconds に満たないラベルを、声の特徴が min_similarity 以上近い、いちばん近い大きなラベルへ寄せる。
+    近いものが無いラベルは、そのまま（別の人かもしれないので、無理に寄せない）。[(開始, 終了, ラベル)] を返す。"""
+    import numpy as np
+    total: dict = {}
+    for s, e, k in turns:
+        total[k] = total.get(k, 0.0) + (e - s)
+    big = [k for k, v in total.items() if v >= min_seconds and k in vectors]
+    mapping = {}
+    for k, v in total.items():
+        if v >= min_seconds or k not in vectors or not big:
+            continue
+        sims = {b: float(np.dot(vectors[k], vectors[b])) for b in big}
+        best = max(sims, key=sims.get)
+        if sims[best] >= min_similarity:
+            mapping[k] = best
+    return [(s, e, mapping.get(k, k)) for s, e, k in turns]

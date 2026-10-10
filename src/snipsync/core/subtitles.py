@@ -286,9 +286,60 @@ def speaker_for_span(start: float, end: float, turns, max_gap: float = 1.0):
     return near
 
 
-def tag_words(words, turns):
-    """(start, end, text) の単語列へ話者番号を付け (start, end, text, speaker) にする。"""
-    return [(w[0], w[1], w[2], speaker_for_span(w[0], w[1], turns)) for w in words]
+SMOOTH_SANDWICH_SECONDS = 0.5      # 前後を同じ話者に挟まれた、これより短い話者の入れ替わりは、元の話者に戻す
+
+
+def smooth_word_speakers(words, lang: str | None = None):
+    """(start, end, text, speaker) の語列の話者を、なめらかにして返す。
+
+    話者分離の区間の境目は、語や文節の途中に来ることがある。語の単位は、日本語では 1〜2 文字のこともあり、
+    そのまま使うと「毎」と「月」のように、1 語が 2 人に分かれて、字幕が語の途中で切れる（実測）。
+    1) 文節（BudouX）の中は、いちばん長く話した話者に揃える（日本語・中国語のとき）。
+    2) 前後を同じ話者に挟まれた、SMOOTH_SANDWICH_SECONDS 秒に満たない入れ替わりは、その話者に戻す。
+    """
+    if not words:
+        return list(words)
+    text = "".join(w[2] for w in words)
+    ends, pos = [], 0
+    if detect_cjk_lang(text, lang):             # 空白で区切る言語は、語がもう単位なので、文節にそろえる処理は要らない
+        for ph in _phrases(text, lang):
+            pos += len(ph)
+            ends.append(pos)
+    speakers = [w[3] for w in words]
+    i, offset = 0, 0
+    for end in ends:
+        j = i
+        weight: dict = {}
+        while j < len(words) and offset < end:
+            span = max(0.0, words[j][1] - words[j][0]) or 1e-3
+            weight[speakers[j]] = weight.get(speakers[j], 0.0) + span
+            offset += len(words[j][2]) or 1
+            j += 1
+        if j > i:
+            pick = max(weight, key=weight.get)
+            for k in range(i, j):
+                speakers[k] = pick
+        i = j
+    runs: list[list[int]] = []                                   # [話者, 最初の語, 最後の語]
+    for k, s in enumerate(speakers):
+        if runs and runs[-1][0] == s:
+            runs[-1][2] = k
+        else:
+            runs.append([s, k, k])
+    for r in range(1, len(runs) - 1):
+        before, mid, after = runs[r - 1], runs[r], runs[r + 1]
+        if before[0] == after[0] and mid[0] != before[0]:
+            if words[mid[2]][1] - words[mid[1]][0] < SMOOTH_SANDWICH_SECONDS:
+                for k in range(mid[1], mid[2] + 1):
+                    speakers[k] = before[0]
+    return [(w[0], w[1], w[2], s) for w, s in zip(words, speakers, strict=True)]
+
+
+def tag_words(words, turns, lang: str | None = None):
+    """(start, end, text) の単語列へ話者番号を付け (start, end, text, speaker) にする。
+    話者の切り替わりが、語や文節の途中に来ないよう、なめらかにする（smooth_word_speakers）。"""
+    tagged = [(w[0], w[1], w[2], speaker_for_span(w[0], w[1], turns)) for w in words]
+    return smooth_word_speakers(tagged, lang)
 
 
 # ── 字幕（Cue）の生成 ───────────────────────────────────────────────────────────
@@ -494,7 +545,7 @@ def cues_from_segments(segments, turns=None, *, max_chars: int = 0, max_lines: i
         if not text:
             continue
         if words and (turns or max_chars > 0):
-            w4 = tag_words(words, turns) if turns else words
+            w4 = tag_words(words, turns, lang) if turns else words
             groups: list[list] = []
             for sg in _group_by_speaker(w4):
                 groups.extend(_split_words_by_length(sg, max_chars, max_lines, lang))
