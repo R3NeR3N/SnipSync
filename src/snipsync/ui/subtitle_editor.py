@@ -130,6 +130,9 @@ class SubtitleEditor(ctk.CTkToplevel):
         self.ts_var = tk.BooleanVar(value=True)
         self.ts_switch = W.switch(opts, self.t("ed_timestamps"), self.ts_var, command=self._show_view)
         self.ts_switch.grid(row=0, column=0, sticky="w")
+        self.rd_var = tk.BooleanVar(value=self.app.reading_var.get() if hasattr(self.app, "reading_var") else True)
+        self.rd_switch = W.switch(opts, self.t("ed_reading"), self.rd_var, command=self._show_view)
+        self.rd_switch.grid(row=0, column=2, sticky="w", padx=(T.S4, 0))
         self.sp_var = tk.BooleanVar(value=bool(getattr(self.app, "speaker_labels", True)))   # 既定は、処理の設定どおり
         self.sp_switch = W.switch(opts, self.t("ed_speaker_names"), self.sp_var, command=self._show_view)
         self.sp_switch.grid(row=0, column=1, sticky="w", padx=(T.S4, 0))
@@ -499,13 +502,16 @@ class SubtitleEditor(ctk.CTkToplevel):
         if key == "speakers":
             self.speaker_view.tkraise()
             self.ts_switch.configure(state="disabled")
+            self.rd_switch.configure(state="disabled")
             self._fill_speakers()
         elif editing:
             self.edit_view.tkraise()
             self.ts_switch.configure(state="disabled")
+            self.rd_switch.configure(state="disabled")
         else:
             self.preview_view.tkraise()
             self.ts_switch.configure(state="normal" if key in ("txt", "md") else "disabled")
+            self.rd_switch.configure(state="normal" if key in ("txt", "md") else "disabled")
             text = render(self.editor.cues, key, title=self.stem,
                           **self._render_args()) if len(self.editor) else self.t("ed_empty")
             self.preview.configure(state="normal")
@@ -790,7 +796,7 @@ class SubtitleEditor(ctk.CTkToplevel):
             (self.btn_keys, "tip_ed_keys"), (self.text, "tip_ed_text"), (self.speaker_menu, "tip_ed_speaker"),
             (self.name_entry, "tip_ed_name"), (self.name_lbl, "tip_ed_name"), (self.btn_revert, "tip_ed_revert"),
             (self.btn_split, "tip_ed_split"), (self.btn_merge, "tip_ed_merge"), (self.btn_delete, "tip_ed_delete"),
-            (self.ts_switch, "tip_ed_timestamps"), (self.sp_switch, "tip_ed_speaker_names"), (self.btn_open, "tip_ed_open"), (self.btn_copy, "tip_ed_copy"),
+            (self.ts_switch, "tip_ed_timestamps"), (self.rd_switch, "tip_ed_reading"), (self.sp_switch, "tip_ed_speaker_names"), (self.btn_open, "tip_ed_open"), (self.btn_copy, "tip_ed_copy"),
             (self.btn_save_as, "tip_ed_save_as"), (self.btn_save, "tip_ed_save"),
             (self.detail_time, "tip_ed_time"), (self.btn_spk_listen, "tip_ed_spk_listen"),
             (self.btn_spk_merge, "tip_ed_spk_merge"), (self.btn_spk_small, "tip_ed_spk_small"),
@@ -802,7 +808,7 @@ class SubtitleEditor(ctk.CTkToplevel):
     # ── 保存・コピー・読み込み ────────────────────────────────────────────────────────
     def _render_args(self) -> dict:
         return dict(timestamps=self.ts_var.get(), line_chars=self.app.line_chars(), ui_lang=self.app.lang,
-                    names=self.editor.names, show_speakers=self.sp_var.get())
+                    names=self.editor.names, show_speakers=self.sp_var.get(), reading=self.rd_var.get())
 
     def save(self):
         """上書き保存。宛先が決まっていなければ「名前を付けて保存」。"""
@@ -949,6 +955,7 @@ class SubtitleEditor(ctk.CTkToplevel):
         self.view.relabel(self._view_options())
         self.ts_switch.configure(text=self.t("ed_timestamps"))
         self.sp_switch.configure(text=self.t("ed_speaker_names"))
+        self.rd_switch.configure(text=self.t("ed_reading"))
         for btn, key in ((self.btn_open, "ed_open"), (self.btn_copy, "ed_copy"), (self.btn_save_as, "ed_save_as"),
                          (self.btn_save, "ed_save"), (self.btn_revert, "ed_revert"), (self.btn_split, "ed_split"),
                          (self.btn_merge, "ed_merge"), (self.btn_delete, "ed_delete"), (self.btn_undo, "ed_undo"),

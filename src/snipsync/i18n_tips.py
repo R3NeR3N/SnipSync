@@ -46,6 +46,8 @@ TIPS = {
         "tip_run_folder": "オンなら、保存先の中に「日時_モデル名」のフォルダー（例: 2026-10-04_190357_large-v3）を作り、その中へ書き出します。処理のたびに別のフォルダーになるので、前の結果を上書きしません。オフなら、保存先へ直接書きます。",
         "tip_txt": "字幕を、時刻つきの読みやすい文章（.txt）でも書き出します。会議の議事録などに使えます。",
         "tip_md": "字幕を、見出しつきの Markdown（.md）でも書き出します。ノートアプリや議事録に貼り付けやすい形です。",
+        "tip_reading": "文字起こし（.txt / .md）で、別の人の短いあいづちを、話の途中に（）で入れて、文が割れないようにします。長い発言は、文の終わりで段落に分けます。字幕の .srt は変わりません。",
+        "tip_ed_reading": "オンなら、.txt と .md を、読みやすく整えます。別の人の短いあいづちは、話の途中に（）で入れ、長い発言は段落に分けます。.srt には効きません。",
         "tip_punct": "日本語の文字起こしに、「、」「。」「？」を補います。文字起こしの文章と、編集画面の本文に入ります。字幕の .srt には付けません。会話では、Whisper が句読点をほとんど出さないための工夫です。",
         "tip_markers": "カット点と話者交代の目印（マーカー）を付けます。Resolve は .fcpxml のマーカーを読まないので、別ファイル（.edl）に書き出します。試験的な機能で、「動画・音声」には付きません。",
         # ── 字幕確認画面 ──
@@ -129,6 +131,8 @@ TIPS = {
         "tip_run_folder": "On: creates a \"date_model\" folder (e.g. 2026-10-04_190357_large-v3) inside the save folder and writes there. Each run gets its own folder, so earlier results are never overwritten. Off: writes straight into the save folder.",
         "tip_txt": "Also write subtitles as readable text with times (.txt). Handy for meeting minutes.",
         "tip_md": "Also write subtitles as Markdown with headings (.md). Easy to paste into notes or minutes.",
+        "tip_reading": "In the transcript (.txt / .md), short backchannels from another speaker are put in brackets inside the sentence, so it is not broken up. Long turns are split into paragraphs at sentence ends. The .srt is unchanged.",
+        "tip_ed_reading": "On: tidies .txt and .md for reading. A short backchannel from another speaker goes in brackets inside the sentence, and long turns are split into paragraphs. Does not affect the .srt.",
         "tip_punct": "Adds commas and full stops to Japanese transcripts. They go into the transcript text and the editor, never into the .srt. In conversation Whisper writes almost no punctuation, so this helps.",
         "tip_markers": "Marks cut points and speaker changes. Resolve ignores markers in .fcpxml, so for Resolve they are written to a separate .edl file. Experimental; not added to video / audio output.",
         "tip_ed_view": "Edit: fix subtitles in the table. .txt / .md / .srt: see exactly what will be saved.",

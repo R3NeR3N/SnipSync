@@ -273,6 +273,7 @@ class PipelineParams:
     md: bool = False                 # 文字起こしを .md でも書き出す
     refine_timing: bool = True       # 字幕の時刻を、実際に声がある区間（VAD）に合わせて補正する
     tidy_speakers: bool = True       # 人数が自動のとき、発話の少ないラベルを、声が近い大きなラベルへ寄せる
+    reading: bool = True             # 文字起こし（.txt / .md）を、読みやすく整える（あいづちを本文に入れる・段落に分ける）
     punctuate: bool = True           # 句読点を補う（日本語。文字起こしと編集画面の本文。字幕 .srt には付けない）
     hold_subtitles: bool = False     # 字幕（.srt/.txt/.md）をここでは書かず、確認・編集してから呼び出し側が保存する
     out_stem: str | None = None      # 出力ファイル名の幹（バッチで同名を避ける用）
@@ -820,7 +821,7 @@ def run_pipeline(
             try:
                 paths = write_transcripts(
                     result.cues, out_dir / name, title=name, want_txt=params.txt, want_md=params.md,
-                    speakers=bool(turns) and params.speaker_labels, ui_lang=params.ui_lang)
+                    speakers=bool(turns) and params.speaker_labels, ui_lang=params.ui_lang, reading=params.reading)
                 result.extra_paths = paths
                 for p in paths:
                     on_log(tr("log_transcript_written", p.name), "success")
