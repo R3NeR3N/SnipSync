@@ -111,6 +111,9 @@ class SubtitleEditor(ctk.CTkToplevel):
         self.btn_redo.grid(row=0, column=4, padx=(0, T.S2))
         self.btn_keys = W.Btn(bar, self.t("ed_keys"), self.toggle_help, kind="ghost", height=30)
         self.btn_keys.grid(row=0, column=5)
+        self.btn_polish = W.Btn(bar, self.t("ed_polish"), self.open_polish, kind="ghost", height=30)
+        self.btn_polish.grid(row=0, column=6, padx=(T.S2, 0))
+        self._polish_win = None
 
         # 中段: 編集ビューとプレビュー（重ねて切り替える）
         self.body = ctk.CTkFrame(self, fg_color="transparent")
@@ -796,7 +799,7 @@ class SubtitleEditor(ctk.CTkToplevel):
             (self.btn_keys, "tip_ed_keys"), (self.text, "tip_ed_text"), (self.speaker_menu, "tip_ed_speaker"),
             (self.name_entry, "tip_ed_name"), (self.name_lbl, "tip_ed_name"), (self.btn_revert, "tip_ed_revert"),
             (self.btn_split, "tip_ed_split"), (self.btn_merge, "tip_ed_merge"), (self.btn_delete, "tip_ed_delete"),
-            (self.ts_switch, "tip_ed_timestamps"), (self.rd_switch, "tip_ed_reading"), (self.sp_switch, "tip_ed_speaker_names"), (self.btn_open, "tip_ed_open"), (self.btn_copy, "tip_ed_copy"),
+            (self.ts_switch, "tip_ed_timestamps"), (self.rd_switch, "tip_ed_reading"), (self.btn_polish, "tip_ed_polish"), (self.sp_switch, "tip_ed_speaker_names"), (self.btn_open, "tip_ed_open"), (self.btn_copy, "tip_ed_copy"),
             (self.btn_save_as, "tip_ed_save_as"), (self.btn_save, "tip_ed_save"),
             (self.detail_time, "tip_ed_time"), (self.btn_spk_listen, "tip_ed_spk_listen"),
             (self.btn_spk_merge, "tip_ed_spk_merge"), (self.btn_spk_small, "tip_ed_spk_small"),
@@ -863,6 +866,16 @@ class SubtitleEditor(ctk.CTkToplevel):
         self.clipboard_clear()
         self.clipboard_append(render(self.editor.cues, fmt, title=self.stem, **self._render_args()))
         self.flash(self.t("ed_copied"))
+
+    def open_polish(self):
+        """文字起こしの清書の画面を開く（PC 上の LLM／貼り付け用ファイル）。"""
+        if not len(self.editor):
+            return
+        if self._polish_win is not None and self._polish_win.winfo_exists():
+            self._polish_win.lift()
+            return
+        from snipsync.ui.polish_dialog import PolishDialog
+        self._polish_win = PolishDialog(self)
 
     def open_file(self):
         """「開く」: 保存した編集セッション（.snipsync.json）か、.srt を選んで開く。"""
@@ -956,6 +969,7 @@ class SubtitleEditor(ctk.CTkToplevel):
         self.ts_switch.configure(text=self.t("ed_timestamps"))
         self.sp_switch.configure(text=self.t("ed_speaker_names"))
         self.rd_switch.configure(text=self.t("ed_reading"))
+        self.btn_polish.configure(text=self.t("ed_polish"))
         for btn, key in ((self.btn_open, "ed_open"), (self.btn_copy, "ed_copy"), (self.btn_save_as, "ed_save_as"),
                          (self.btn_save, "ed_save"), (self.btn_revert, "ed_revert"), (self.btn_split, "ed_split"),
                          (self.btn_merge, "ed_merge"), (self.btn_delete, "ed_delete"), (self.btn_undo, "ed_undo"),

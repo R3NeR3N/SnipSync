@@ -24,6 +24,7 @@ SnipSync/
 │       │   ├── subtitles.py      # 字幕: 境界計算・文節改行・話者付与・時刻補正・Cue/SRT
 │       │   ├── subtitle_edit.py  # 字幕の編集ロジック（CueEditor・話者の統合・状態の保存と復元・書き出し文字列の生成）
 │       │   ├── session.py        # 編集セッション（<名前>.snipsync.json）の保存・復元。壊れたファイルは SessionError
+│       │   ├── polish.py         # 文字起こしの清書（PC 上の LLM〔127.0.0.1 のみ〕／貼り付け用ファイル）。返事は検査して、合わない行は元のまま
 │       │   ├── punctuation.py    # 句読点（見本文・語の時刻からの補い・字幕 .srt から除く）。日本語のみ
 │       │   ├── speaker_cleanup.py  # 話者ラベルの自動整理の計画（小さな話者・挟まれた短い発言）
 │       │   ├── transcript.py     # .txt / .md 生成・SRT 読み込み
@@ -41,6 +42,7 @@ SnipSync/
 │       └── ui/                   # 画面（core を使う）
 │           ├── app.py            # メインウィンドウ（モニター・設定タブ・実行・ログ）+ バッチ実行
 │           ├── subtitle_editor.py  # 字幕の確認・編集ウィンドウ（表 + 編集欄 + txt/md/srt タブ）。時刻を押すと本体のプレビューを再生
+│           ├── polish_dialog.py  # 清書の画面（PC 上の LLM／貼り付け用ファイル）
 │           ├── update_dialog.py  # 更新の確認画面（本体・AI モデル。許可されたものだけ更新）
 │           ├── widgets.py        # 部品（Btn / Choice / CutMap / Legend ほか）。色・書体は theme から
 │           └── theme.py          # デザイントークン（色・書体・角丸・間隔。理由は DESIGN.md）

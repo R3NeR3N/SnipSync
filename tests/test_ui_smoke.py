@@ -1381,3 +1381,131 @@ def test_open_saved_button_exists_and_follows_the_language(app):
     app._on_lang_change("en")
     assert app.btn_open_saved.cget("text") == "Open saved…"
     app._on_lang_change("ja")
+
+
+# ── 文字起こしの清書の画面 ────────────────────────────────────────────────────────────────
+@pytest.fixture
+def polish_env(app, monkeypatch, tmp_path):
+    import types
+
+    from snipsync.ui import polish_dialog as pd
+    monkeypatch.setenv("APPDATA", str(tmp_path / "cfg"))
+    monkeypatch.setattr(pd, "threading", types.SimpleNamespace(Thread=_InlineThread))
+    monkeypatch.setattr(pd.messagebox, "askyesno", lambda *a, **k: True)
+    app.last_cues, app.last_title = _fragmented_cues(), "demo"
+    app.last_paths = {"srt": tmp_path / "talk.srt"}
+    app._open_editor()
+    pump(app, 10)
+    ed = app.editor_win
+    yield types.SimpleNamespace(pd=pd, ed=ed, dir=tmp_path)
+    if ed._polish_win is not None and ed._polish_win.winfo_exists():
+        ed._polish_win.destroy()
+
+
+def test_polish_button_opens_one_dialog(app, polish_env):
+    ed = polish_env.ed
+    ed.open_polish()
+    pump(app, 5)
+    first = ed._polish_win
+    ed.open_polish()
+    assert ed._polish_win is first and first.winfo_exists()
+    assert ed.btn_polish.cget("text") == app.t("ed_polish")
+
+
+def test_paste_mode_writes_a_howto_and_numbered_files_next_to_the_output(app, polish_env):
+    ed = polish_env.ed
+    ed.open_polish()
+    dlg = ed._polish_win
+    dlg.mode.set_key("paste")
+    dlg._show_mode()
+    dlg.chunk_var.set("600")
+    dlg._run()
+    pump(app, 5)
+    out = polish_env.dir / "talk_polish"
+    assert (out / "00_使い方.md").exists() and (out / "01.txt").exists()
+    assert dlg.btn_open.cget("state") == "normal" and dlg.out_dir == out
+    assert "校正者" in (out / "01.txt").read_text(encoding="utf-8")
+
+
+def test_local_mode_refuses_a_non_local_address_and_needs_a_model(app, polish_env):
+    dlg = (polish_env.ed.open_polish(), polish_env.ed._polish_win)[1]
+    dlg.mode.set_key("local")
+    dlg._show_mode()
+    dlg.model_var.set("")
+    dlg._run()
+    assert dlg.status.cget("text") == app.t("pl_need_model")
+    dlg.model_var.set("m")
+    dlg.endpoint_var.set("https://api.example.com/v1")
+    dlg._run()
+    assert dlg.status.cget("text") == app.t("pl_not_local") and not dlg.busy
+
+
+def test_local_mode_polishes_and_writes_txt_and_md(app, polish_env, monkeypatch):
+    pd = polish_env.pd
+
+    class Echo:
+        def __init__(self, endpoint, model, **k):
+            self.model = model
+
+        def complete(self, system, user):
+            out = []
+            for ln in user.split("【直す行】")[1].strip().splitlines():
+                num, _label, text = ln.split("｜", 2)
+                out.append(f"{num}｜{text}。")
+            return "\n".join(out)
+
+    monkeypatch.setattr(pd.polish, "LocalLLM", Echo)
+    ed = polish_env.ed
+    ed.open_polish()
+    dlg = ed._polish_win
+    dlg.mode.set_key("local")
+    dlg._show_mode()
+    dlg.model_var.set("qwen")
+    dlg._run()
+    pump(app, 10)
+    txt = (polish_env.dir / "talk_polished.txt").read_text(encoding="utf-8")
+    assert txt.splitlines()[0].startswith("[00:00:00] 話者") and txt.splitlines()[0].endswith("。")
+    assert (polish_env.dir / "talk_polished.md").exists() and not dlg.busy
+    assert "talk_polished" in dlg.status.cget("text")
+    assert polish_env.pd.polish.load_settings()["model"] == "qwen"                    # 次回のために、設定を覚える
+
+
+def test_a_failing_local_server_is_reported_and_nothing_is_written(app, polish_env, monkeypatch):
+    pd = polish_env.pd
+
+    class Broken:
+        def __init__(self, endpoint, model, **k):
+            pass
+
+        def complete(self, system, user):
+            raise pd.polish.PolishError("HTTP 500")
+
+    monkeypatch.setattr(pd.polish, "LocalLLM", Broken)
+    ed = polish_env.ed
+    ed.open_polish()
+    dlg = ed._polish_win
+    dlg.mode.set_key("local")
+    dlg._show_mode()
+    dlg.model_var.set("m")
+    dlg._run()
+    pump(app, 10)
+    assert dlg.status.cget("text") == app.t("pl_failed", "HTTP 500") and not dlg.busy
+    assert not (polish_env.dir / "talk_polished.txt").exists()
+
+
+def test_connection_check_fills_in_the_first_model(app, polish_env, monkeypatch):
+    pd = polish_env.pd
+
+    class Lister:
+        def __init__(self, endpoint, model, **k):
+            pass
+
+        def models(self):
+            return ["qwen2.5:14b", "gemma"]
+
+    monkeypatch.setattr(pd.polish, "LocalLLM", Lister)
+    polish_env.ed.open_polish()
+    dlg = polish_env.ed._polish_win
+    dlg._check()
+    pump(app, 5)
+    assert dlg.model_var.get() == "qwen2.5:14b" and dlg.status.cget("text") == app.t("pl_check_ok", 2, "qwen2.5:14b, gemma")

@@ -116,11 +116,13 @@ def reading_turns(cues: list[Cue], *, names: dict | None = None, ui_lang: str = 
 
 def cues_to_txt(cues: list[Cue], *, timestamps: bool = True, speakers: bool = True,
                 ui_lang: str = "ja", names: dict | None = None, reading: bool = False,
-                backchannel: str = "bracket") -> str:
+                backchannel: str = "bracket", passages: list | None = None) -> str:
+    """passages を渡すと、それを（読みやすい整形のあと、清書したものなどを）そのまま書く。"""
     sep = "：" if ui_lang == "ja" else ": "
     lines = []
-    if reading:
-        for t in reading_turns(cues, names=names, ui_lang=ui_lang, backchannel=backchannel):
+    if reading or passages is not None:
+        for t in (passages if passages is not None
+                  else reading_turns(cues, names=names, ui_lang=ui_lang, backchannel=backchannel)):
             for start, text in t.paras:                # 段落ごとに 1 行。話者名は、毎行つける（どの行だけを写しても、誰の発言か分かる）
                 head = f"[{hms(start)}] " if timestamps else ""
                 if speakers and t.speaker is not None:
@@ -139,8 +141,12 @@ def cues_to_txt(cues: list[Cue], *, timestamps: bool = True, speakers: bool = Tr
 
 def cues_to_md(cues: list[Cue], *, title: str, timestamps: bool = True, speakers: bool = True,
                ui_lang: str = "ja", names: dict | None = None, reading: bool = False,
-               backchannel: str = "bracket") -> str:
-    turns = reading_turns(cues, names=names, ui_lang=ui_lang, backchannel=backchannel) if reading else merge_turns(cues)
+               backchannel: str = "bracket", passages: list | None = None) -> str:
+    reading = reading or passages is not None
+    if passages is not None:
+        turns = passages
+    else:
+        turns = reading_turns(cues, names=names, ui_lang=ui_lang, backchannel=backchannel) if reading else merge_turns(cues)
     ids = sorted({t.speaker for t in turns if t.speaker is not None})
     out = [f"# {title}", ""]
     if speakers and ids:
