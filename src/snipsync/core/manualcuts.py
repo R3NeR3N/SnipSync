@@ -81,6 +81,37 @@ def apply_manual_edits(chunks, tb: float, edits) -> list:
     return [tuple(c) for c in merged]
 
 
+def parse_time(text: str) -> float | None:
+    """「90」「90.5」「1:30」「1:30.25」「0:01:30.250」などの時刻を、秒にする。読めなければ None。
+    全角の数字や記号も受け付ける。分・秒の部分は、60 未満。"""
+    import unicodedata
+    s = unicodedata.normalize("NFKC", str(text)).strip().replace("：", ":")
+    if not s:
+        return None
+    parts = s.split(":")
+    if len(parts) > 3:
+        return None
+    try:
+        nums = [float(p) if p.strip() else 0.0 for p in parts]
+    except ValueError:
+        return None
+    if any(n < 0 or n != n for n in nums) or any(n >= 60 for n in nums[1:]):
+        return None
+    sec = 0.0
+    for n in nums:
+        sec = sec * 60 + n
+    return sec
+
+
+def format_precise(sec: float) -> str:
+    """秒を「H:MM:SS.mmm」にする（ミリ秒まで。数値で指定する欄に出す）。"""
+    ms = int(round(max(0.0, sec) * 1000))
+    h, rest = divmod(ms, 3_600_000)
+    m, rest = divmod(rest, 60_000)
+    s, milli = divmod(rest, 1000)
+    return f"{h}:{m:02d}:{s:02d}.{milli:03d}"
+
+
 def to_json(edits) -> list:
     return [[e.start, e.end, e.action, e.speed] for e in normalize(edits)]
 

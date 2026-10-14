@@ -100,3 +100,23 @@ def test_pipeline_params_carry_the_edits(edits):
     p = PipelineParams(margin=0.2, threshold=4.0, export_key="resolve", do_srt=False, model_size="small", manual_edits=edits)
     assert p.manual_edits == edits
     assert PipelineParams.__dataclass_fields__["manual_edits"].default == ()
+
+
+# ── 時刻の読み書き ──────────────────────────────────────────────────────────────────────
+@pytest.mark.parametrize("text,expected", [
+    ("90", 90.0), ("90.5", 90.5), ("1:30", 90.0), ("1:30.25", 90.25), ("0:01:30.250", 90.25), ("1:00:00", 3600.0),
+    (" 1:30 ", 90.0), ("１：３０", 90.0), ("1：30", 90.0), (":30", 30.0), ("0", 0.0),
+])
+def test_parse_time_reads_the_usual_forms(text, expected):
+    assert mc.parse_time(text) == pytest.approx(expected)
+
+
+@pytest.mark.parametrize("text", ["", "abc", "1:75", "-5", "1:2:3:4", "1:30:99", "nan", "1,5", "1:-3"])
+def test_parse_time_refuses_what_it_cannot_read(text):
+    assert mc.parse_time(text) is None
+
+
+def test_format_precise_and_parse_time_roundtrip():
+    for sec in (0.0, 0.001, 5.0, 90.25, 3599.999, 3600.0, 7325.5):
+        assert mc.parse_time(mc.format_precise(sec)) == pytest.approx(sec, abs=0.0006)
+    assert mc.format_precise(90.25) == "0:01:30.250" and mc.format_precise(-3) == "0:00:00.000"

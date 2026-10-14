@@ -24,6 +24,27 @@ def nice_step(duration: float, width_px: int, min_px: int = 96) -> int:
     return 7200
 
 
+def nice_step_fine(span: float, width_px: int, min_px: int = 96) -> float:
+    """拡大しているときの、時間軸の目盛りの間隔（秒）。0.05 秒まで細かくできる。"""
+    per_px = span / max(width_px, 1)
+    for step in (0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200):
+        if step / per_px >= min_px:
+            return step
+    return 7200
+
+
+def fmt_time_step(sec: float, step: float) -> str:
+    """目盛りの間隔に合わせた時刻。1 秒より細かいときは、小数も出す。"""
+    if step >= 1:
+        return fmt_time(sec)
+    digits = 2 if step < 0.1 else 1
+    sec = max(0.0, sec)
+    m, s = int(sec // 60), sec % 60
+    h, m = m // 60, m % 60
+    body = f"{s:0{3 + digits}.{digits}f}"
+    return f"{h}:{m:02d}:{body}" if h else f"{m}:{body}"
+
+
 # ── text ────────────────────────────────────────────────────────────────────────────
 
 def label(parent, text="", role="body", color=T.CHALK, **kw):
@@ -193,17 +214,24 @@ class Logo(tk.Canvas):
 # ── the monitor strip: what will be cut ─────────────────────────────────────────────
 
 class CutMap(ctk.CTkFrame):
-    """Waveform with the removed / sped-up spans marked. Also the drop target while no file is chosen."""
+    """Waveform with the removed / sped-up spans marked. Also the drop target while no file is chosen.
+
+    時間の方向（拡大・縮小・移動）と、波形の大きさの方向に、拡縮できる。
+    マウス: ホイール = 時間の拡大・縮小（カーソルの位置が動かない）、Shift + ホイール = 左右へ移動、Ctrl + ホイール = 波形の大きさ。
+    """
 
     HEIGHT = 132
     RULER = 8
-
     DRAG_PX = 6          # これ以上ドラッグしたら、位置の指定ではなく、区間の選択とみなす
+    MIN_VIEW = 0.5       # 最大まで拡大したときの、表示する長さ（秒）
+    GAINS = (0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0, 8.0, 12.0, 16.0)
 
-    def __init__(self, parent, text_fn, on_click=None, on_seek=None, on_select=None):
+    def __init__(self, parent, text_fn, on_click=None, on_seek=None, on_select=None, detail_fn=None, on_view=None):
         super().__init__(parent, fg_color=T.WELL, corner_radius=T.R_STRIP)
         self._t = text_fn
         self._on_select = on_select      # 波形をドラッグして区間を選んだとき: (開始秒, 終了秒)
+        self._detail_fn = detail_fn      # 拡大したときの細かい波形: (開始秒, 終了秒, 本数) -> 長さ「本数」の配列、または None
+        self.on_view = on_view           # 表示する範囲・波形の大きさが変わったとき
         self._selection: tuple | None = None
         self._press_x: int | None = None
         self._dragging = False
@@ -213,8 +241,12 @@ class CutMap(ctk.CTkFrame):
         self._state = "empty"
         self._error = ""
         self._peaks = None
+        self._top = 1.0                  # 全体でいちばん大きな音（波形の大きさの基準）
         self._regions: list = []
         self._duration = 0.0
+        self._vs = 0.0                   # 表示している範囲の開始（秒）
+        self._vl: float | None = None    # 表示している範囲の長さ（None = 全体）
+        self._gain_i = self.GAINS.index(1.0)
         self._stale = False
         self._hover_x: int | None = None
         self.canvas = tk.Canvas(self, height=self.HEIGHT, bg=T.WELL, highlightthickness=0, bd=0)
@@ -225,10 +257,12 @@ class CutMap(ctk.CTkFrame):
         self.canvas.bind("<Button-1>", self._press)
         self.canvas.bind("<B1-Motion>", self._drag)
         self.canvas.bind("<ButtonRelease-1>", self._release)
+        self.canvas.bind("<MouseWheel>", self._wheel)
 
     # state
     def set_empty(self):
         self._state, self._peaks, self._regions = "empty", None, []
+        self._reset_view()
         self.redraw()
 
     def set_busy(self):
@@ -240,8 +274,115 @@ class CutMap(ctk.CTkFrame):
         self.redraw()
 
     def set_data(self, peaks, regions, duration: float):
+        same = self._state == "ready" and abs(duration - self._duration) < 0.5       # 同じ動画の再計算では、拡大を保つ
         self._state, self._peaks, self._regions, self._duration, self._stale = "ready", peaks, regions, duration, False
+        self._top = float(peaks.max()) or 1.0 if peaks is not None and len(peaks) else 1.0
+        if not same:
+            self._reset_view()
         self.redraw()
+        self._notify()
+
+    # view（拡大・縮小・移動）
+    def _reset_view(self):
+        self._vs, self._vl = 0.0, None
+
+    def _notify(self):
+        if self.on_view:
+            self.on_view()
+
+    def view(self) -> tuple[float, float]:
+        """いま表示している範囲（開始秒, 終了秒）。"""
+        dur = self._duration
+        if self._vl is None or dur <= 0 or self._vl >= dur:
+            return 0.0, dur
+        vs = min(max(0.0, self._vs), dur - self._vl)
+        return vs, vs + self._vl
+
+    @property
+    def duration(self) -> float:
+        return self._duration
+
+    @property
+    def zoomed(self) -> bool:
+        return self._vl is not None and self._vl < self._duration
+
+    @property
+    def gain(self) -> float:
+        return self.GAINS[self._gain_i]
+
+    def view_fraction(self) -> tuple[float, float]:
+        """スクロールバー用: 表示している範囲の、全体に対する位置（0〜1）。"""
+        if self._duration <= 0:
+            return 0.0, 1.0
+        a, b = self.view()
+        return a / self._duration, b / self._duration
+
+    def zoom_time(self, factor: float, anchor: float | None = None):
+        """表示する長さを factor 倍にする（0.5 = 2 倍に拡大）。anchor（秒）の画面上の位置は、動かさない。"""
+        if self._state != "ready" or self._duration <= 0:
+            return
+        a, b = self.view()
+        length = b - a
+        new = min(self._duration, max(min(self.MIN_VIEW, self._duration), length * factor))
+        if new >= self._duration - 1e-6:
+            self._reset_view()
+        else:
+            anchor = (a + b) / 2 if anchor is None else min(max(anchor, a), b)
+            rel = (anchor - a) / length if length > 0 else 0.5
+            self._vl = new
+            self._vs = min(max(0.0, anchor - rel * new), self._duration - new)
+        self._changed()
+
+    def zoom_all(self):
+        self._reset_view()
+        self._changed()
+
+    def pan(self, seconds: float):
+        if self.zoomed:
+            self._vs = min(max(0.0, self.view()[0] + seconds), self._duration - self._vl)
+            self._changed()
+
+    def center_on(self, seconds: float):
+        """拡大しているとき、seconds が真ん中に来るように動かす。"""
+        if self.zoomed:
+            self._vs = min(max(0.0, seconds - self._vl / 2), self._duration - self._vl)
+            self._changed()
+
+    def zoom_gain(self, step: int):
+        i = min(max(self._gain_i + step, 0), len(self.GAINS) - 1)
+        if i != self._gain_i:
+            self._gain_i = i
+            self._changed()
+
+    def reset_gain(self):
+        self._gain_i = self.GAINS.index(1.0)
+        self._changed()
+
+    def xview(self, *args):
+        """スクロールバーの command（Tk の規約: moveto f / scroll n units|pages）。"""
+        if not self.zoomed:
+            return
+        a, b = self.view()
+        length = b - a
+        if args and args[0] == "moveto":
+            self._vs = min(max(0.0, float(args[1]) * self._duration), self._duration - length)
+        elif args and args[0] == "scroll":
+            unit = length * (0.9 if args[2] == "pages" else 0.1)
+            self._vs = min(max(0.0, a + int(args[1]) * unit), self._duration - length)
+        self._changed()
+
+    def _changed(self):
+        self.redraw()
+        self._notify()
+
+    def _x_of(self, t: float, w: int) -> int:
+        a, b = self.view()
+        return int((t - a) / (b - a) * w) if b > a else 0
+
+    def _time_at(self, x: float) -> float:
+        a, b = self.view()
+        w = max(self.canvas.winfo_width(), 1)
+        return min(b, max(a, a + x / w * (b - a)))
 
     def set_playhead(self, source_sec: float | None):
         """再生位置の線。再生中に何度も呼ばれるので、全体を描き直さず線だけ動かす。"""
@@ -249,7 +390,7 @@ class CutMap(ctk.CTkFrame):
         if self._state != "ready" or self._duration <= 0:
             return
         w = self.canvas.winfo_width()
-        if source_sec is None:
+        if source_sec is None or not self._playhead_visible():
             self.canvas.delete("playhead")
         elif self.canvas.find_withtag("playhead"):
             x = self._playhead_x(w)
@@ -257,14 +398,18 @@ class CutMap(ctk.CTkFrame):
         else:
             self._draw_playhead(w)
 
+    def _playhead_visible(self) -> bool:
+        a, b = self.view()
+        return self._playhead is not None and a <= self._playhead <= b
+
     def _playhead_x(self, w: int) -> int:
-        return min(w - 1, max(0, int(self._playhead / self._duration * w)))
+        return min(w - 1, max(0, self._x_of(self._playhead, w)))
 
     def _wave_bottom(self) -> int:
         return self.canvas.winfo_height() - 24
 
     def _draw_playhead(self, w: int):
-        if self._playhead is None:
+        if self._playhead is None or not self._playhead_visible():
             return
         x = self._playhead_x(w)
         self.canvas.create_line(x, 0, x, self._wave_bottom() + 6, fill=T.CHALK, width=2, tags="playhead")
@@ -283,10 +428,6 @@ class CutMap(ctk.CTkFrame):
         return self._stale
 
     # input
-    def _time_at(self, x: int) -> float:
-        w = max(self.canvas.winfo_width(), 1)
-        return min(self._duration, max(0.0, x / w * self._duration))
-
     def _press(self, e):
         self._press_x, self._dragging = e.x, False
         if self._state == "empty" and self._on_click:
@@ -310,6 +451,18 @@ class CutMap(ctk.CTkFrame):
             self._on_seek(self._time_at(e.x))
         self._press_x, self._dragging = None, False
 
+    def _wheel(self, e):
+        if self._state != "ready" or self._duration <= 0:
+            return
+        up = e.delta > 0
+        if e.state & 0x4:                                    # Ctrl: 波形の大きさ
+            self.zoom_gain(1 if up else -1)
+        elif e.state & 0x1:                                  # Shift: 左右へ
+            a, b = self.view()
+            self.pan((b - a) * 0.15 * (-1 if up else 1))
+        else:                                                # ホイール: 時間の拡大・縮小（カーソルの位置が動かない）
+            self.zoom_time(0.8 if up else 1.25, self._time_at(e.x))
+
     @property
     def selection(self):
         return self._selection
@@ -324,17 +477,19 @@ class CutMap(ctk.CTkFrame):
         c.delete("selection")
         if self._selection is None or self._state != "ready" or self._duration <= 0:
             return
+        a, b = self.view()
+        if self._selection[1] < a or self._selection[0] > b:
+            return
         w = max(c.winfo_width(), 1)
-        x0 = int(self._selection[0] / self._duration * w)
-        x1 = max(int(self._selection[1] / self._duration * w), x0 + 1)
+        x0 = max(0, self._x_of(self._selection[0], w))
+        x1 = min(w, max(self._x_of(self._selection[1], w), x0 + 1))
         c.create_rectangle(x0, 0, x1, self._wave_bottom() + 6, fill=T.PENCIL, stipple="gray25", outline=T.PENCIL,
                            tags="selection")
         c.tag_lower("selection")
         self.canvas.tag_raise("playhead")
 
     def _kind_at(self, x: int):
-        w = max(self.canvas.winfo_width(), 1)
-        t = x / w * self._duration
+        t = self._time_at(x)
         for s, e, kind in self._regions:
             if s <= t < e:
                 return kind
@@ -380,34 +535,53 @@ class CutMap(ctk.CTkFrame):
         r = c.create_rectangle(x0 - 10, y0 - 5, x1 + 10, y1 + 5, fill=T.PANEL, outline=T.EDGE)
         c.tag_raise(item, r)
 
+    def _visible_peaks(self, a: float, b: float, w: int):
+        """表示範囲の、横 1 ピクセルごとの波形の大きさ（0..1 を、全体の最大で割ったもの）。"""
+        import numpy as np
+        if self.zoomed and self._detail_fn is not None:
+            fine = self._detail_fn(a, b, w)
+            if fine is not None and len(fine) == w:
+                return np.asarray(fine, dtype=np.float32) / self._top
+        n = len(self._peaks)
+        i0 = a / self._duration * n
+        i1 = b / self._duration * n
+        idx = np.minimum(n - 1, (i0 + (np.arange(w) + 0.5) / w * (i1 - i0)).astype(int))
+        return np.asarray(self._peaks, dtype=np.float32)[idx] / self._top
+
     def _draw_wave(self, w, h):
         c = self.canvas
         top, bottom = self.RULER + 14, h - 24
         mid = (top + bottom) / 2
-        dur = self._duration
+        va, vb = self.view()
+        span = vb - va
         colors = {"keep": T.KEEP, "cut": T.CUT, "speed": T.SPEED}
         wave = {"keep": T.KEEP, "cut": T.blend(T.CUT, T.WELL, 0.7), "speed": T.SPEED}
         ruler = {"keep": T.blend(T.KEEP, T.WELL, 0.45), "cut": T.CUT, "speed": T.SPEED}
         kinds = ["keep"] * w
         for s, e, kind in self._regions:
-            x0, x1 = int(s / dur * w), max(int(e / dur * w), int(s / dur * w) + 1)
+            if e < va or s > vb:
+                continue
+            x0 = max(0, self._x_of(s, w))
+            x1 = min(w, max(self._x_of(e, w), x0 + 1))
             c.create_rectangle(x0, 0, x1, self.RULER, fill=ruler[kind], width=0)
-            for x in range(max(0, x0), min(w, x1)):
+            for x in range(x0, x1):
                 kinds[x] = kind
-        n = len(self._peaks)
-        top_peak = float(self._peaks.max()) or 1.0
+        peaks = self._visible_peaks(va, vb, w)
+        gain, room = self.gain, mid - top
         c.create_line(0, mid, w, mid, fill=T.EDGE)
         for x in range(w):
-            p = float(self._peaks[min(n - 1, int(x / w * n))]) / top_peak
-            half = max(1.0, p * (mid - top))
+            half = min(room, max(1.0, float(peaks[x]) * gain * room))
             c.create_line(x, mid - half, x, mid + half, fill=wave[kinds[x]])
-        step = nice_step(dur, w)
-        t = 0
-        while t <= dur:
-            x = int(t / dur * w)
+        step = nice_step_fine(span, w)
+        t = (va // step) * step
+        if t < va:
+            t += step
+        while t <= vb:
+            x = self._x_of(t, w)
             c.create_line(x, bottom + 6, x, bottom + 11, fill=T.DUST)
             if x < w - 36:
-                c.create_text(x + 4, bottom + 16, text=fmt_time(t), fill=T.DUST, anchor="w", font=T.font(ctk, "mono_small"))
+                c.create_text(x + 4, bottom + 16, text=fmt_time_step(t, step), fill=T.DUST, anchor="w",
+                              font=T.font(ctk, "mono_small"))
             t += step
         self._draw_playhead(w)
         self._draw_selection()
@@ -415,7 +589,7 @@ class CutMap(ctk.CTkFrame):
             x = self._hover_x
             c.create_line(x, 0, x, bottom + 6, fill=T.PENCIL, width=1)
             kind = self._kind_at(x)
-            text = fmt_time(x / w * dur) + (f"  {self._t('hover_' + kind)}" if kind else "")
+            text = fmt_time_step(self._time_at(x), 0.1 if span < 60 else 1) + (f"  {self._t('hover_' + kind)}" if kind else "")
             tx = x + 8 if x < w - 140 else x - 8
             item = c.create_text(tx, top - 2, text=text, fill=colors.get(kind, T.CHALK), anchor="w" if x < w - 140 else "e",
                                  font=T.font(ctk, "mono_small"))

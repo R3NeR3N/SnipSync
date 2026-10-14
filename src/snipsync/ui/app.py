@@ -34,7 +34,7 @@ from snipsync.core import cudalibs, updater
 from snipsync.core.aebin import get_auto_editor_path
 from snipsync.core.autoeditor import MEDIA_EXTS
 from snipsync.core.diarize import sherpa_available
-from snipsync.core.manualcuts import CUT, SPEED, ManualEdit, normalize
+from snipsync.core.manualcuts import CUT, SPEED, ManualEdit, format_precise, normalize, parse_time
 from snipsync.core.manualcuts import from_json as manual_from_json
 from snipsync.core.manualcuts import to_json as manual_to_json
 from snipsync.core.markers import (
@@ -61,7 +61,7 @@ from snipsync.core.subtitles import (  # noqa: F401  (format_timestamp re-export
     cuda_libs_ready,
     format_timestamp,
 )
-from snipsync.core.vad import decode_mix
+from snipsync.core.vad import SAMPLE_RATE, decode_mix
 from snipsync.i18n import I18N
 from snipsync.presets import delete_preset, load_store, save_store, set_last_used, upsert_preset
 from snipsync.ui import theme as T
@@ -244,13 +244,15 @@ class SnipSyncApp(_Base):
         self.btn_clear.grid(row=0, column=2, padx=(T.S1, 0))
 
         self.cutmap = W.CutMap(self.monitor, self.t, on_click=self._browse_file, on_seek=self._seek_source,
-                               on_select=self._on_map_select)
+                               on_select=self._on_map_select, detail_fn=self._wave_detail,
+                               on_view=self._sync_zoom)
         self.cutmap.grid(row=1, column=0, sticky="ew", padx=T.S4)
+        self._build_zoom(self.monitor)
         self._build_transport(self.monitor)
         self._build_manual(self.monitor)
 
         stats = ctk.CTkFrame(self.monitor, fg_color="transparent")
-        stats.grid(row=4, column=0, sticky="ew", padx=T.S4, pady=(T.S2, T.S3))
+        stats.grid(row=5, column=0, sticky="ew", padx=T.S4, pady=(T.S2, T.S3))
         stats.columnconfigure(1, weight=1)
         self.stats_time = W.label(stats, "", "mono_large")
         self.stats_time.grid(row=0, column=0, sticky="w")
@@ -263,15 +265,92 @@ class SnipSyncApp(_Base):
         self.btn_preview.grid(row=0, column=3)
         self.btn_preview.enable(False)       # ファイルを選ぶまでは押せない
 
-    def _build_manual(self, parent):
-        """波形をドラッグして選んだ区間を、削除・倍速にする。決めた区間の一覧も開ける。"""
+    def _build_zoom(self, parent):
+        """波形の拡大・縮小（時間の方向と、波形の大きさの方向）と、拡大したときの左右の移動。"""
         bar = ctk.CTkFrame(parent, fg_color="transparent")
-        bar.grid(row=3, column=0, sticky="ew", padx=T.S4, pady=(T.S2, 0))
+        bar.grid(row=2, column=0, sticky="ew", padx=T.S4, pady=(T.S2, 0))
+        bar.columnconfigure(8, weight=1)
+        self._zoom_texts = []
+
+        def btn(col, text_key, command, tip, *, text=None):
+            b = W.Btn(bar, text if text is not None else self.t(text_key), command, kind="ghost", height=26)
+            b.grid(row=0, column=col, padx=(0, T.S1))
+            if text is None:
+                self._zoom_texts.append((b, text_key))
+            self._tip(b, tip)
+            return b
+
+        self.zoom_time_lbl = self.reg(W.caption(bar), "zoom_time")
+        self.zoom_time_lbl.grid(row=0, column=0, padx=(0, T.S2))
+        self.btn_zoom_out = btn(1, "", lambda: self.cutmap.zoom_time(1.5), "tip_zoom_out", text="−")
+        self.btn_zoom_in = btn(2, "", lambda: self.cutmap.zoom_time(1 / 1.5), "tip_zoom_in", text="+")
+        self.btn_zoom_all = btn(3, "zoom_all", self.cutmap.zoom_all, "tip_zoom_all")
+        self.zoom_amp_lbl = self.reg(W.caption(bar), "zoom_amp")
+        self.zoom_amp_lbl.grid(row=0, column=4, padx=(T.S3, T.S2))
+        self.btn_amp_down = btn(5, "", lambda: self.cutmap.zoom_gain(-1), "tip_amp_down", text="−")
+        self.btn_amp_up = btn(6, "", lambda: self.cutmap.zoom_gain(1), "tip_amp_up", text="+")
+        self.btn_amp_reset = btn(7, "zoom_amp_reset", self.cutmap.reset_gain, "tip_amp_reset")
+        self.zoom_scroll = ctk.CTkScrollbar(bar, orientation="horizontal", command=self.cutmap.xview, height=12,
+                                            fg_color=T.WELL, button_color=T.EDGE, button_hover_color=T.RAISED)
+        self.zoom_scroll.grid(row=0, column=8, sticky="ew", padx=(T.S3, T.S3))
+        self.zoom_info = W.caption(bar)
+        self.zoom_info.grid(row=0, column=9, sticky="e")
+        self.zoom_bar = bar
+        self._sync_zoom()
+
+    def _sync_zoom(self):
+        """拡大の状態を、スクロールバーと表示に写す。"""
+        cm = self.cutmap
+        first, last = cm.view_fraction()
+        self.zoom_scroll.set(first, last)
+        a, b = cm.view()
+        parts = []
+        if cm.zoomed:
+            parts.append(f"{W.fmt_time_step(a, 0.1)}–{W.fmt_time_step(b, 0.1)}")
+        if cm.gain != 1.0:
+            parts.append(self.t("zoom_gain", f"{cm.gain:g}"))
+        self.zoom_info.configure(text="  ".join(parts))
+        self.btn_zoom_in.enable(cm.has_data and (b - a) > cm.MIN_VIEW * 1.01)
+        self.btn_zoom_out.enable(cm.zoomed)
+        self.btn_zoom_all.enable(cm.zoomed)
+        self.btn_amp_up.enable(cm.has_data and cm.gain < cm.GAINS[-1])
+        self.btn_amp_down.enable(cm.has_data and cm.gain > cm.GAINS[0])
+        self.btn_amp_reset.enable(cm.gain != 1.0)
+
+    def _wave_detail(self, start: float, end: float, bins: int):
+        """拡大したときの、細かい波形（横 1 ピクセルごとの、波形の大きさ）。元の音声が手元に無ければ None。"""
+        import numpy as np
+        samples = self._preview_cache.get("samples")
+        if samples is None or not self.input_files or self._preview_cache.get("path") != str(self.input_files[0]):
+            return None
+        seg = np.abs(samples[int(start * SAMPLE_RATE):int(end * SAMPLE_RATE)])
+        n = len(seg)
+        if n == 0 or bins <= 0:
+            return None
+        if n < bins:
+            return seg[np.linspace(0, n - 1, bins).astype(int)]
+        m = n // bins * bins
+        return seg[:m].reshape(bins, -1).max(axis=1)
+
+    def _build_manual(self, parent):
+        """波形をドラッグして選んだ区間（または、数値で指定した区間）を、削除・倍速にする。決めた区間の一覧も開ける。"""
+        bar = ctk.CTkFrame(parent, fg_color="transparent")
+        bar.grid(row=4, column=0, sticky="ew", padx=T.S4, pady=(T.S2, 0))
         bar.columnconfigure(0, weight=1)
         left = ctk.CTkFrame(bar, fg_color="transparent")
         left.grid(row=0, column=0, sticky="w")
         self.manual_hint = self.reg(W.caption(left), "manual_hint")
-        self.manual_sel = W.label(left, "", "mono", T.CHALK)
+        self.btn_man_num = self.reg(W.Btn(left, "", self._numeric_start, kind="ghost", height=28), "manual_numeric")
+        self.man_from_lbl = self.reg(W.caption(left), "manual_from")
+        self.man_start_var = tk.StringVar()
+        self.man_end_var = tk.StringVar()
+        self.man_start_entry = W.entry(left, self.man_start_var, width=116, mono=True, justify="center")
+        self.man_to_lbl = self.reg(W.caption(left), "manual_to")
+        self.man_end_entry = W.entry(left, self.man_end_var, width=116, mono=True, justify="center")
+        for e in (self.man_start_entry, self.man_end_entry):
+            e.bind("<Return>", self._commit_manual_entries)
+            e.bind("<FocusOut>", self._commit_manual_entries)
+        self.manual_sel = W.caption(left)                 # 長さ（秒）
         self.btn_man_cut = W.Btn(left, "", lambda: self._add_manual(CUT), height=28)
         self.btn_man_speed = W.Btn(left, "", lambda: self._add_manual(SPEED), height=28)
         self.btn_man_unsel = self.reg(W.Btn(left, "", self._clear_selection, kind="ghost", height=28), "manual_unselect")
@@ -279,6 +358,9 @@ class SnipSyncApp(_Base):
         self.btn_man_list.grid(row=0, column=1, sticky="e")
         self.btn_man_list.grid_remove()
         self.manual_bar = bar
+        self._manual_widgets = (self.manual_hint, self.btn_man_num, self.man_from_lbl, self.man_start_entry,
+                                self.man_to_lbl, self.man_end_entry, self.manual_sel, self.btn_man_cut,
+                                self.btn_man_speed, self.btn_man_unsel)
         self._update_manual()
 
     def _on_map_select(self, start: float, end: float):
@@ -291,20 +373,58 @@ class SnipSyncApp(_Base):
         self.cutmap.set_selection(None)
         self._update_manual()
 
+    def _numeric_start(self):
+        """「数値で指定」: 再生位置（無ければ、いま見ている範囲の左端）から 5 秒の区間を作り、数値の欄を出す。"""
+        dur = self.cutmap.duration
+        if not self.cutmap.has_data or dur <= 0:
+            return
+        start = self.player.source_position if (self.player is not None and self.player.loaded) else self.cutmap.view()[0]
+        start = min(max(0.0, start), max(0.0, dur - 0.5))
+        self.cutmap.set_selection((start, min(dur, start + 5.0)))
+        self._update_manual()
+        self.man_start_entry.focus_set()
+
+    def _fill_manual_entries(self, sel):
+        if sel:
+            self.man_start_var.set(format_precise(sel[0]))
+            self.man_end_var.set(format_precise(sel[1]))
+            self.manual_sel.configure(text=self.t("manual_sel", f"{sel[1] - sel[0]:.3f}"))
+
+    def _commit_manual_entries(self, _event=None):
+        """数値の欄の確定（Enter か、欄を出たとき）。読めない・順序が逆の値は、直前の区間に戻す。"""
+        sel = self.cutmap.selection
+        if not sel:
+            return
+        s, e = parse_time(self.man_start_var.get()), parse_time(self.man_end_var.get())
+        dur = self.cutmap.duration
+        if s is None or e is None or e - s < 0.05 or s >= dur:
+            self._log(self.t("manual_bad_time"), "warn")
+            self._fill_manual_entries(sel)
+            return
+        new = (s, min(e, dur))
+        if new != sel:
+            self.cutmap.set_selection(new)
+            a, b = self.cutmap.view()
+            if self.cutmap.zoomed and not (a <= new[0] <= b and a <= new[1] <= b):
+                self.cutmap.center_on((new[0] + new[1]) / 2)
+        self._fill_manual_entries(new)
+
     def _update_manual(self):
         sel = self.cutmap.selection
-        for w in (self.manual_hint, self.manual_sel, self.btn_man_cut, self.btn_man_speed, self.btn_man_unsel):
+        for w in self._manual_widgets:
             w.pack_forget()
         if sel:
-            self.manual_sel.configure(text=self.t("manual_sel", W.fmt_time(sel[0]), W.fmt_time(sel[1]), f"{sel[1] - sel[0]:.1f}"))
+            self._fill_manual_entries(sel)
             self.btn_man_cut.configure(text=self.t("manual_cut"))
             self.btn_man_speed.configure(text=self.t("manual_speed", f"{self._speed():g}"))
-            self.manual_sel.pack(side="left", padx=(0, T.S3))
-            self.btn_man_cut.pack(side="left", padx=(0, T.S2))
-            self.btn_man_speed.pack(side="left", padx=(0, T.S2))
-            self.btn_man_unsel.pack(side="left")
+            for w, pad in ((self.man_from_lbl, (0, T.S1)), (self.man_start_entry, (0, T.S3)), (self.man_to_lbl, (0, T.S1)),
+                           (self.man_end_entry, (0, T.S2)), (self.manual_sel, (0, T.S3)), (self.btn_man_cut, (0, T.S2)),
+                           (self.btn_man_speed, (0, T.S2)), (self.btn_man_unsel, (0, 0))):
+                w.pack(side="left", padx=pad)
         else:
-            self.manual_hint.pack(side="left")
+            self.manual_hint.pack(side="left", padx=(0, T.S3))
+            self.btn_man_num.pack(side="left")
+            self.btn_man_num.enable(self.cutmap.has_data)
         if self.manual_edits:
             self.btn_man_list.configure(text=self.t("manual_list", len(self.manual_edits)))
             self.btn_man_list.grid()
@@ -346,7 +466,7 @@ class SnipSyncApp(_Base):
     def _build_transport(self, parent):
         """編集後の音を聞く操作。カットマップの真下に置き、波形を見ながら押せるようにする。"""
         self.transport = ctk.CTkFrame(parent, fg_color="transparent")
-        self.transport.grid(row=2, column=0, sticky="ew", padx=T.S4, pady=(T.S2, 0))
+        self.transport.grid(row=3, column=0, sticky="ew", padx=T.S4, pady=(T.S2, 0))
         self.transport.columnconfigure(4, weight=1)
         if self.player is None:
             self.transport_note = W.caption(self.transport)
@@ -640,6 +760,9 @@ class SnipSyncApp(_Base):
         self._update_file_header()
         self._update_stats()
         self.legend.relabel()
+        for widget, key in self._zoom_texts:
+            widget.configure(text=self.t(key))
+        self._sync_zoom()
         self._update_manual()
         self.cutmap.redraw()
         for win in self._open_editors():

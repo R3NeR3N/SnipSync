@@ -246,6 +246,10 @@ While **Review before saving** is on (the default), processing pauses at the sub
 | ④ | Playback, jumping to the previous or next cut, and playback speed |
 | ⑤ | The bar above the waveform: **red** = removed, **blue** = sped up, grey = kept |
 
+**Zooming the waveform:** the **Time** buttons (or the mouse wheel over the waveform) zoom in and out along the time axis, down to half a second; the point under the cursor stays put. While zoomed in, Shift + wheel or the scroll bar moves left and right, and **All** shows everything. **Wave size** (or Ctrl + wheel) makes the waveform taller so quiet sounds are visible. Zooming does not change the cuts.
+
+**Entering a span by numbers:** press **Enter times** (it starts a 5-second span at the play position), or drag a span first, then type **From** and **To** as `90`, `1:30`, `1:30.25` or `0:01:30.250`. Press Enter to confirm; a value that cannot be read, or an end that is not later than the start, goes back to the previous span. The span is clamped to the video length.
+
 **Manual cuts and speed-ups:** drag on the waveform to select a span, then press **Cut it** or **Speed up N x** (N is the Speed value of the Cut tab). The span is laid over the automatic cuts and shows up on the waveform at once, so you can play it to check. **Manual edits: N…** lists them and removes them one by one. A cut is always cut; a speed-up affects only the part that is kept. They apply to the video you have chosen (choosing another clears them), and they go into the timeline, the subtitle times and the editing session when you press Start. A speed-up also speeds up the audio that subtitles are made from, so a very high rate can make the recognised text unreliable.
 
 #### 4. (Optional) Read and fix the subtitles — the review window

@@ -1657,3 +1657,176 @@ def test_the_guide_buttons_open_the_browser_with_the_right_pages(app, polish_env
     dlg.btn_guides["browser"].invoke()
     assert opened[0].startswith("https://claude.ai/new?q=") and opened[1].startswith("https://www.google.com/search?q=")
     assert dlg.status.cget("text") == app.t("pl_guide_opened")
+
+
+# ── 波形の拡大・縮小と、区間の数値指定 ─────────────────────────────────────────────────────
+@pytest.fixture
+def zoom_env(app, monkeypatch, tmp_path):
+    import types
+
+    import numpy as np
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+    video = tmp_path / "talk.wav"
+    video.write_bytes(b"x")
+    app.input_files = [str(video)]
+    app.manual_edits = []
+    monkeypatch.setattr(app, "_run_preview", lambda: None)
+    monkeypatch.setattr(app.cutmap.canvas, "winfo_width", lambda: 1000)
+    app.cutmap.set_data(np.ones(2400, dtype=np.float32) * 0.5, [(0, 100, "keep")], 600.0)
+    app.cutmap.zoom_all()
+    app.cutmap.reset_gain()
+    pump(app, 3)
+    yield types.SimpleNamespace(video=video, np=np)
+    app.cutmap.zoom_all()
+    app.cutmap.reset_gain()
+    app.cutmap.set_selection(None)
+    app.manual_edits = []
+    app._update_manual()
+
+
+def test_zooming_in_keeps_the_point_under_the_cursor_and_zooming_out_returns_to_all(app, zoom_env):
+    cm = app.cutmap
+    assert cm.view() == (0.0, 600.0) and not cm.zoomed
+    cm.zoom_time(0.5, anchor=300.0)
+    a, b = cm.view()
+    assert b - a == pytest.approx(300.0) and a == pytest.approx(150.0) and cm.zoomed
+    cm.zoom_time(0.5, anchor=a + 10.0)                                   # 左寄りの点を基準に
+    a2, b2 = cm.view()
+    assert (a2 + (b2 - a2) * (10.0 / 300.0)) == pytest.approx(a + 10.0, abs=0.01) or a2 <= a + 10.0 <= b2
+    cm.zoom_time(100.0)
+    assert cm.view() == (0.0, 600.0) and not cm.zoomed
+
+
+def test_zoom_is_limited_to_the_minimum_span_and_the_view_stays_inside_the_video(app, zoom_env):
+    cm = app.cutmap
+    for _ in range(40):
+        cm.zoom_time(0.5, anchor=599.0)
+    a, b = cm.view()
+    assert b - a == pytest.approx(cm.MIN_VIEW) and 0.0 <= a and b <= 600.0 + 1e-6
+    cm.pan(10_000)
+    assert cm.view()[1] == pytest.approx(600.0)
+    cm.pan(-10_000)
+    assert cm.view()[0] == 0.0
+
+
+def test_the_scrollbar_protocol_moves_and_reports_the_view(app, zoom_env):
+    cm = app.cutmap
+    cm.zoom_time(0.25)
+    cm.xview("moveto", 0.5)
+    first, last = cm.view_fraction()
+    assert first == pytest.approx(0.5) and last == pytest.approx(0.75)
+    cm.xview("scroll", 1, "pages")
+    assert cm.view()[0] > 0.5 * 600.0
+    assert app.zoom_info.cget("text") != ""                              # 表示範囲が、画面に出る
+
+
+def test_amplitude_zoom_steps_within_the_allowed_range(app, zoom_env):
+    cm = app.cutmap
+    assert cm.gain == 1.0
+    cm.zoom_gain(1)
+    assert cm.gain == 1.5
+    for _ in range(30):
+        cm.zoom_gain(1)
+    assert cm.gain == cm.GAINS[-1]
+    for _ in range(30):
+        cm.zoom_gain(-1)
+    assert cm.gain == cm.GAINS[0]
+    cm.reset_gain()
+    assert cm.gain == 1.0 and app.btn_amp_reset.cget("state") == "disabled"
+
+
+def test_the_wheel_zooms_pans_and_changes_the_size_by_modifier(app, zoom_env):
+    import types
+    cm = app.cutmap
+    ev = lambda delta, state: types.SimpleNamespace(delta=delta, state=state, x=500)    # noqa: E731
+    cm._wheel(ev(120, 0))
+    assert cm.zoomed
+    a = cm.view()[0]
+    cm._wheel(ev(-120, 0x1))                                              # Shift + 下へ = 右へ
+    assert cm.view()[0] > a
+    cm._wheel(ev(120, 0x4))                                               # Ctrl + 上へ = 大きく
+    assert cm.gain > 1.0
+
+
+def test_selection_and_clicks_use_the_zoomed_time_axis(app, zoom_env):
+    cm = app.cutmap
+    seeks = []
+    cm._on_seek = lambda s: seeks.append(s)
+    cm.zoom_time(0.1, anchor=300.0)                                       # 60 秒の幅
+    a, b = cm.view()
+    cm._press_x = 500
+    cm._release(types_ev(500))
+    assert seeks and seeks[0] == pytest.approx(a + (b - a) * 0.5, abs=0.2)
+    cm._press(types_ev(100))
+    cm._drag(types_ev(300))
+    cm._release(types_ev(300))
+    s0, s1 = cm.selection
+    assert s1 - s0 == pytest.approx((b - a) * 0.2, abs=0.3) and a <= s0 < s1 <= b
+
+
+def types_ev(x):
+    import types
+    return types.SimpleNamespace(x=x, y=10)
+
+
+def test_the_detail_waveform_comes_from_the_cached_samples_only_for_the_chosen_video(app, zoom_env):
+    np = zoom_env.np
+    from snipsync.core.vad import SAMPLE_RATE
+    app._preview_cache.clear()
+    assert app._wave_detail(0.0, 1.0, 100) is None                        # 元の音声が手元に無い
+    samples = np.zeros(10 * SAMPLE_RATE, dtype=np.float32)
+    samples[3 * SAMPLE_RATE] = 0.9
+    app._preview_cache["samples"], app._preview_cache["path"] = samples, str(zoom_env.video)
+    fine = app._wave_detail(2.0, 4.0, 200)
+    assert len(fine) == 200 and fine.max() == pytest.approx(0.9) and int(fine.argmax()) == 100
+    assert len(app._wave_detail(0.0, 0.001, 200)) == 200                  # 短すぎる範囲も、本数をそろえる
+    app._preview_cache["path"] = "other.wav"
+    assert app._wave_detail(2.0, 4.0, 200) is None
+    app._preview_cache.clear()
+
+
+def test_numeric_entry_creates_a_span_and_edits_move_it(app, zoom_env):
+    app._numeric_start()
+    sel = app.cutmap.selection
+    assert sel == (0.0, 5.0) and app.man_start_var.get() == "0:00:00.000" and app.man_end_var.get() == "0:00:05.000"
+    app.man_start_var.set("1:30")
+    app.man_end_var.set("1:45.5")
+    app._commit_manual_entries()
+    assert app.cutmap.selection == (90.0, 105.5)
+    assert app.man_end_var.get() == "0:01:45.500" and "15.500" in app.manual_sel.cget("text")
+    app._add_manual("cut")
+    assert [(e.start, e.end) for e in app.manual_edits] == [(90.0, 105.5)]
+
+
+def test_bad_numeric_input_is_reverted_with_a_message(app, zoom_env):
+    app._numeric_start()
+    before = app.cutmap.selection
+    for start, end in (("abc", "10"), ("20", "10"), ("5", "5"), ("999", "1000"), ("", "")):
+        app.man_start_var.set(start)
+        app.man_end_var.set(end)
+        app._commit_manual_entries()
+        assert app.cutmap.selection == before
+        assert app.man_start_var.get() == "0:00:00.000"
+    pump(app, 5)                                                          # ログへの書き込みは、画面のイベントで行われる
+    assert app.t("manual_bad_time") in app.console.get("1.0", "end")
+
+
+def test_the_end_is_clamped_to_the_video_length_and_the_view_follows_the_numbers(app, zoom_env):
+    cm = app.cutmap
+    cm.zoom_time(0.1, anchor=30.0)                                        # 手前の 60 秒を見ている
+    app._numeric_start()
+    app.man_start_var.set("9:00")
+    app.man_end_var.set("20:00")                                          # 動画（10 分）より後ろ
+    app._commit_manual_entries()
+    assert cm.selection == (540.0, 600.0)
+    a, b = cm.view()
+    assert a <= 540.0 and b >= 540.0                                      # 選んだ所へ、表示が移る
+
+
+def test_enter_times_button_needs_a_result_and_the_zoom_buttons_follow_the_state(app, zoom_env):
+    assert app.btn_man_num.cget("state") == "normal" and app.btn_zoom_all.cget("state") == "disabled"
+    app.cutmap.zoom_time(0.5)
+    assert app.btn_zoom_all.cget("state") == "normal" and app.btn_zoom_out.cget("state") == "normal"
+    app.cutmap.set_empty()
+    app._update_manual()
+    assert app.btn_man_num.cget("state") == "disabled"
