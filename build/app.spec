@@ -62,7 +62,7 @@ all_hiddenimports = [
     'snipsync.core.markers', 'snipsync.core.transcript', 'snipsync.core.waveform', 'snipsync.core.aebin',
     'snipsync.core.preview', 'snipsync.core.subtitle_edit', 'snipsync.core.player', 'snipsync.core.cudalibs',
     'snipsync.core.updater', 'snipsync.core.session', 'snipsync.core.polish', 'snipsync.core.punctuation', 'snipsync.core.speaker_cleanup', 'snipsync.ui.theme', 'snipsync.ui.widgets', 'snipsync.ui.subtitle_editor',
-    'snipsync.ui.update_dialog', 'snipsync.ui.polish_dialog',
+    'snipsync.ui.update_dialog', 'snipsync.ui.polish_dialog', 'snipsync.ui.manual_dialog', 'snipsync.core.manualcuts',
 ] + (fw_hiddenimports + ct_hiddenimports + tk_hiddenimports + av_hiddenimports + tr_hiddenimports
       + bx_hiddenimports + sh_hiddenimports + sd_hiddenimports + sdd_hiddenimports)
 

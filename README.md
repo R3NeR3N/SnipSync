@@ -246,6 +246,8 @@ While **Review before saving** is on (the default), processing pauses at the sub
 | ④ | Playback, jumping to the previous or next cut, and playback speed |
 | ⑤ | The bar above the waveform: **red** = removed, **blue** = sped up, grey = kept |
 
+**Manual cuts and speed-ups:** drag on the waveform to select a span, then press **Cut it** or **Speed up N x** (N is the Speed value of the Cut tab). The span is laid over the automatic cuts and shows up on the waveform at once, so you can play it to check. **Manual edits: N…** lists them and removes them one by one. A cut is always cut; a speed-up affects only the part that is kept. They apply to the video you have chosen (choosing another clears them), and they go into the timeline, the subtitle times and the editing session when you press Start. A speed-up also speeds up the audio that subtitles are made from, so a very high rate can make the recognised text unreliable.
+
 #### 4. (Optional) Read and fix the subtitles — the review window
 
 <p align="center"><img src="docs/images/editor_en.png" width="640" alt="Subtitle review window with numbered callouts"></p>

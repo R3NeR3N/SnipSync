@@ -234,3 +234,26 @@ def test_settings_roundtrip_default_and_broken_file(tmp_path, monkeypatch):
     assert got["mode"] == "paste" and got["model"] == ""
     polish._settings_path().write_text("{broken", encoding="utf-8")
     assert polish.load_settings()["mode"] == "paste"
+
+
+# ── 設定方法を調べるリンク ─────────────────────────────────────────────────────────────────
+def test_guide_links_open_a_search_and_two_ai_pages_with_the_question_filled_in():
+    from urllib.parse import parse_qs, urlparse
+    links = polish.guide_links("ja")
+    assert set(links) == {"browser", "claude", "chatgpt"}
+    hosts = {k: urlparse(v).hostname for k, v in links.items()}
+    assert hosts == {"browser": "www.google.com", "claude": "claude.ai", "chatgpt": "chatgpt.com"}
+    assert all(urlparse(v).scheme == "https" for v in links.values())
+    asked = parse_qs(urlparse(links["claude"]).query)["q"][0]
+    assert "Ollama" in asked and "127.0.0.1:11434" in asked and "初心者" in asked
+    assert parse_qs(urlparse(links["chatgpt"]).query)["q"][0] == asked
+    assert "Ollama" in parse_qs(urlparse(links["browser"]).query)["q"][0]
+
+
+def test_guide_text_carries_no_personal_data_or_transcript_text():
+    for lang in ("ja", "en"):
+        links = polish.guide_links(lang)
+        text = polish.GUIDE_PROMPTS[lang] + polish.GUIDE_QUERIES[lang]
+        assert "@" not in text and "\\" not in text and "C:" not in text
+        assert all(len(u) < 1500 for u in links.values())
+    assert "Ollama" in polish.guide_links("en")["claude"] and polish.guide_links("xx") == polish.guide_links("ja")

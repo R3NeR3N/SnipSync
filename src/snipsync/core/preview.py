@@ -17,6 +17,7 @@ from snipsync.core.autoeditor import (
     is_audio_only,
     probe_fps,
 )
+from snipsync.core.manualcuts import apply_manual_edits
 from snipsync.core.vad import (
     SAMPLE_RATE,
     decode_mix,
@@ -35,6 +36,7 @@ class CutSettings:
     threshold: float
     cut_mode: str = "threshold"          # "threshold" | "vad"
     silent_speed: float | None = None
+    manual: tuple = ()                   # 手動のカット・倍速（manualcuts.ManualEdit）。自動の判定に重ねる
 
 
 @dataclass
@@ -76,6 +78,8 @@ def compute_preview(path, cfg: CutSettings, ae_path, cache: dict | None = None) 
             chunks = read_v1_chunks(out_json)
     if not chunks:
         raise PreviewError("no cut data")
+    if cfg.manual:
+        chunks = apply_manual_edits(chunks, fps, cfg.manual)
     stats = preview_stats(chunks, fps)
     return CutPreview(compute_peaks(samples, PEAK_BINS), chunk_regions(chunks, fps), stats, stats["original"],
                       list(chunks), fps)

@@ -34,6 +34,9 @@ from snipsync.core import cudalibs, updater
 from snipsync.core.aebin import get_auto_editor_path
 from snipsync.core.autoeditor import MEDIA_EXTS
 from snipsync.core.diarize import sherpa_available
+from snipsync.core.manualcuts import CUT, SPEED, ManualEdit, normalize
+from snipsync.core.manualcuts import from_json as manual_from_json
+from snipsync.core.manualcuts import to_json as manual_to_json
 from snipsync.core.markers import (
     add_speaker_markers,
     resolve_marks,
@@ -63,6 +66,7 @@ from snipsync.i18n import I18N
 from snipsync.presets import delete_preset, load_store, save_store, set_last_used, upsert_preset
 from snipsync.ui import theme as T
 from snipsync.ui import widgets as W
+from snipsync.ui.manual_dialog import ManualListDialog
 from snipsync.ui.subtitle_editor import SubtitleEditor
 from snipsync.ui.update_dialog import UpdateDialog, collect
 from snipsync.version import APP_VERSION  # noqa: F401  (re-exported for tests)
@@ -103,6 +107,8 @@ class SnipSyncApp(_Base):
         self.editor_win = None
         self.review_win = None               # 処理中に開く、保存前の確認ウィンドウ
         self.update_win = None               # 更新の確認画面
+        self.manual_edits: list[ManualEdit] = []     # 手動のカット・倍速（いま選んでいる動画だけに効く）
+        self.manual_win = None
         self.running = False
         self.stop_requested = False
         self._reg: list = []                 # (widget, i18n key): 言語切り替えで文言を差し替える
@@ -197,7 +203,7 @@ class SnipSyncApp(_Base):
             (self.btn_review, "tip_open_review"), (self.btn_log_clear, "tip_log_clear"),
             (self.btn_model_folder, "tip_model_folder"), (self.btn_gpu_folder, "tip_gpu_folder"),
             (self.btn_change, "tip_folder"), (self.btn_updates, "tip_updates"),
-            (self.btn_open_saved, "tip_open_saved"),
+            (self.btn_open_saved, "tip_open_saved"), (self.btn_man_list, "tip_manual_list"),
         ]
         if self.player is not None:
             pairs += [(self.btn_prev, "tip_prev"), (self.btn_play, "tip_play"), (self.btn_next, "tip_next"),
@@ -237,12 +243,14 @@ class SnipSyncApp(_Base):
         self.btn_clear = self.reg(W.Btn(top, "", self._clear_files, kind="ghost", height=30, width=56), "btn_clear")
         self.btn_clear.grid(row=0, column=2, padx=(T.S1, 0))
 
-        self.cutmap = W.CutMap(self.monitor, self.t, on_click=self._browse_file, on_seek=self._seek_source)
+        self.cutmap = W.CutMap(self.monitor, self.t, on_click=self._browse_file, on_seek=self._seek_source,
+                               on_select=self._on_map_select)
         self.cutmap.grid(row=1, column=0, sticky="ew", padx=T.S4)
         self._build_transport(self.monitor)
+        self._build_manual(self.monitor)
 
         stats = ctk.CTkFrame(self.monitor, fg_color="transparent")
-        stats.grid(row=3, column=0, sticky="ew", padx=T.S4, pady=(T.S2, T.S3))
+        stats.grid(row=4, column=0, sticky="ew", padx=T.S4, pady=(T.S2, T.S3))
         stats.columnconfigure(1, weight=1)
         self.stats_time = W.label(stats, "", "mono_large")
         self.stats_time.grid(row=0, column=0, sticky="w")
@@ -254,6 +262,86 @@ class SnipSyncApp(_Base):
         self.btn_preview = W.Btn(stats, "", self._run_preview, height=32)
         self.btn_preview.grid(row=0, column=3)
         self.btn_preview.enable(False)       # ファイルを選ぶまでは押せない
+
+    def _build_manual(self, parent):
+        """波形をドラッグして選んだ区間を、削除・倍速にする。決めた区間の一覧も開ける。"""
+        bar = ctk.CTkFrame(parent, fg_color="transparent")
+        bar.grid(row=3, column=0, sticky="ew", padx=T.S4, pady=(T.S2, 0))
+        bar.columnconfigure(0, weight=1)
+        left = ctk.CTkFrame(bar, fg_color="transparent")
+        left.grid(row=0, column=0, sticky="w")
+        self.manual_hint = self.reg(W.caption(left), "manual_hint")
+        self.manual_sel = W.label(left, "", "mono", T.CHALK)
+        self.btn_man_cut = W.Btn(left, "", lambda: self._add_manual(CUT), height=28)
+        self.btn_man_speed = W.Btn(left, "", lambda: self._add_manual(SPEED), height=28)
+        self.btn_man_unsel = self.reg(W.Btn(left, "", self._clear_selection, kind="ghost", height=28), "manual_unselect")
+        self.btn_man_list = W.Btn(bar, "", self.open_manual_list, kind="ghost", height=28)
+        self.btn_man_list.grid(row=0, column=1, sticky="e")
+        self.btn_man_list.grid_remove()
+        self.manual_bar = bar
+        self._update_manual()
+
+    def _on_map_select(self, start: float, end: float):
+        """波形をドラッグして区間を選んだ。短すぎる選択は、誤操作として外す。"""
+        if end - start < 0.2:
+            self.cutmap.set_selection(None)
+        self._update_manual()
+
+    def _clear_selection(self):
+        self.cutmap.set_selection(None)
+        self._update_manual()
+
+    def _update_manual(self):
+        sel = self.cutmap.selection
+        for w in (self.manual_hint, self.manual_sel, self.btn_man_cut, self.btn_man_speed, self.btn_man_unsel):
+            w.pack_forget()
+        if sel:
+            self.manual_sel.configure(text=self.t("manual_sel", W.fmt_time(sel[0]), W.fmt_time(sel[1]), f"{sel[1] - sel[0]:.1f}"))
+            self.btn_man_cut.configure(text=self.t("manual_cut"))
+            self.btn_man_speed.configure(text=self.t("manual_speed", f"{self._speed():g}"))
+            self.manual_sel.pack(side="left", padx=(0, T.S3))
+            self.btn_man_cut.pack(side="left", padx=(0, T.S2))
+            self.btn_man_speed.pack(side="left", padx=(0, T.S2))
+            self.btn_man_unsel.pack(side="left")
+        else:
+            self.manual_hint.pack(side="left")
+        if self.manual_edits:
+            self.btn_man_list.configure(text=self.t("manual_list", len(self.manual_edits)))
+            self.btn_man_list.grid()
+        else:
+            self.btn_man_list.grid_remove()
+
+    def _add_manual(self, action: str):
+        sel = self.cutmap.selection
+        if not sel or not self.input_files:
+            return
+        edit = ManualEdit(sel[0], sel[1], action, self._speed())
+        self.manual_edits = normalize([*self.manual_edits, edit])
+        self.cutmap.set_selection(None)
+        self._manual_changed()
+
+    def remove_manual(self, edit: ManualEdit):
+        self.manual_edits = [e for e in self.manual_edits if e != edit]
+        self._manual_changed()
+
+    def clear_manual(self):
+        self.manual_edits = []
+        self._manual_changed()
+
+    def _manual_changed(self):
+        self._update_manual()
+        self._mark_stale()                      # 手動の区間を重ねて、カットマップと再生を、少し待って自動で更新する
+        self._log(self.t("log_manual_changed", len(self.manual_edits)), "muted")
+
+    def open_manual_list(self):
+        if self.manual_win is not None and self.manual_win.alive():
+            self.manual_win.lift()
+            return
+        self.manual_win = ManualListDialog(self)
+
+    def play_source(self, source_sec: float):
+        """元の動画の時刻から、再生を始める（手動の区間を、聞いて確かめる）。"""
+        self._seek_source(source_sec)
 
     def _build_transport(self, parent):
         """編集後の音を聞く操作。カットマップの真下に置き、波形を見ながら押せるようにする。"""
@@ -552,6 +640,7 @@ class SnipSyncApp(_Base):
         self._update_file_header()
         self._update_stats()
         self.legend.relabel()
+        self._update_manual()
         self.cutmap.redraw()
         for win in self._open_editors():
             win.relabel()
@@ -650,7 +739,7 @@ class SnipSyncApp(_Base):
             hotwords=self.glossary_var.get(), diarize=self.diarize_var.get() and sherpa_available(),
             num_speakers=-1 if self.speakers == "auto" else int(self.speakers),
             speaker_labels=self.speaker_labels, markers=self.markers_var.get() and self.export_key != "media",
-            punctuate=self.punct_var.get(), reading=self.reading_var.get(),
+            punctuate=self.punct_var.get(), reading=self.reading_var.get(), manual_edits=tuple(self.manual_edits),
             line_chars=self.line_chars(), txt=self.txt_var.get(), md=self.md_var.get(), ui_lang=self.lang,
             hold_subtitles=self.review_var.get() and self.srt_var.get(),
         )
@@ -755,6 +844,9 @@ class SnipSyncApp(_Base):
         self._preview_cache.clear()
         self._play_cache.clear()
         self._preview_result = None
+        self.manual_edits = []                 # 手動のカット・倍速は、選んだ動画だけに効く
+        self.cutmap.set_selection(None)
+        self._update_manual()
         self._reset_player()
         self._update_file_header()
         has = bool(self.input_files)
@@ -816,7 +908,7 @@ class SnipSyncApp(_Base):
         self._preview_busy, self._preview_again = True, False
         gen = self._preview_gen
         cfg = CutSettings(self.margin_var.get(), self.threshold_var.get(), self.cut_mode,
-                          self._speed() if self.silence == "speed" else None)
+                          self._speed() if self.silence == "speed" else None, tuple(self.manual_edits))
         path = self.input_files[0]
         if not self.cutmap.has_data:
             self.cutmap.set_busy()
@@ -1133,7 +1225,7 @@ class SnipSyncApp(_Base):
         self.progress.configure(mode="indeterminate")
         self.progress.start()
         run_folder = self.run_folder_var.get()      # 画面の値は、この（画面の）スレッドで読む
-        self._run_settings = self._collect_settings()
+        self._run_settings = {**self._collect_settings(), "manual": manual_to_json(self.manual_edits)}
         threading.Thread(target=self._worker, args=(files, params, fetch_gpu_libs, run_folder), daemon=True).start()
 
     def _worker(self, files, params, fetch_gpu_libs=False, run_folder=False):
@@ -1402,6 +1494,10 @@ class SnipSyncApp(_Base):
         if not Path(source).exists():
             return "ed_session_source_missing"
         self._set_files([source])
+        self.manual_edits = manual_from_json(settings.get("manual"))
+        if self.manual_edits:
+            self._update_manual()
+            self._mark_stale()
         return None
 
 

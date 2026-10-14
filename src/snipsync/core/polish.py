@@ -298,6 +298,39 @@ def write_paste_set(lines: list[Line], folder, *, lang: str = "ja", max_chars: i
     return written
 
 
+# ── 「PC 上の LLM」の設定方法を調べる ─────────────────────────────────────────────────────
+GUIDE_QUERIES = {
+    "ja": "Ollama Windows インストール 日本語 モデル 使い方 初心者 OpenAI互換API",
+    "en": "Ollama Windows install run a local LLM beginner OpenAI compatible API",
+}
+GUIDE_PROMPTS = {
+    "ja": ("Windows で Ollama をインストールし、日本語の文字起こしの校正に使える LLM（例: Qwen2.5 の 7B〜14B）を、"
+           "OpenAI 互換 API（http://127.0.0.1:11434/v1）として使えるようにする手順を、初心者向けに 1 ステップずつ、"
+           "確認方法つきで教えて。PC のメモリ・GPU に合うモデルの選び方も。"),
+    "en": ("On a Windows PC, how do I install Ollama, run an LLM that is good at proofreading Japanese transcripts "
+           "(for example Qwen2.5 7B to 14B), and expose it as an OpenAI-compatible API (http://127.0.0.1:11434/v1) that "
+           "another app can use? Explain step by step for a beginner, with a way to check each step worked, and how to "
+           "choose a model that fits my PC's memory and GPU."),
+}
+GUIDE_SITES = {                                   # 名前 -> (検索や質問の宛先, 文を渡す方法)
+    "browser": "https://www.google.com/search?q={}",
+    "claude": "https://claude.ai/new?q={}",
+    "chatgpt": "https://chatgpt.com/?q={}",
+}
+
+
+def guide_links(lang: str = "ja") -> dict:
+    """設定方法を調べるための URL。browser はブラウザの検索、claude / chatgpt は、質問を入れた状態で AI の画面を開く。
+    質問の文には、個人の情報も、文字起こしも入れない（一般的な手順を聞くだけ）。"""
+    from urllib.parse import quote
+    lang = lang if lang in GUIDE_QUERIES else "ja"
+    return {
+        "browser": GUIDE_SITES["browser"].format(quote(GUIDE_QUERIES[lang])),
+        "claude": GUIDE_SITES["claude"].format(quote(GUIDE_PROMPTS[lang])),
+        "chatgpt": GUIDE_SITES["chatgpt"].format(quote(GUIDE_PROMPTS[lang])),
+    }
+
+
 # ── 設定 ───────────────────────────────────────────────────────────────────────────
 def _settings_path() -> Path:
     base = os.environ.get("APPDATA")

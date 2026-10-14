@@ -198,9 +198,15 @@ class CutMap(ctk.CTkFrame):
     HEIGHT = 132
     RULER = 8
 
-    def __init__(self, parent, text_fn, on_click=None, on_seek=None):
+    DRAG_PX = 6          # これ以上ドラッグしたら、位置の指定ではなく、区間の選択とみなす
+
+    def __init__(self, parent, text_fn, on_click=None, on_seek=None, on_select=None):
         super().__init__(parent, fg_color=T.WELL, corner_radius=T.R_STRIP)
         self._t = text_fn
+        self._on_select = on_select      # 波形をドラッグして区間を選んだとき: (開始秒, 終了秒)
+        self._selection: tuple | None = None
+        self._press_x: int | None = None
+        self._dragging = False
         self._on_click = on_click        # 何も選ばれていないとき（ドロップ領域）のクリック
         self._on_seek = on_seek          # 結果が出ているときのクリック: 元の時刻（秒）を渡す
         self._playhead: float | None = None
@@ -216,7 +222,9 @@ class CutMap(ctk.CTkFrame):
         self.canvas.bind("<Configure>", lambda _e: self.redraw())
         self.canvas.bind("<Motion>", self._motion)
         self.canvas.bind("<Leave>", lambda _e: self._set_hover(None))
-        self.canvas.bind("<Button-1>", self._click)
+        self.canvas.bind("<Button-1>", self._press)
+        self.canvas.bind("<B1-Motion>", self._drag)
+        self.canvas.bind("<ButtonRelease-1>", self._release)
 
     # state
     def set_empty(self):
@@ -275,12 +283,54 @@ class CutMap(ctk.CTkFrame):
         return self._stale
 
     # input
-    def _click(self, e):
+    def _time_at(self, x: int) -> float:
+        w = max(self.canvas.winfo_width(), 1)
+        return min(self._duration, max(0.0, x / w * self._duration))
+
+    def _press(self, e):
+        self._press_x, self._dragging = e.x, False
         if self._state == "empty" and self._on_click:
             self._on_click()
-        elif self._state == "ready" and self._on_seek and self._duration > 0:
-            w = max(self.canvas.winfo_width(), 1)
-            self._on_seek(min(self._duration, max(0.0, e.x / w * self._duration)))
+
+    def _drag(self, e):
+        if self._state != "ready" or not self._on_select or self._press_x is None or self._duration <= 0:
+            return
+        if not self._dragging and abs(e.x - self._press_x) < self.DRAG_PX:
+            return
+        self._dragging = True
+        a, b = sorted((self._time_at(self._press_x), self._time_at(e.x)))
+        self.set_selection((a, b))
+
+    def _release(self, e):
+        if self._state != "ready" or self._press_x is None:
+            return
+        if self._dragging and self._selection and self._on_select:
+            self._on_select(*self._selection)
+        elif self._on_seek and self._duration > 0:
+            self._on_seek(self._time_at(e.x))
+        self._press_x, self._dragging = None, False
+
+    @property
+    def selection(self):
+        return self._selection
+
+    def set_selection(self, sel) -> None:
+        """選んでいる区間（開始秒, 終了秒）。None で外す。"""
+        self._selection = sel
+        self._draw_selection()
+
+    def _draw_selection(self):
+        c = self.canvas
+        c.delete("selection")
+        if self._selection is None or self._state != "ready" or self._duration <= 0:
+            return
+        w = max(c.winfo_width(), 1)
+        x0 = int(self._selection[0] / self._duration * w)
+        x1 = max(int(self._selection[1] / self._duration * w), x0 + 1)
+        c.create_rectangle(x0, 0, x1, self._wave_bottom() + 6, fill=T.PENCIL, stipple="gray25", outline=T.PENCIL,
+                           tags="selection")
+        c.tag_lower("selection")
+        self.canvas.tag_raise("playhead")
 
     def _kind_at(self, x: int):
         w = max(self.canvas.winfo_width(), 1)
@@ -360,6 +410,7 @@ class CutMap(ctk.CTkFrame):
                 c.create_text(x + 4, bottom + 16, text=fmt_time(t), fill=T.DUST, anchor="w", font=T.font(ctk, "mono_small"))
             t += step
         self._draw_playhead(w)
+        self._draw_selection()
         if self._hover_x is not None and 0 <= self._hover_x < w:
             x = self._hover_x
             c.create_line(x, 0, x, bottom + 6, fill=T.PENCIL, width=1)

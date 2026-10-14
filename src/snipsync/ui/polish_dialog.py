@@ -2,6 +2,7 @@
 import os
 import threading
 import tkinter as tk
+import webbrowser
 from pathlib import Path
 from tkinter import filedialog, messagebox
 
@@ -59,7 +60,15 @@ class PolishDialog(ctk.CTkToplevel):
         self.btn_check = W.Btn(self.local_box, self.t("pl_check"), self._check)
         self.btn_check.grid(row=2, column=1, sticky="w", pady=(T.S1, T.S3))
         W.caption(self.local_box, self.t("pl_local_note"), wraplength=560).grid(
-            row=3, column=0, columnspan=2, sticky="w", padx=T.S4, pady=(0, T.S3))
+            row=3, column=0, columnspan=2, sticky="w", padx=T.S4, pady=(0, T.S2))
+        guide = ctk.CTkFrame(self.local_box, fg_color="transparent")
+        guide.grid(row=4, column=0, columnspan=2, sticky="w", padx=T.S4, pady=(0, T.S3))
+        W.caption(guide, self.t("pl_guide")).pack(side="left", padx=(0, T.S2))
+        self.btn_guides = {}
+        for key, label in (("browser", "pl_guide_web"), ("claude", "pl_guide_claude"), ("chatgpt", "pl_guide_chatgpt")):
+            b = W.Btn(guide, self.t(label), lambda k=key: self._open_guide(k), kind="ghost", height=28)
+            b.pack(side="left", padx=(0, T.S1))
+            self.btn_guides[key] = b
 
         # 貼り付け用
         self.paste_box = ctk.CTkFrame(self, fg_color=T.PANEL, corner_radius=T.R_PANEL)
@@ -89,6 +98,12 @@ class PolishDialog(ctk.CTkToplevel):
         self.btn_run.grid(row=0, column=3, padx=(0, T.S2))
         self.btn_close = W.Btn(foot, self.t("upd_close"), self._close)
         self.btn_close.grid(row=0, column=4)
+
+    def _open_guide(self, which: str):
+        """初めて設定する人のために、手順を、ブラウザの検索や、AI への質問（質問文は入力済み）で調べる。"""
+        url = polish.guide_links(self.app.lang)[which]
+        webbrowser.open(url)
+        self.status.configure(text=self.t("pl_guide_opened"))
 
     def _show_mode(self):
         key = self.mode.get_key()

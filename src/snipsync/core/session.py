@@ -19,7 +19,7 @@ SUFFIX = ".snipsync.json"
 MAX_BYTES = 256 * 1024 * 1024        # 想定より大きなファイルは、読まない（誤って別のファイルを開いたとき）
 
 # セッションに残す、カットの設定（再生のために、元の動画から同じカット区間を作り直す）
-SETTING_KEYS = ("margin", "threshold", "cut_mode", "silence", "speed", "line_chars")
+SETTING_KEYS = ("margin", "threshold", "cut_mode", "silence", "speed", "line_chars", "manual")
 
 
 class SessionError(Exception):

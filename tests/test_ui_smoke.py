@@ -1509,3 +1509,151 @@ def test_connection_check_fills_in_the_first_model(app, polish_env, monkeypatch)
     dlg._check()
     pump(app, 5)
     assert dlg.model_var.get() == "qwen2.5:14b" and dlg.status.cget("text") == app.t("pl_check_ok", 2, "qwen2.5:14b, gemma")
+
+
+# ── 手動のカット・倍速 ──────────────────────────────────────────────────────────────────
+@pytest.fixture
+def manual_env(app, monkeypatch, tmp_path):
+    import types
+
+    import numpy as np
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+    video = tmp_path / "talk.wav"
+    video.write_bytes(b"x")
+    app.input_files = [str(video)]
+    app.manual_edits = []
+    monkeypatch.setattr(app, "_run_preview", lambda: None)              # 実際の再計算は、ここでは行わない
+    monkeypatch.setattr(app.cutmap.canvas, "winfo_width", lambda: 1000)
+    app.cutmap.set_data(np.ones(10, dtype=np.float32), [(0, 10, "keep")], 100.0)
+    pump(app, 3)
+    yield types.SimpleNamespace(video=video)
+    app.cutmap.set_selection(None)
+    app.manual_edits = []
+    app._update_manual()
+    if app.manual_win is not None and app.manual_win.alive():
+        app.manual_win.destroy()
+    app.manual_win = None
+
+
+def _ev(x):
+    import types
+    return types.SimpleNamespace(x=x, y=10)
+
+
+def test_dragging_on_the_wave_selects_a_span_and_a_click_still_seeks(app, manual_env, monkeypatch):
+    seeks = []
+    monkeypatch.setattr(app, "_seek_source", lambda s: seeks.append(s))
+    cm = app.cutmap
+    cm._on_seek = lambda s: seeks.append(s)
+    cm._press(_ev(200))
+    cm._release(_ev(203))                                              # 3 px: ドラッグではなく、クリック
+    assert seeks == [pytest.approx(20.0, abs=0.5)] and cm.selection is None
+    cm._press(_ev(200))
+    cm._drag(_ev(400))
+    cm._release(_ev(400))
+    assert cm.selection == (pytest.approx(20.0, abs=0.5), pytest.approx(40.0, abs=0.5)) and len(seeks) == 1
+    cm._press(_ev(600))
+    cm._drag(_ev(500))                                                # 右から左へのドラッグも、小さい順に
+    cm._release(_ev(500))
+    assert cm.selection[0] < cm.selection[1]
+
+
+def test_a_selection_shows_buttons_and_adding_a_cut_marks_the_preview_stale(app, manual_env, monkeypatch):
+    stale = []
+    monkeypatch.setattr(app, "_mark_stale", lambda: stale.append(1))
+    app.cutmap.set_selection((10.0, 25.0))
+    app._on_map_select(10.0, 25.0)
+    assert app.btn_man_cut.winfo_manager() == "pack" and "15.0" in app.manual_sel.cget("text")
+    app._add_manual("cut")
+    assert [(e.start, e.end, e.action) for e in app.manual_edits] == [(10.0, 25.0, "cut")]
+    assert app.cutmap.selection is None and stale and app.btn_man_list.cget("text") == app.t("manual_list", 1)
+
+
+def test_a_too_short_selection_is_dropped(app, manual_env):
+    app.cutmap.set_selection((10.0, 10.05))
+    app._on_map_select(10.0, 10.05)
+    assert app.cutmap.selection is None
+
+
+def test_a_speed_up_uses_the_current_speed_value(app, manual_env):
+    app.speed_var.set(4.0)
+    app.cutmap.set_selection((30.0, 40.0))
+    app._add_manual("speed")
+    assert app.manual_edits[0].action == "speed" and app.manual_edits[0].speed == 4.0
+
+
+def test_manual_edits_reach_the_preview_settings_and_the_pipeline_params(app, manual_env, monkeypatch):
+    import threading
+    app.cutmap.set_selection((10.0, 25.0))
+    app._add_manual("cut")
+    assert app._build_params().manual_edits == tuple(app.manual_edits)
+    seen = []
+
+    def fake(path, cfg, ae, cache):
+        seen.append(cfg)
+        raise RuntimeError("stop here")
+
+    monkeypatch.setattr("snipsync.ui.app.compute_preview", fake)
+    monkeypatch.setattr(app, "cut_mode", "vad")                       # 音量方式は、auto-editor を取りに行くので、避ける
+    monkeypatch.setattr(app, "after", lambda *a, **k: None)           # 作業スレッドから画面へ返す所は、ここでは要らない
+    app._preview_busy = False
+    type(app)._run_preview(app)
+    for th in threading.enumerate():
+        if th is not threading.current_thread() and th.daemon:
+            th.join(timeout=3)
+    assert seen and seen[0].manual == tuple(app.manual_edits)
+    app._preview_busy = False
+
+
+def test_choosing_another_video_clears_the_manual_edits(app, manual_env):
+    app.cutmap.set_selection((10.0, 25.0))
+    app._add_manual("cut")
+    app._on_files_changed()
+    assert app.manual_edits == [] and app.btn_man_list.winfo_manager() == ""
+
+
+def test_the_list_dialog_shows_each_edit_and_removes_them(app, manual_env):
+    for a, b in ((10.0, 20.0), (40.0, 50.0)):
+        app.cutmap.set_selection((a, b))
+        app._add_manual("cut")
+    app.open_manual_list()
+    dlg = app.manual_win
+    pump(app, 5)
+    assert "削除" in dlg.describe(app.manual_edits[0]) and "10.0" in dlg.describe(app.manual_edits[0])
+    first = app.manual_edits[0]
+    dlg._remove(first)
+    assert app.manual_edits and first not in app.manual_edits and len(app.manual_edits) == 1
+    dlg._clear_all()
+    assert app.manual_edits == [] and dlg.btn_all.cget("state") == "disabled"
+
+
+def test_the_session_keeps_the_manual_edits_and_restoring_brings_them_back(app, manual_env, monkeypatch):
+    from snipsync.core import session as sess
+    app.cutmap.set_selection((10.0, 25.0))
+    app._add_manual("cut")
+    app.cutmap.set_selection((60.0, 70.0))
+    app.speed_var.set(3.0)
+    app._add_manual("speed")
+    from snipsync.core.manualcuts import to_json
+    saved = {**app._collect_settings(), "manual": to_json(app.manual_edits)}
+    assert sess.pick_settings(saved)["manual"] == saved["manual"]
+    app.manual_edits = []
+    monkeypatch.setattr(app, "_set_files", lambda files: None)
+    monkeypatch.setattr(app, "_mark_stale", lambda: None)
+    assert app.restore_context(str(manual_env.video), sess.pick_settings(saved)) is None
+    assert [(e.start, e.end, e.action) for e in app.manual_edits] == [(10.0, 25.0, "cut"), (60.0, 70.0, "speed")]
+
+
+def test_the_guide_buttons_open_the_browser_with_the_right_pages(app, polish_env, monkeypatch):
+    pd = polish_env.pd
+    opened = []
+    monkeypatch.setattr(pd.webbrowser, "open", lambda url: opened.append(url))
+    polish_env.ed.open_polish()
+    dlg = polish_env.ed._polish_win
+    dlg.mode.set_key("local")
+    dlg._show_mode()
+    assert set(dlg.btn_guides) == {"browser", "claude", "chatgpt"}
+    dlg.btn_guides["claude"].invoke()
+    dlg.btn_guides["browser"].invoke()
+    assert opened[0].startswith("https://claude.ai/new?q=") and opened[1].startswith("https://www.google.com/search?q=")
+    assert dlg.status.cget("text") == app.t("pl_guide_opened")

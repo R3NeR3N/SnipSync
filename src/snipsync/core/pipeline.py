@@ -32,6 +32,7 @@ from snipsync.core.diarize import (
     merge_similar_small_labels,
     sherpa_available,
 )
+from snipsync.core.manualcuts import apply_manual_edits
 from snipsync.core.markers import (
     add_markers,
     cut_point_markers,
@@ -273,6 +274,7 @@ class PipelineParams:
     md: bool = False                 # 文字起こしを .md でも書き出す
     refine_timing: bool = True       # 字幕の時刻を、実際に声がある区間（VAD）に合わせて補正する
     tidy_speakers: bool = True       # 人数が自動のとき、発話の少ないラベルを、声が近い大きなラベルへ寄せる
+    manual_edits: tuple = ()         # 手動のカット・倍速（manualcuts.ManualEdit）。自動の判定に重ねる
     reading: bool = True             # 文字起こし（.txt / .md）を、読みやすく整える（あいづちを本文に入れる・段落に分ける）
     punctuate: bool = True           # 句読点を補う（日本語。文字起こしと編集画面の本文。字幕 .srt には付けない）
     hold_subtitles: bool = False     # 字幕（.srt/.txt/.md）をここでは書かず、確認・編集してから呼び出し側が保存する
@@ -448,6 +450,25 @@ def run_pipeline(
                 pass
         return chunks_cache, chunks_tb
 
+    def apply_manual() -> None:
+        """手動のカット・倍速を、自動の判定（音量・声）の区間に重ねて、v1 JSON に書き、以降の全処理で共有する。"""
+        nonlocal vad_json, cut_tb, chunks_cache, chunks_tb
+        chunks, tb = get_chunks()
+        if not chunks or not tb:
+            on_log(tr("log_manual_skipped"), "warn")
+            return
+        merged = apply_manual_edits(chunks, tb, params.manual_edits)
+        if merged == [tuple(c) for c in chunks]:
+            on_log(tr("log_manual_nochange"), "muted")
+            return
+        previous = vad_json
+        vad_json = write_v1(out_dir / f"{name}_cuts_manual.json", inp, [list(c) for c in merged])
+        cut_tb = tb
+        if previous is not None and Path(previous) != Path(vad_json):
+            Path(previous).unlink(missing_ok=True)   # 声方式の区間の中間ファイルは、もう使わないので、ここで消す
+        chunks_cache = None                      # 次の get_chunks は、書いた JSON（重ねたあと）から読む
+        on_log(tr("log_manual_applied", len(params.manual_edits)), "muted")
+
     def get_boundaries() -> list:
         """タイムライン上のカット境界(秒)。"""
         chunks, tb = get_chunks()
@@ -475,6 +496,12 @@ def run_pipeline(
                     inp, out_dir, name, params, on_log=on_log, tr=tr, audio_only=audio_only)
             except Exception:
                 vad_json, cut_tb = None, None
+                on_log(tr("log_unexpected", traceback.format_exc()), "error")
+
+        if params.manual_edits:
+            try:
+                apply_manual()
+            except Exception:
                 on_log(tr("log_unexpected", traceback.format_exc()), "error")
 
         # メディア書き出しだけ: ライセンスキー無しの auto-editor は大きい解像度のレンダリングを縮小する。
