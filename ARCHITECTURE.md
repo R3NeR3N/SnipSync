@@ -14,6 +14,7 @@ SnipSync/
 │       ├── __init__.py           # __version__（version.APP_VERSION から）
 │       ├── __main__.py           # 入口（PyInstaller の起動スクリプトも、これ）
 │       ├── version.py            # APP_VERSION（バージョンの唯一の定義）
+│       ├── buildinfo.py          # 開発用の印（ソースの中身から計算した ID。ヘッダーに「v版 · dev ID」を出す。配布版には出ない）
 │       ├── i18n.py / i18n_tips.py  # 文言の辞書（ja / en）と、簡易ヘルプの文言
 │       ├── presets.py            # 設定の保存・呼び出し
 │       ├── assets/               # 同梱フォント（BIZ UD ゴシック, SIL OFL）・アイコン（.ico / .png。scripts/make_icon.py で生成）

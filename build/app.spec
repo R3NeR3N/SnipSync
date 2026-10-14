@@ -3,6 +3,9 @@
 # --onefile モード: FFmpeg内蔵の auto-editor.exe と faster-whisper をバンドル
 # 事前に `python scripts/fetch_auto_editor.py` で auto-editor を build/vendor/ へ取得しておく（SHA-256 検証つき）。
 
+import os
+import subprocess
+import sys
 import sysconfig
 from pathlib import Path
 from PyInstaller.utils.hooks import collect_all
@@ -18,6 +21,10 @@ DND_DIR  = SITE / 'tkinterdnd2'
 
 if not AE_BIN.exists():
     raise SystemExit(f"auto-editor が見つかりません: {AE_BIN}\n先に `python scripts/fetch_auto_editor.py` を実行してください。")
+
+# ── 開発用の印（読み込んだ EXE が最新のソースからかを、ヘッダーの ID で確かめる）。GitHub Actions の配布版には入れない。
+subprocess.run([sys.executable, str(WORK_DIR / 'scripts' / 'dev_stamp.py'), '--local'], check=False)
+STAMP = WORK_DIR / 'src' / 'snipsync' / 'build_info.py'
 
 # ── 依存関係の収集 (faster-whisper)
 fw_datas, fw_binaries, fw_hiddenimports = collect_all('faster_whisper')
@@ -62,8 +69,8 @@ all_hiddenimports = [
     'snipsync.core.markers', 'snipsync.core.transcript', 'snipsync.core.waveform', 'snipsync.core.aebin',
     'snipsync.core.preview', 'snipsync.core.subtitle_edit', 'snipsync.core.player', 'snipsync.core.cudalibs',
     'snipsync.core.updater', 'snipsync.core.session', 'snipsync.core.polish', 'snipsync.core.punctuation', 'snipsync.core.speaker_cleanup', 'snipsync.ui.theme', 'snipsync.ui.widgets', 'snipsync.ui.subtitle_editor',
-    'snipsync.ui.update_dialog', 'snipsync.ui.polish_dialog', 'snipsync.ui.manual_dialog', 'snipsync.core.manualcuts',
-] + (fw_hiddenimports + ct_hiddenimports + tk_hiddenimports + av_hiddenimports + tr_hiddenimports
+    'snipsync.buildinfo', 'snipsync.ui.update_dialog', 'snipsync.ui.polish_dialog', 'snipsync.ui.manual_dialog', 'snipsync.core.manualcuts',
+] + (['snipsync.build_info'] if STAMP.exists() and not os.environ.get('GITHUB_ACTIONS') else []) + (fw_hiddenimports + ct_hiddenimports + tk_hiddenimports + av_hiddenimports + tr_hiddenimports
       + bx_hiddenimports + sh_hiddenimports + sd_hiddenimports + sdd_hiddenimports)
 
 a = Analysis(

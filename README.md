@@ -166,6 +166,8 @@ Run these in the same `SnipSync` folder (after the steps above):
 
 `fetch_auto_editor.py` downloads auto-editor (SHA-256 verified) so that it can be bundled into the EXE. The result is written to `dist\SnipSync.exe`.
 
+**Is the EXE (or the source run) the latest?** The version number (`0.3.0`) does not change while you are developing. So a build made on your own PC shows an ID computed from the source contents next to the version in the header, like `v0.3.0 · dev 1a2b3c4`; hover over it to see the commit, whether there were uncommitted changes, and when it was stamped. After you change the source and rebuild, the ID changes; if it does not, you are looking at an old EXE. Running from source computes the ID at every start. The ID is not committed, and the release EXE built by GitHub Actions has none (the header shows only `v0.3.0`).
+
 ---
 
 ## ⚙️ How to Use

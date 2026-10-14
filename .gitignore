@@ -17,6 +17,8 @@ env/
 .venv/
 
 # --- Distribution / Build ---
+# 開発用の印（scripts/dev_stamp.py が作る。手元の確認用。コミットしない）
+src/snipsync/build_info.py
 dist/
 # build/ は PyInstaller の生成物置き場だが、設定（app.spec・フック）は追跡する。
 # build/vendor/ には同梱用の auto-editor（scripts/fetch_auto_editor.py が取得）が入る。

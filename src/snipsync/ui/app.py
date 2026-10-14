@@ -30,6 +30,7 @@ try:
 except ImportError:
     WHISPER_AVAILABLE = False
 
+from snipsync.buildinfo import get_build, version_label
 from snipsync.core import cudalibs, updater
 from snipsync.core.aebin import get_auto_editor_path
 from snipsync.core.autoeditor import MEDIA_EXTS
@@ -217,12 +218,26 @@ class SnipSyncApp(_Base):
         bar.columnconfigure(2, weight=1)
         W.Logo(bar).grid(row=0, column=0, padx=(0, T.S2))
         W.label(bar, "SnipSync", "wordmark").grid(row=0, column=1, sticky="w")
-        W.caption(bar, f"v{APP_VERSION}").grid(row=0, column=2, sticky="w", padx=(T.S3, 0), pady=(T.S2, 0))
+        self.build = get_build()           # 開発用の印（配布版には無い）
+        self.version_lbl = W.caption(bar, version_label(APP_VERSION, self.build))
+        self.version_lbl.grid(row=0, column=2, sticky="w", padx=(T.S3, 0), pady=(T.S2, 0))
+        if self.build:
+            self._tip_version()
         self.btn_updates = self.reg(W.Btn(bar, "", self.open_updates, kind="ghost", height=30), "upd_btn")
         self.btn_updates.grid(row=0, column=3, sticky="e", padx=(0, T.S2))
         self.lang_choice = W.Choice(bar, LANGS, command=self._on_lang_change, height=30)
         self.lang_choice.grid(row=0, column=4, sticky="e")
         self.lang_choice.set_key(self.lang)
+
+    def _tip_version(self):
+        """開発用の印があるとき、ヘッダーの版に、コミット・未コミットの変更の有無・作成時刻の説明を付ける。"""
+        def text():
+            b = self.build or {}
+            when = str(b.get("builtAt", "")).replace("T", " ")
+            commit = b.get("commit", "?")
+            dirty = self.t("build_dirty") if b.get("dirty") else ""
+            return self.t("build_title", commit, dirty, when)
+        W.tip(self.version_lbl, text)
 
     def _build_monitor(self):
         self.monitor = ctk.CTkFrame(self, fg_color=T.WELL, corner_radius=T.R_PANEL)
