@@ -274,6 +274,7 @@ class PipelineParams:
     md: bool = False                 # 文字起こしを .md でも書き出す
     refine_timing: bool = True       # 字幕の時刻を、実際に声がある区間（VAD）に合わせて補正する
     tidy_speakers: bool = True       # 人数が自動のとき、発話の少ないラベルを、声が近い大きなラベルへ寄せる
+    keep_chunks: bool = False        # 結果に、タイムラインの元になった区間（chunks）を入れる（字幕を作るときは、いつも入る）
     manual_edits: tuple = ()         # 手動のカット・倍速（manualcuts.ManualEdit）。自動の判定に重ねる
     reading: bool = True             # 文字起こし（.txt / .md）を、読みやすく整える（あいづちを本文に入れる・段落に分ける）
     punctuate: bool = True           # 句読点を補う（日本語。文字起こしと編集画面の本文。字幕 .srt には付けない）
@@ -298,6 +299,8 @@ class PipelineResult:
     markers_added: int = 0
     marker_edl_path: Path | None = None     # DaVinci Resolve 用: マーカーを書いた EDL（.fcpxml のマーカーは Resolve が読まない）
     marker_cuts: list = field(default_factory=list)   # 同: カット点のマーカー（話者交代を足して、EDL を書き直すため）
+    chunks: list = field(default_factory=list)        # タイムラインの元になった区間 [[開始フレーム, 終了フレーム, 速度]]（手動のカット・倍速を重ねたあと）
+    chunks_tb: float = 0.0                            # chunks のフレームレート
     speaker_markers_pending: bool = False   # hold_subtitles のとき: 話者交代のマーカーは、確認・編集後の字幕で入れる
 
 
@@ -884,6 +887,15 @@ def run_pipeline(
                     marks.sort(key=lambda m: m[0])
                     result.markers_added = add_markers(result.timeline_path, marks)
                     on_log(tr("log_markers_added", result.markers_added), "muted")
+            except Exception:
+                on_log(tr("log_unexpected", traceback.format_exc()), "error")
+
+        # 5. タイムラインの元になった区間を、結果に残す（あとで、字幕を消すと同時にカットするときの、時刻の換算に使う）
+        if result.ok and not result.stopped and (params.do_srt or params.keep_chunks):
+            try:
+                kept, kept_tb = get_chunks()
+                if kept and kept_tb:
+                    result.chunks, result.chunks_tb = [list(c) for c in kept], float(kept_tb)
             except Exception:
                 on_log(tr("log_unexpected", traceback.format_exc()), "error")
 

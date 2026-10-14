@@ -11,6 +11,9 @@ from tkinter import filedialog, messagebox, ttk
 
 import customtkinter as ctk
 
+from snipsync.core.manualcuts import CUT, ManualEdit, apply_manual_edits
+from snipsync.core.manualcuts import from_json as manual_from_json
+from snipsync.core.manualcuts import to_json as manual_to_json
 from snipsync.core.session import (
     SUFFIX as SESSION_SUFFIX,
 )
@@ -24,6 +27,7 @@ from snipsync.core.session import (
 )
 from snipsync.core.speaker_cleanup import count_after, plan_sandwiched, plan_small_speakers
 from snipsync.core.subtitle_edit import CueEditor, format_for_path, render, save
+from snipsync.core.timemap import TimeMap, edited_range_to_source
 from snipsync.core.transcript import parse_srt
 from snipsync.ui import theme as T
 from snipsync.ui import widgets as W
@@ -31,6 +35,7 @@ from snipsync.ui import widgets as W
 MAX_SPEAKERS = 6
 SMALL_SPEAKER_SECONDS = 30      # 話者の自動整理の初期値: 発話の合計がこれに満たない話者を、近い話者へ寄せる
 SANDWICHED_CHARS = 10           # 同: 前後を同じ話者に挟まれた、これ以下の字数の発言を寄せる
+DEFAULT_CUT_MARGIN = 0.1        # 字幕を消すと同時にカットするとき、字幕の前後に足す余白（秒）
 SPEAKER_TARGETS = 30            # 「まとめる」先の候補は、よく話した順の上位だけ
 
 
@@ -41,7 +46,7 @@ def _hms(sec: float) -> str:
 
 class SubtitleEditor(ctk.CTkToplevel):
     def __init__(self, app, cues=(), title: str = "", paths: dict | None = None, *, pending: bool = False,
-                 on_closed=None, source: str = "", settings: dict | None = None):
+                 on_closed=None, source: str = "", settings: dict | None = None, timeline: dict | None = None):
         """pending=True: 字幕ファイルはまだ無い（処理は保存前で止まっている）。最初の保存で paths へ書く。
         on_closed(cues, saved, paths, info): 閉じたときに、編集後の字幕・保存したか・保存先を受け取る。
         info["saved_cues"] / info["names"] は、最後に保存した時点の字幕と話者名（保存していなければ None / {}）。"""
@@ -58,6 +63,9 @@ class SubtitleEditor(ctk.CTkToplevel):
         self._on_closed = on_closed
         self.source = source                                # 元の動画（編集の続きと、時刻を押しての再生のため、セッションに残す）
         self.settings = dict(settings or {})                # そのときのカットの設定
+        self.timeline = dict(timeline or {})                # 書き出したタイムライン（字幕を消すと同時にカットするのに使う）
+        self._tm: TimeMap | None = None
+        self._synced_cuts = None                            # 本体のカットマップへ知らせた、カットの印
         self._sel: int | None = None          # 1件だけ選んでいるときの番号
         self._sels: list[int] = []            # 選んでいる件（複数のことがある）
         self._loading = False
@@ -237,6 +245,22 @@ class SubtitleEditor(ctk.CTkToplevel):
         self.btn_delete.pack(side="right")
         self.split_hint = W.caption(self.detail, self.t("ed_split_hint"))
         self.split_hint.grid(row=3, column=0, sticky="w", padx=T.S4, pady=(0, T.S3))
+
+        # 字幕を消すと同時に、映像・音声もカットする（保存のとき、タイムラインを書き直す）
+        cut = ctk.CTkFrame(self.detail, fg_color="transparent")
+        cut.grid(row=4, column=0, sticky="ew", padx=T.S4, pady=(0, T.S3))
+        self.cut_var = tk.BooleanVar(value=False)
+        self.cut_switch = W.switch(cut, self.t("ed_cut_with_delete"), self.cut_var, command=self._update_cut_info)
+        self.cut_switch.pack(side="left", padx=(0, T.S3))
+        self.cut_margin_lbl = W.caption(cut, self.t("ed_cut_margin"))
+        self.cut_margin_lbl.pack(side="left", padx=(0, T.S1))
+        self.cut_margin_var = tk.StringVar(value=str(DEFAULT_CUT_MARGIN))
+        self.cut_margin_entry = W.entry(cut, self.cut_margin_var, width=52, justify="right")
+        self.cut_margin_entry.pack(side="left", padx=(0, T.S1))
+        self.cut_margin_unit = W.caption(cut, self.t("ed_cut_margin_unit"))
+        self.cut_margin_unit.pack(side="left", padx=(0, T.S3))
+        self.cut_info = W.caption(cut, wraplength=520)
+        self.cut_info.pack(side="left")
 
     def _build_speaker_view(self):
         """話者の一覧。同じ人のラベルをまとめたり、名前を付けたり、小さなラベルを自動で寄せたりする。"""
@@ -498,6 +522,7 @@ class SubtitleEditor(ctk.CTkToplevel):
         self.btn_save_as.enable(bool(len(self.editor)))
         self.btn_copy.enable(bool(len(self.editor)))
         self.sp_switch.configure(state="normal" if self.editor.speakers() else "disabled")   # 話者が無ければ、効くものが無い
+        self._update_cut_info()
 
     def _show_view(self):
         key = self.view.get_key()
@@ -700,9 +725,15 @@ class SubtitleEditor(ctk.CTkToplevel):
                 self._focus_text(joint)
 
     def delete(self):
+        """字幕を消す。「映像・音声もカットする」がオンなら、その区間（前後に余白つき）に、カットの印も付ける。"""
         if self._sel is not None:
             i = self._sel
-            self.editor.delete(i)
+            if self._cut_wanted():
+                c = self.editor.cue(i)
+                rng = edited_range_to_source(self._timemap(), c.start, c.end, self._cut_margin())
+                self.editor.delete_and_cut(i, rng)
+            else:
+                self.editor.delete(i)
             self._refresh_all(select=i)
             self._focus_text("start")
 
@@ -801,7 +832,7 @@ class SubtitleEditor(ctk.CTkToplevel):
             (self.btn_split, "tip_ed_split"), (self.btn_merge, "tip_ed_merge"), (self.btn_delete, "tip_ed_delete"),
             (self.ts_switch, "tip_ed_timestamps"), (self.rd_switch, "tip_ed_reading"), (self.btn_polish, "tip_ed_polish"), (self.sp_switch, "tip_ed_speaker_names"), (self.btn_open, "tip_ed_open"), (self.btn_copy, "tip_ed_copy"),
             (self.btn_save_as, "tip_ed_save_as"), (self.btn_save, "tip_ed_save"),
-            (self.detail_time, "tip_ed_time"), (self.btn_spk_listen, "tip_ed_spk_listen"),
+            (self.detail_time, "tip_ed_time"), (self.cut_switch, "tip_ed_cut"), (self.btn_spk_listen, "tip_ed_spk_listen"),
             (self.btn_spk_merge, "tip_ed_spk_merge"), (self.btn_spk_small, "tip_ed_spk_small"),
             (self.btn_spk_sand, "tip_ed_spk_sand"), (self.btn_spk_renum, "tip_ed_spk_renumber"),
         ]
@@ -813,24 +844,145 @@ class SubtitleEditor(ctk.CTkToplevel):
         return dict(timestamps=self.ts_var.get(), line_chars=self.app.line_chars(), ui_lang=self.app.lang,
                     names=self.editor.names, show_speakers=self.sp_var.get(), reading=self.rd_var.get())
 
+    # ── 字幕を消すと同時に、映像・音声もカットする ─────────────────────────────────────────────────
+    def _can_cut(self) -> bool:
+        """カットの印を付けられるか。タイムラインの情報があり、処理が字幕の確認待ちでなく、書き出し形式が、動画・音声そのものでないとき。"""
+        tl = self.timeline
+        return bool(tl.get("chunks") and tl.get("tb") and tl.get("path") and tl.get("source")
+                    and tl.get("export") != "media" and not self.pending)
+
+    def _timemap(self) -> TimeMap | None:
+        if not self._can_cut():
+            return None
+        if self._tm is None:
+            self._tm = TimeMap([tuple(c) for c in self.timeline["chunks"]], self.timeline["tb"])
+        return self._tm
+
+    def _cut_margin(self) -> float:
+        try:
+            return min(max(float(self.cut_margin_var.get().strip()), 0.0), 2.0)
+        except ValueError:
+            return DEFAULT_CUT_MARGIN
+
+    def _cut_wanted(self) -> bool:
+        return self._can_cut() and bool(self.cut_var.get())
+
+    def _update_cut_info(self):
+        """カットの欄の、使えるか・印の件数の表示。印が変わったら、本体のカットマップにも知らせる。"""
+        can = self._can_cut()
+        for w in (self.cut_switch, self.cut_margin_entry):
+            w.configure(state="normal" if can else "disabled")
+        cuts = self.editor.cuts
+        if not can:
+            note = self.t("ed_cut_unavailable_pending" if self.pending else "ed_cut_unavailable")
+        elif cuts:
+            note = self.t("ed_cut_pending", len(cuts), f"{sum(b - a for a, b in cuts):.1f}")
+        else:
+            note = ""
+        self.cut_info.configure(text=note)
+        if cuts != self._synced_cuts:
+            self._synced_cuts = cuts
+            self.app.set_subtitle_cuts(self.timeline.get("source", ""), cuts)
+
+    def _plan_cuts(self, *, overwrite: bool, dest_name: str = ""):
+        """保存の前に、カットの印を、どう反映するかを決める。印が無ければ None。利用者がやめたら False。
+        反映する案は、タイムラインの新しい区間・付け直した字幕・新しい編集内容を持つ（保存に成功してから、使う）。"""
+        cuts = self.editor.cuts
+        if not cuts:
+            return None
+        tm = self._timemap()
+        if tm is None:
+            return None
+        tl = self.timeline
+        old_chunks = [tuple(c) for c in tl["chunks"]]
+        edits = [ManualEdit(a, b, CUT) for a, b in cuts]
+        new_chunks = apply_manual_edits(old_chunks, tl["tb"], edits)
+        new_tm = TimeMap(new_chunks, tl["tb"])
+        saved = tm.duration - new_tm.duration
+        name = Path(tl["path"]).name if overwrite else dest_name
+        key = "ed_cut_confirm_overwrite" if overwrite else "ed_cut_confirm_new"
+        if not messagebox.askyesno(self.t("ed_cut_confirm_title"), self.t(key, len(cuts), f"{max(saved, 0.0):.1f}", name), parent=self):
+            return False
+        clone = CueEditor.from_state(self.editor.export_state())
+        clone.retime(lambda t: new_tm.source_to_edited(tm.edited_to_source(t)))
+        return {"editor": clone, "chunks": [list(c) for c in new_chunks], "edits": edits}
+
+    def _commit_cuts(self, plan: dict, new_path: Path | None):
+        """保存に成功した。編集内容を、付け直した字幕に差し替え、タイムラインの情報と、手動の区間に、カットを足す。"""
+        self.editor = plan["editor"]
+        self.timeline = {**self.timeline, "chunks": plan["chunks"]}
+        if new_path is not None:
+            self.timeline["path"] = str(new_path)
+        manual = manual_from_json(self.settings.get("manual"))
+        self.settings = {**self.settings, "manual": manual_to_json([*manual, *plan["edits"]])}
+        self._tm = None
+        self._synced_cuts = None
+        self.app.bake_subtitle_cuts(self.timeline.get("source", ""), plan["edits"])
+        self._refresh_all()
+
+    def _reexport_target(self, *, new_path: Path | None) -> tuple[Path, str]:
+        """タイムラインを書く場所（フォルダー）と、名前の幹。上書きは、いまのタイムラインのまま。別名は、保存先の名前から。"""
+        if new_path is not None:
+            return new_path.parent, new_path.stem
+        tl_path = Path(self.timeline["path"])
+        stem = tl_path.name[:-len(tl_path.suffix)] if tl_path.suffix else tl_path.name
+        stem = stem[:-len("_snipsynced")] if stem.endswith("_snipsynced") else stem
+        return tl_path.parent, stem
+
+    def _start_reexport(self, *, new_path: Path | None):
+        """タイムライン（と、マーカー）を、いまの区間で書き直す（別のスレッドで）。字幕は、すでに保存してある。"""
+        out_dir, stem = self._reexport_target(new_path=new_path)
+        if new_path is not None:                           # 別名: 新しいタイムラインの名前を、先に決めておく
+            ext = Path(self.timeline["path"]).suffix
+            self.timeline["path"] = str(out_dir / f"{stem}_snipsynced{ext}")
+        self.timeline["export_pending"] = True
+        self._write_session()                              # 書き直しが終わる前に閉じられても、やり直しが要ると分かるように
+        started = self.app.reexport_timeline(
+            timeline=self.timeline, settings=self.settings, out_dir=out_dir, stem=stem, cues=self.editor.cues,
+            names=dict(self.editor.names), on_done=self._reexport_done)
+        self.flash(self.t("ed_reexport_running" if started else "ed_reexport_busy"))
+
+    def _reexport_done(self, ok: bool, detail: str):
+        if not self.winfo_exists():
+            return
+        self.timeline["export_pending"] = not ok
+        self._write_session()
+        self.flash(self.t("ed_reexport_done", detail) if ok else self.t("ed_reexport_failed", detail))
+
+    def _save_files(self, cues, paths) -> list[str] | None:
+        """paths の形式ごとに、cues を書く。失敗したら、理由を見せて None。"""
+        written = []
+        try:
+            for path in paths:
+                save(cues, path, **self._render_args())
+                written.append(Path(path).name)
+        except OSError as exc:
+            messagebox.showerror(self.t("err_title"), str(exc), parent=self)
+            return None
+        return written
+
     def save(self):
-        """上書き保存。宛先が決まっていなければ「名前を付けて保存」。"""
+        """上書き保存。宛先が決まっていなければ「名前を付けて保存」。カットの印があれば、タイムラインも上書きして書き直す。"""
         if not len(self.editor):
             return
         if not self.paths:
             return self.save_as()
-        written = []
-        try:
-            for path in self.paths.values():
-                save(self.editor.cues, path, **self._render_args())
-                written.append(Path(path).name)
-        except OSError as exc:
-            messagebox.showerror(self.t("err_title"), str(exc), parent=self)
+        plan = self._plan_cuts(overwrite=True)
+        if plan is False:
             return
+        cues = plan["editor"].cues if plan else self.editor.cues
+        written = self._save_files(cues, list(self.paths.values()))
+        if written is None:
+            return
+        retry = bool(self.timeline.get("export_pending")) and self._can_cut()
+        if plan:
+            self._commit_cuts(plan, None)
         self._mark_saved()
         names = ", ".join(written)
         self.flash(self.t("ed_saved", names))
         self._write_session()
+        if plan or retry:
+            self._start_reexport(new_path=None)
 
     def _mark_saved(self):
         self.editor.mark_saved()
@@ -849,16 +1001,21 @@ class SubtitleEditor(ctk.CTkToplevel):
                                             initialfile=f"{self.stem or 'subtitles'}.{ext}")
         if not path:
             return
-        try:
-            save(self.editor.cues, path, **self._render_args())
-        except OSError as exc:
-            messagebox.showerror(self.t("err_title"), str(exc), parent=self)
+        plan = self._plan_cuts(overwrite=False, dest_name=f"{Path(path).stem}_snipsynced{Path(self.timeline.get('path', '')).suffix}")
+        if plan is False:
+            return
+        cues = plan["editor"].cues if plan else self.editor.cues
+        if self._save_files(cues, [path]) is None:
             return
         self.paths = {format_for_path(path): Path(path)}
         self.stem = Path(path).stem
+        if plan:
+            self._commit_cuts(plan, None)
         self._mark_saved()
         self.flash(self.t("ed_saved", Path(path).name))
         self._write_session()
+        if plan:
+            self._start_reexport(new_path=Path(path))
 
     def copy(self):
         key = self.view.get_key()
@@ -915,6 +1072,7 @@ class SubtitleEditor(ctk.CTkToplevel):
         self.stem = session.title or Path(base).name
         self.paths = paths
         self.source, self.settings = session.source, dict(session.settings)
+        self.timeline, self._tm, self._synced_cuts = dict(session.timeline), None, None
         self.pending = False
         self._refresh_all()
         problem = self.app.restore_context(session.source, session.settings)
@@ -927,7 +1085,7 @@ class SubtitleEditor(ctk.CTkToplevel):
             return
         try:
             write_session(session_path(base), Session(title=self.stem, source=self.source, settings=self.settings,
-                                                      editor=self.editor.export_state()))
+                                                      editor=self.editor.export_state(), timeline=self.timeline))
         except OSError as exc:
             self.flash(self.t("ed_session_failed", exc))
 
@@ -979,6 +1137,10 @@ class SubtitleEditor(ctk.CTkToplevel):
         self.time_note.configure(text=self.t("ed_time_note"))
         self.speaker_lbl.configure(text=self.t("ed_speaker"))
         self.split_hint.configure(text=self.t("ed_split_hint"))
+        self.cut_switch.configure(text=self.t("ed_cut_with_delete"))
+        self.cut_margin_lbl.configure(text=self.t("ed_cut_margin"))
+        self.cut_margin_unit.configure(text=self.t("ed_cut_margin_unit"))
+        self._update_cut_info()
         self.name_lbl.configure(text=self.t("ed_name"))
         self.btn_keys.configure(text=self.t("ed_keys"))
         if self.close_note is not None:

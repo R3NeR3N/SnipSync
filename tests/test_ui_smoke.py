@@ -1830,3 +1830,211 @@ def test_enter_times_button_needs_a_result_and_the_zoom_buttons_follow_the_state
     app.cutmap.set_empty()
     app._update_manual()
     assert app.btn_man_num.cget("state") == "disabled"
+
+
+# ── 字幕を消すと同時に、映像・音声もカットする ───────────────────────────────────────────────
+@pytest.fixture
+def cut_env(app, monkeypatch, tmp_path):
+    import types
+
+    from snipsync.core.autoeditor import CUT_SPEED
+    from snipsync.ui import subtitle_editor as se
+    monkeypatch.setenv("APPDATA", str(tmp_path / "cfg"))
+    source = tmp_path / "talk.mp4"
+    source.write_bytes(b"x")
+    out = tmp_path / "out"
+    out.mkdir()
+    chunks = [[0, 300, 1.0], [300, 600, CUT_SPEED], [600, 1800, 1.0]]               # 0-10 / (10-20 カット) / 20-60 秒
+    timeline = {"path": str(out / "talk_snipsynced.fcpxml"), "source": str(source), "tb": 30.0, "chunks": chunks,
+                "export": "resolve", "markers": False}
+    cues = [Cue(0.0, 4.0, "一つ目", 0), Cue(4.0, 8.0, "二つ目", 1), Cue(10.0, 14.0, "三つ目", 0), Cue(14.0, 20.0, "四つ目", 1)]
+    calls = []
+
+    def fake_reexport(**kw):
+        calls.append(kw)
+        return True
+
+    monkeypatch.setattr(app, "reexport_timeline", fake_reexport)
+    monkeypatch.setattr(se.messagebox, "askyesno", lambda *a, **k: True)
+    monkeypatch.setattr(se.messagebox, "showerror", lambda *a, **k: None)
+    app.input_files = [str(source)]
+    app.manual_edits, app.subtitle_cuts = [], []
+    monkeypatch.setattr(app, "_mark_stale", lambda: None)
+    app.cutmap.set_data(__import__("numpy").ones(10, dtype="float32"), [(0, 60, "keep")], 60.0)
+    ed = se.SubtitleEditor(app, cues, "talk", {"srt": out / "talk.srt", "txt": out / "talk.txt"}, source=str(source),
+                           settings={"margin": 0.2, "threshold": 4.0, "manual": []}, timeline=timeline)
+    app.editor_win = ed
+    pump(app, 10)
+    yield types.SimpleNamespace(ed=ed, out=out, calls=calls, source=source, timeline=timeline, se=se)
+    ed.editor.dirty = False
+    ed.destroy()
+    app.editor_win = None
+    app.subtitle_cuts, app.manual_edits = [], []
+
+
+def _select(ed, i):
+    ed.tree.selection_set(str(i))
+    ed._on_select()
+    pump(ed.app, 3)
+
+
+def test_deleting_with_the_switch_on_marks_a_cut_with_the_margin_and_shows_it_in_the_cut_map(app, cut_env):
+    ed = cut_env.ed
+    ed.cut_var.set(True)
+    ed.cut_margin_var.set("0.1")
+    _select(ed, 1)                                                                  # 「二つ目」: 編集後 4-8 秒
+    ed.delete()
+    assert [c.text for c in ed.editor.cues] == ["一つ目", "三つ目", "四つ目"]
+    (a, b), = ed.editor.cuts
+    assert (a, b) == (pytest.approx(3.9), pytest.approx(8.1))                       # 元の動画でも 3.9-8.1 秒（まだ切れていない所）
+    assert ed.cut_info.cget("text") == app.t("ed_cut_pending", 1, "4.2")
+    assert app.subtitle_cuts == [(pytest.approx(3.9), pytest.approx(8.1))]          # 本体のカットマップにも出る
+    assert any(e.action == "cut" for e in app._all_manual())
+
+
+def test_deleting_with_the_switch_off_only_removes_the_text(app, cut_env):
+    ed = cut_env.ed
+    _select(ed, 1)
+    ed.delete()
+    assert len(ed.editor) == 3 and ed.editor.cuts == [] and app.subtitle_cuts == []
+
+
+def test_undo_takes_the_cut_back_out_of_the_cut_map(app, cut_env):
+    ed = cut_env.ed
+    ed.cut_var.set(True)
+    _select(ed, 1)
+    ed.delete()
+    assert app.subtitle_cuts
+    ed.undo()
+    assert ed.editor.cuts == [] and app.subtitle_cuts == [] and len(ed.editor) == 4 and ed.cut_info.cget("text") == ""
+
+
+def test_the_margin_entry_falls_back_and_is_clamped(app, cut_env):
+    ed = cut_env.ed
+    for text, expected in (("abc", 0.1), ("-3", 0.0), ("99", 2.0), (" 0.25 ", 0.25)):
+        ed.cut_margin_var.set(text)
+        assert ed._cut_margin() == expected
+
+
+def test_save_overwrites_the_files_with_retimed_subtitles_and_rewrites_the_timeline(app, cut_env, tmp_path):
+    from snipsync.core import session as sess
+    from snipsync.core.subtitle_edit import CueEditor
+    ed, out = cut_env.ed, cut_env.out
+    ed.cut_var.set(True)
+    ed.cut_margin_var.set("0")
+    _select(ed, 1)                                                                  # 編集後 4-8 秒（元でも 4-8 秒）
+    ed.delete()
+    ed.save()
+    pump(app, 5)
+    srt = (out / "talk.srt").read_text(encoding="utf-8")
+    # 「三つ目」は、元 20-24 秒（編集後 10-14）から、4 秒前へ詰まる。「四つ目」も同じ
+    assert "00:00:06,000 --> 00:00:10,000" in srt and "二つ目" not in srt
+    assert [(round(c.start), round(c.end)) for c in ed.editor.cues] == [(0, 4), (6, 10), (10, 16)]
+    assert ed.editor.cuts == [] and not ed.editor.dirty
+    (call,) = cut_env.calls
+    assert call["out_dir"] == out and call["stem"] == "talk" and [c.text for c in call["cues"]] == ["一つ目", "三つ目", "四つ目"]
+    assert call["timeline"]["path"] == cut_env.timeline["path"]                    # 上書き: 同じ場所
+    assert call["timeline"]["export_pending"] is True
+    manual = call["settings"]["manual"]
+    assert len(manual) == 1 and manual[0][2] == "cut" and manual[0][0] == pytest.approx(4.0) and manual[0][1] == pytest.approx(8.0)
+    assert [e.action for e in app.manual_edits] == ["cut"] and app.subtitle_cuts == []         # 本体の手動の区間に移った
+    got = sess.read_session(out / "talk.snipsync.json")
+    assert CueEditor.from_state(got.editor).cuts == []
+    assert got.timeline["chunks"] == call["timeline"]["chunks"] != cut_env.timeline["chunks"]
+
+
+def test_declining_the_confirmation_changes_nothing(app, cut_env, monkeypatch):
+    ed, out = cut_env.ed, cut_env.out
+    monkeypatch.setattr(cut_env.se.messagebox, "askyesno", lambda *a, **k: False)
+    ed.cut_var.set(True)
+    _select(ed, 1)
+    ed.delete()
+    ed.save()
+    assert not (out / "talk.srt").exists() and cut_env.calls == [] and len(ed.editor.cuts) == 1 and ed.editor.dirty
+
+
+def test_save_as_writes_a_new_timeline_name_and_leaves_the_original_alone(app, cut_env, monkeypatch, tmp_path):
+    ed, out = cut_env.ed, cut_env.out
+    new = tmp_path / "other" / "cut_version.srt"
+    new.parent.mkdir()
+    monkeypatch.setattr(cut_env.se.filedialog, "asksaveasfilename", lambda **k: str(new))
+    ed.cut_var.set(True)
+    _select(ed, 1)
+    ed.delete()
+    ed.save_as()
+    pump(app, 5)
+    (call,) = cut_env.calls
+    assert call["out_dir"] == new.parent and call["stem"] == "cut_version"
+    assert call["timeline"]["path"] == str(new.parent / "cut_version_snipsynced.fcpxml")
+    assert new.exists() and not (out / "talk.srt").exists()                         # 元の字幕ファイルは、書き換えない
+
+
+def test_a_failed_rewrite_is_remembered_and_the_next_save_retries_without_new_cuts(app, cut_env):
+    ed = cut_env.ed
+    ed.cut_var.set(True)
+    _select(ed, 1)
+    ed.delete()
+    ed.save()
+    assert len(cut_env.calls) == 1
+    ed._reexport_done(False, "disk full")
+    assert ed.timeline["export_pending"] is True and ed.status.cget("text") == app.t("ed_reexport_failed", "disk full")
+    ed.editor.set_text(0, "直した")                                                  # 字幕だけ直して、もう一度保存
+    ed.save()
+    assert len(cut_env.calls) == 2                                                   # 書き直しを、やり直す
+    ed._reexport_done(True, "talk_snipsynced.fcpxml")
+    assert ed.timeline["export_pending"] is False and ed.status.cget("text") == app.t("ed_reexport_done", "talk_snipsynced.fcpxml")
+    ed.editor.set_text(0, "もう一度")
+    ed.save()
+    assert len(cut_env.calls) == 2                                                   # もう印も、やり直しも無いので、書き直さない
+
+
+def test_the_cut_switch_is_unavailable_without_timeline_info_or_while_a_review_is_pending(app, cut_env, monkeypatch):
+    ed = cut_env.ed
+    assert ed._can_cut() and ed.cut_switch.cget("state") == "normal"
+    ed.timeline = {}
+    ed._update_cut_info()
+    assert not ed._can_cut() and ed.cut_switch.cget("state") == "disabled" and ed.cut_info.cget("text") == app.t("ed_cut_unavailable")
+    ed.timeline = dict(cut_env.timeline)
+    ed.pending = True
+    ed._update_cut_info()
+    assert not ed._can_cut() and ed.cut_info.cget("text") == app.t("ed_cut_unavailable_pending")
+    ed.pending = False
+    ed.timeline = {**cut_env.timeline, "export": "media"}                            # 動画・音声そのものの書き出しは、対象外
+    assert not ed._can_cut()
+    ed.timeline = dict(cut_env.timeline)
+
+
+def test_cuts_are_shown_in_the_cut_map_only_for_the_same_video(app, cut_env, tmp_path):
+    other = tmp_path / "other.mp4"
+    other.write_bytes(b"x")
+    app.input_files = [str(other)]
+    app.set_subtitle_cuts(str(cut_env.source), [(1.0, 2.0)])
+    assert app.subtitle_cuts == []
+    app.input_files = [str(cut_env.source)]
+    app.set_subtitle_cuts(str(cut_env.source), [(1.0, 2.0)])
+    assert app.subtitle_cuts == [(1.0, 2.0)]
+    app.bake_subtitle_cuts(str(other), [])                                           # 別の動画へは、足さない
+    assert app.manual_edits == [] and app.subtitle_cuts == [(1.0, 2.0)]
+
+
+def test_the_session_written_by_the_editor_carries_the_timeline(app, cut_env):
+    from snipsync.core import session as sess
+    ed = cut_env.ed
+    ed.save()
+    got = sess.read_session(cut_env.out / "talk.snipsync.json")
+    assert got.timeline["path"] == cut_env.timeline["path"] and got.timeline["chunks"] == cut_env.timeline["chunks"]
+
+
+def test_a_real_reexport_failure_when_the_video_is_gone_is_reported(app, tmp_path, monkeypatch):
+    seen = []
+    app.reexport_timeline(timeline={"source": str(tmp_path / "gone.mp4")}, settings={}, out_dir=tmp_path, stem="x",
+                          cues=[], names={}, on_done=lambda ok, detail: seen.append((ok, detail)))
+    pump(app, 5)
+    assert seen == [(False, app.t("ed_reexport_nosource"))]
+
+
+def test_a_reexport_is_refused_while_another_job_runs(app, tmp_path, monkeypatch):
+    monkeypatch.setattr(app, "running", True)
+    started = app.reexport_timeline(timeline={"source": str(tmp_path)}, settings={}, out_dir=tmp_path, stem="x", cues=[],
+                                    names={}, on_done=lambda *a: None)
+    assert started is False

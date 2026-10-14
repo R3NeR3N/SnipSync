@@ -109,6 +109,8 @@ class SnipSyncApp(_Base):
         self.review_win = None               # 処理中に開く、保存前の確認ウィンドウ
         self.update_win = None               # 更新の確認画面
         self.manual_edits: list[ManualEdit] = []     # 手動のカット・倍速（いま選んでいる動画だけに効く）
+        self.subtitle_cuts: list[tuple[float, float]] = []   # 字幕を消すと同時にカットする、保存前の印（元の動画の秒）
+        self.last_timeline: dict = {}                # 最後に書き出したタイムラインの情報（字幕を消すと同時にカットするため）
         self.manual_win = None
         self.running = False
         self.stop_requested = False
@@ -877,7 +879,7 @@ class SnipSyncApp(_Base):
             hotwords=self.glossary_var.get(), diarize=self.diarize_var.get() and sherpa_available(),
             num_speakers=-1 if self.speakers == "auto" else int(self.speakers),
             speaker_labels=self.speaker_labels, markers=self.markers_var.get() and self.export_key != "media",
-            punctuate=self.punct_var.get(), reading=self.reading_var.get(), manual_edits=tuple(self.manual_edits),
+            punctuate=self.punct_var.get(), reading=self.reading_var.get(), manual_edits=self._all_manual(),
             line_chars=self.line_chars(), txt=self.txt_var.get(), md=self.md_var.get(), ui_lang=self.lang,
             hold_subtitles=self.review_var.get() and self.srt_var.get(),
         )
@@ -983,6 +985,7 @@ class SnipSyncApp(_Base):
         self._play_cache.clear()
         self._preview_result = None
         self.manual_edits = []                 # 手動のカット・倍速は、選んだ動画だけに効く
+        self.subtitle_cuts = []
         self.cutmap.set_selection(None)
         self._update_manual()
         self._reset_player()
@@ -1046,7 +1049,7 @@ class SnipSyncApp(_Base):
         self._preview_busy, self._preview_again = True, False
         gen = self._preview_gen
         cfg = CutSettings(self.margin_var.get(), self.threshold_var.get(), self.cut_mode,
-                          self._speed() if self.silence == "speed" else None, tuple(self.manual_edits))
+                          self._speed() if self.silence == "speed" else None, self._all_manual())
         path = self.input_files[0]
         if not self.cutmap.has_data:
             self.cutmap.set_busy()
@@ -1404,10 +1407,11 @@ class SnipSyncApp(_Base):
             result = run_pipeline(ae_path, inp, out_dir, dataclasses.replace(params, out_stem=stem),
                                   on_log=self._log, should_stop=lambda: self.stop_requested, tr=self.t,
                                   model_cache=model_cache, on_progress=self._progress_threadsafe)
+            timeline = self._timeline_info(result, inp, params)
             if result.pending_paths and not result.stopped:
-                self._review_and_wait(result, inp.stem if stem is None else stem, str(inp))
+                self._review_and_wait(result, inp.stem if stem is None else stem, str(inp), timeline)
             elif result.ok and not result.stopped and result.srt_path and result.cues:
-                self._save_run_session(result, inp)          # 確認なしで書いた字幕も、あとで続きを編集できるように
+                self._save_run_session(result, inp, timeline)          # 確認なしで書いた字幕も、あとで続きを編集できるように
             if result.ok and not result.stopped:
                 finished += 1
                 last_out, last_result, last_inp = out_dir, result, inp
@@ -1418,6 +1422,7 @@ class SnipSyncApp(_Base):
             self.last_title = Path(last_result.timeline_path).stem if last_result.timeline_path else ""
             self.last_out_dir = last_out
             self.last_source = str(last_inp)
+            self.last_timeline = self._timeline_info(last_result, last_inp, params)
             paths = {}
             if last_result.srt_path:
                 paths["srt"] = last_result.srt_path
@@ -1428,16 +1433,16 @@ class SnipSyncApp(_Base):
             self._log(self.t("log_batch_done", finished) if total > 1 else self.t("log_done_all"), "success")
         self.after(0, self._reset_ui)
 
-    def _save_run_session(self, result, source):
+    def _save_run_session(self, result, source, timeline=None):
         """書き出した字幕のそばに、編集の続きを残すファイル（セッション）を書く。"""
         try:
             write_session(session_path(result.srt_path), Session(
                 title=Path(result.srt_path).stem, source=str(source), settings=self._run_settings,
-                editor=CueEditor(result.cues).export_state()))
+                editor=CueEditor(result.cues).export_state(), timeline=timeline or {}))
         except OSError as exc:
             self._log(self.t("log_session_failed", exc), "warn")
 
-    def _review_and_wait(self, result, title: str, source: str = ""):
+    def _review_and_wait(self, result, title: str, source: str = "", timeline: dict | None = None):
         """字幕を保存する前に確認・編集ウィンドウを開き、閉じるまで処理を止める（ワーカースレッドで呼ぶ）。
 
         保存した宛先だけを result に反映する。保存しなかった字幕はファイルにならない。
@@ -1450,7 +1455,7 @@ class SnipSyncApp(_Base):
             done.set()
 
         self._log(self.t("log_review_wait"), "info")
-        self.after(0, lambda: self._open_review(result, title, finished, source))
+        self.after(0, lambda: self._open_review(result, title, finished, source, timeline))
         while not done.wait(0.2):
             if self.stop_requested:       # 停止しても窓は残り、保存はできる
                 return
@@ -1488,9 +1493,10 @@ class SnipSyncApp(_Base):
         if count:
             self._log(self.t("log_markers_speaker_added", count), "success")
 
-    def _open_review(self, result, title: str, on_closed, source: str = ""):
+    def _open_review(self, result, title: str, on_closed, source: str = "", timeline: dict | None = None):
         self.review_win = SubtitleEditor(self, result.cues, title, result.pending_paths, pending=True,
-                                         on_closed=on_closed, source=source, settings=self._run_settings)
+                                         on_closed=on_closed, source=source, settings=self._run_settings,
+                                         timeline=timeline)
         self.review_win.focus()
 
     # ── AI モデルの取得 ──────────────────────────────────────────────────────────────
@@ -1611,7 +1617,8 @@ class SnipSyncApp(_Base):
             self.editor_win.focus()
             return
         self.editor_win = SubtitleEditor(self, self.last_cues, self.last_title, self.last_paths,
-                                         source=self.last_source, settings=self._run_settings)
+                                         source=self.last_source, settings=self._run_settings,
+                                         timeline=self.last_timeline)
 
     def open_saved(self):
         """「出力済みを開く」: 保存した編集セッション（.snipsync.json）か .srt を選び、編集画面で開く。"""
@@ -1621,6 +1628,92 @@ class SnipSyncApp(_Base):
             self.editor_win.lift()
             self.editor_win.focus()
         self.editor_win.open_file()
+
+    # ── 字幕を消すと同時にカット: タイムラインの書き直し ────────────────────────────────────────
+    def _all_manual(self) -> tuple:
+        """プレビュー・処理に使う、手動の区間。手動のカット・倍速に、字幕を消したときのカットの印を足したもの。"""
+        marks = [ManualEdit(a, b, CUT) for a, b in self.subtitle_cuts]
+        return tuple(normalize([*self.manual_edits, *marks]))
+
+    def _same_media(self, source: str) -> bool:
+        try:
+            return bool(self.input_files) and bool(source) and Path(self.input_files[0]).resolve() == Path(source).resolve()
+        except OSError:
+            return False
+
+    def set_subtitle_cuts(self, source: str, cuts) -> None:
+        """字幕編集画面の、「消すと同時にカット」の印を、カットマップに出す（本体で、同じ動画を開いているときだけ）。"""
+        new = [(float(a), float(b)) for a, b in cuts] if self._same_media(source) else []
+        if new == self.subtitle_cuts:
+            return
+        self.subtitle_cuts = new
+        self._update_manual()
+        if self.cutmap.has_data:
+            self._mark_stale()
+
+    def bake_subtitle_cuts(self, source: str, edits) -> None:
+        """カットを、タイムラインに反映した。印から、ふつうの手動の区間に移す（これから先の、プレビュー・処理に、効き続ける）。"""
+        if not self._same_media(source):
+            return
+        self.manual_edits = normalize([*self.manual_edits, *edits])
+        self.subtitle_cuts = []
+        self._update_manual()
+        if self.cutmap.has_data:
+            self._mark_stale()
+
+    def _timeline_info(self, result, source, params) -> dict:
+        """字幕編集画面に渡す、書き出したタイムラインの情報（無ければ空）。"""
+        chunks, tb = getattr(result, "chunks", None), getattr(result, "chunks_tb", 0.0)
+        if not (result.ok and chunks and tb and result.timeline_path):
+            return {}
+        return {"path": str(result.timeline_path), "source": str(source), "tb": tb,
+                "chunks": chunks, "export": params.export_key, "markers": bool(params.markers)}
+
+    def reexport_timeline(self, *, timeline, settings, out_dir, stem, cues, names, on_done) -> bool:
+        """タイムラインを、いまの区間（手動の区間を含む）で書き直す（別のスレッドで）。字幕の保存は、呼ぶ側で済ませておく。
+        ほかの処理の最中なら、始めず False。終わったら、on_done(成功か, 名前または理由) を、画面のスレッドで呼ぶ。"""
+        if self.running:
+            return False
+        source = Path(timeline.get("source", ""))
+        if not source.exists():
+            self.after(0, lambda: on_done(False, self.t("ed_reexport_nosource")))
+            return True
+        params = PipelineParams(
+            margin=float(settings.get("margin", 0.2)), threshold=float(settings.get("threshold", 4.0)),
+            export_key=timeline.get("export", "resolve"), do_srt=False, model_size="small",
+            cut_mode=settings.get("cut_mode", "threshold"),
+            silent_speed=float(settings.get("speed", 8.0)) if settings.get("silence") == "speed" else None,
+            markers=bool(timeline.get("markers")), keep_chunks=True, punctuate=False,
+            manual_edits=tuple(manual_from_json(settings.get("manual"))), out_stem=stem, ui_lang=self.lang)
+        self.running, self.stop_requested = True, False
+        self.btn_start.enable(False)
+        self.progress.configure(mode="indeterminate")
+        self.progress.start()
+        expected = timeline.get("chunks")
+
+        def work():
+            ok, detail = False, ""
+            try:
+                ae = get_auto_editor_path(self._log)
+                result = run_pipeline(ae, source.resolve(), Path(out_dir), params, on_log=self._log,
+                                      should_stop=lambda: False, tr=self.t)
+                if result.ok:
+                    if params.markers:                              # 話者交代のマーカーを、いまの字幕で足す
+                        result.speaker_markers_pending = True
+                        self._add_speaker_markers(result, {"saved": True, "info": {"saved_cues": cues, "names": names}})
+                    if expected and [list(c) for c in result.chunks] != [list(c) for c in expected]:
+                        self._log(self.t("log_reexport_mismatch"), "warn")
+                    ok, detail = True, Path(result.timeline_path).name
+                else:
+                    detail = self.t("ed_reexport_failed_run")
+            except Exception as exc:
+                detail = str(exc) or type(exc).__name__
+            finally:
+                self.running = False
+            self.after(0, lambda: (self._reset_ui(), on_done(ok, detail)))
+
+        threading.Thread(target=work, daemon=True).start()
+        return True
 
     def restore_context(self, source: str, settings: dict) -> str | None:
         """セッションを開いたとき、元の動画とカットの設定を本体へ戻す（時刻を押しての再生のため）。

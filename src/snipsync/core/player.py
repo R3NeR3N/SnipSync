@@ -45,6 +45,19 @@ class Segment:
     speed: float
 
 
+def segments_from_chunks(chunks, tb: float) -> list[Segment]:
+    """chunks=[(開始フレーム, 終了フレーム, 速度)] から、編集後の時刻 ⇔ 元の時刻の対応（カットした所は除く）を作る。"""
+    segments, acc = [], 0.0
+    for start, end, speed in chunks:
+        if speed >= CUT_SPEED:
+            continue
+        sp = speed if speed and speed > 0 else 1.0
+        frames = (end - start) / sp
+        segments.append(Segment(acc / tb, (acc + frames) / tb, start / tb, end / tb, sp))
+        acc += frames
+    return segments
+
+
 class EditedAudio:
     """カット後の音声（mono float32）と、編集後の時刻 ⇔ 元の時刻の対応、カット点。"""
 
@@ -66,15 +79,7 @@ class EditedAudio:
     @classmethod
     def build(cls, source, chunks, tb: float, sr: int = PLAY_SR) -> EditedAudio:
         """source（sr, mono）に chunks=[(開始フレーム, 終了フレーム, 速度)] を適用する。"""
-        segments, acc = [], 0.0
-        for start, end, speed in chunks:
-            if speed >= CUT_SPEED:
-                continue
-            sp = speed if speed and speed > 0 else 1.0
-            frames = (end - start) / sp
-            segments.append(Segment(acc / tb, (acc + frames) / tb, start / tb, end / tb, sp))
-            acc += frames
-        return cls(render_cut_audio(source, chunks, tb, sr), sr, segments)
+        return cls(render_cut_audio(source, chunks, tb, sr), sr, segments_from_chunks(chunks, tb))
 
     def edited_to_source(self, t: float) -> float:
         if not self.segments:

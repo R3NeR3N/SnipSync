@@ -33,6 +33,7 @@ class Session:
     settings: dict = field(default_factory=dict)
     editor: dict = field(default_factory=dict)           # CueEditor.export_state() の結果
     saved_at: str = ""
+    timeline: dict = field(default_factory=dict)         # 書き出したタイムライン: path・source・tb・chunks・export・markers（無いこともある）
 
 
 def session_path(output_path) -> Path:
@@ -54,7 +55,7 @@ def write_session(path, session: Session) -> Path:
     path = Path(path)
     data = {
         "format": FORMAT, "title": session.title, "source": session.source,
-        "settings": pick_settings(session.settings), "editor": session.editor,
+        "settings": pick_settings(session.settings), "editor": session.editor, "timeline": session.timeline,
         "saved_at": session.saved_at or datetime.now().isoformat(timespec="seconds"),
     }
     tmp = path.with_name(path.name + ".part")
@@ -78,6 +79,30 @@ def _check_cue_row(row, *, with_ids: bool) -> None:
         raise SessionError("a subtitle row has an unexpected value")
     if with_ids and not (isinstance(row[4], list) and row[4] and all(isinstance(i, int) and i >= 0 for i in row[4])):
         raise SessionError("a subtitle row has an unexpected origin")
+
+
+MAX_CHUNKS = 200_000
+
+
+def _clean_timeline(tl) -> dict:
+    """タイムラインの情報を検査して返す。形が合わなければ、空（この機能だけが使えなくなる。ほかは読める）。"""
+    if not isinstance(tl, dict):
+        return {}
+    chunks, tb = tl.get("chunks"), tl.get("tb")
+    if not isinstance(tb, (int, float)) or isinstance(tb, bool) or not math.isfinite(tb) or tb <= 0:
+        return {}
+    if not isinstance(chunks, list) or not chunks or len(chunks) > MAX_CHUNKS:
+        return {}
+    for c in chunks:
+        if not (isinstance(c, list) and len(c) == 3 and all(isinstance(x, (int, float)) and math.isfinite(x) for x in c)
+                and c[1] > c[0] >= 0):
+            return {}
+    out = {"chunks": chunks, "tb": float(tb)}
+    for key in ("path", "source", "export"):
+        if isinstance(tl.get(key), str):
+            out[key] = tl[key]
+    out["markers"] = bool(tl.get("markers"))
+    return out
 
 
 def read_session(path) -> Session:
@@ -105,8 +130,12 @@ def read_session(path) -> Session:
     names = ed.get("names", {})
     if not isinstance(names, dict) or not all(isinstance(v, str) and str(k).isdigit() for k, v in names.items()):
         raise SessionError("the speaker names are malformed")
+    cuts = ed.get("cuts", [])
+    if not isinstance(cuts, list) or not all(
+            isinstance(c, list) and len(c) == 2 and all(isinstance(x, (int, float)) and math.isfinite(x) for x in c) for c in cuts):
+        raise SessionError("the pending cuts are malformed")
     settings = data.get("settings")
-    return Session(
+    return Session(timeline=_clean_timeline(data.get("timeline")),
         title=str(data.get("title") or ""), source=str(data.get("source") or ""),
         settings=pick_settings(settings) if isinstance(settings, dict) else {},
         editor=ed, saved_at=str(data.get("saved_at") or ""))

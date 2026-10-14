@@ -14,6 +14,14 @@ from pathlib import Path
 from snipsync.core.subtitles import Cue, format_srt
 from snipsync.core.transcript import cues_to_md, cues_to_txt, join_text
 
+MIN_CUE_LENGTH = 0.05      # 付け直したあと、これより短くなった字幕は、消す（もともと短い字幕は、カットに触れていなければ残す）
+
+
+def survives_retime(old_length: float, new_length: float) -> bool:
+    """付け直したあとも、字幕として残すか。カットで短くなって、短すぎるものだけを消す。"""
+    return new_length >= MIN_CUE_LENGTH or new_length >= old_length - 1e-6
+
+
 FORMATS = ("txt", "md", "srt")
 MAX_HISTORY = 200
 
@@ -39,6 +47,7 @@ class CueEditor:
         self._orig = [Cue(c.start, c.end, c.text, c.speaker) for c in cues]
         self._items = [_Item(Cue(c.start, c.end, c.text, c.speaker), (i,)) for i, c in enumerate(self._orig)]
         self.names: dict[int, str] = {}                 # 話者番号 -> 表示名（無ければ「話者N」）
+        self._cuts: list[tuple[float, float]] = []      # 字幕を消すと同時に、映像・音声もカットする区間（元の動画の秒）。保存で反映する
         self._undo: list = []
         self._redo: list = []
         self._last_key = None                            # 直前の操作の種類（文字入力をひとまとめにするため）
@@ -48,12 +57,13 @@ class CueEditor:
     # ── 状態の保存・復元 ──
     def _state(self):
         return (tuple((i.cue.start, i.cue.end, i.cue.text, i.cue.speaker, i.ids) for i in self._items),
-                tuple(sorted(self.names.items())))
+                tuple(sorted(self.names.items())), tuple(self._cuts))
 
     def _restore(self, state):
-        items, names = state
+        items, names, cuts = state
         self._items = [_Item(Cue(s, e, t, sp), ids) for s, e, t, sp, ids in items]
         self.names = dict(names)
+        self._cuts = list(cuts)
 
     def _push(self, key=None):
         """変更の直前に呼ぶ。key が前回と同じ（同じ件の文字入力が続いている）ときは、まとめて1回分にする。"""
@@ -78,6 +88,7 @@ class CueEditor:
             "original": [[c.start, c.end, c.text, c.speaker] for c in self._orig],
             "items": [[i.cue.start, i.cue.end, i.cue.text, i.cue.speaker, list(i.ids)] for i in self._items],
             "names": {str(k): v for k, v in self.names.items()},
+            "cuts": [[a, b] for a, b in self._cuts],
         }
 
     @classmethod
@@ -87,6 +98,7 @@ class CueEditor:
         ed._orig = [Cue(s, e, t, sp) for s, e, t, sp in state["original"]]
         ed._items = [_Item(Cue(s, e, t, sp), tuple(ids)) for s, e, t, sp, ids in state["items"]]
         ed.names = {int(k): v for k, v in state.get("names", {}).items()}
+        ed._cuts = [(float(a), float(b)) for a, b in state.get("cuts", [])]
         ed._saved = ed._state()
         return ed
 
@@ -269,6 +281,34 @@ class CueEditor:
     def delete(self, index: int) -> None:
         self._push()
         del self._items[index]
+        self._break()
+
+    @property
+    def cuts(self) -> list[tuple[float, float]]:
+        """保存で、映像・音声からカットする区間（元の動画の秒）。"""
+        return list(self._cuts)
+
+    def delete_and_cut(self, index: int, source_range: tuple[float, float]) -> None:
+        """字幕を消し、その区間（元の動画の秒）を、映像・音声からもカットする印を付ける（元に戻せる）。実際のカットは、保存のとき。"""
+        self._push()
+        del self._items[index]
+        self._cuts.append((round(float(source_range[0]), 3), round(float(source_range[1]), 3)))
+        self._break()
+
+    def retime(self, fn) -> None:
+        """すべての字幕の時刻を、fn(秒) -> 秒 で付け直す（カットを反映して、時間軸が変わったとき）。
+        短くなりすぎた字幕は、消える。カットの印は、反映したので空になる。元に戻す・やり直すの履歴は、捨てる。"""
+        self._cuts = []
+        kept = []
+        for item in self._items:
+            old_length = item.cue.end - item.cue.start
+            item.cue.start, item.cue.end = round(fn(item.cue.start), 3), round(fn(item.cue.end), 3)
+            if survives_retime(old_length, item.cue.end - item.cue.start):
+                kept.append(item)
+        self._items = kept
+        self._orig = [Cue(round(fn(c.start), 3), round(fn(c.end), 3), c.text, c.speaker) for c in self._orig]
+        self._undo.clear()
+        self._redo.clear()
         self._break()
 
     def merge_next(self, index: int) -> bool:
