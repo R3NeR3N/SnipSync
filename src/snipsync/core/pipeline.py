@@ -36,8 +36,10 @@ from snipsync.core.manualcuts import apply_manual_edits
 from snipsync.core.markers import (
     add_markers,
     cut_point_markers,
+    merge_head_marker,
     resolve_marks,
     speaker_turn_markers,
+    subtitle_head_marker,
     write_marker_edl,
 )
 from snipsync.core.models import (
@@ -864,13 +866,15 @@ def run_pipeline(
                 and result.timeline_path.exists()):
             try:
                 marks = cut_point_markers(get_boundaries(), tr("marker_cut"))
-                speaker_marks = []
+                speaker_marks, head_marks = [], []
                 if result.pending_paths:
                     # 字幕は確認・編集のあとに保存される。話者交代のマーカーは、編集後の字幕から入れる
                     # （いま入れると、確認画面で話者を直しても、マーカーが古いままになる）。
                     result.speaker_markers_pending = True
                 elif turns and result.cues:
                     speaker_marks = speaker_turn_markers(result.cues, params.ui_lang)
+                if result.cues and not result.pending_paths:      # 確認・編集のあとに保存するときは、保存後に足す
+                    head_marks = subtitle_head_marker(result.cues, tr("marker_srt_head"))
                 if params.export_key == "resolve":
                     # Resolve は .fcpxml のマーカーを読み込まない。EDL に書き、読み込み方をログに出す。
                     result.marker_cuts = marks
@@ -879,12 +883,11 @@ def run_pipeline(
                     # EDL に書く（決めないと、足す側が .fcpxml へ書いてしまい、Resolve が読まず、失われる）。
                     result.marker_edl_path = edl
                     result.markers_added = write_marker_edl(edl, result.timeline_path,
-                                                            resolve_marks(marks, speaker_marks), title=name)
+                                                            resolve_marks(marks, speaker_marks, head_marks), title=name)
                     if result.markers_added:
                         on_log(tr("log_markers_edl", result.markers_added, edl.name), "success")
                 else:
-                    marks += speaker_marks
-                    marks.sort(key=lambda m: m[0])
+                    marks = merge_head_marker(sorted(marks + speaker_marks, key=lambda m: m[0]), head_marks)
                     result.markers_added = add_markers(result.timeline_path, marks)
                     on_log(tr("log_markers_added", result.markers_added), "muted")
             except Exception:

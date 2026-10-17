@@ -66,6 +66,7 @@ class SubtitleEditor(ctk.CTkToplevel):
         self.timeline = dict(timeline or {})                # 書き出したタイムライン（字幕を消すと同時にカットするのに使う）
         self._tm: TimeMap | None = None
         self._synced_cuts = None                            # 本体のカットマップへ知らせた、カットの印
+        self._placement_logged = None                       # 直前に、ログへ出した、字幕の置き場所（最初の字幕の時刻, fps）
         self._sel: int | None = None          # 1件だけ選んでいるときの番号
         self._sels: list[int] = []            # 選んでいる件（複数のことがある）
         self._loading = False
@@ -988,7 +989,11 @@ class SubtitleEditor(ctk.CTkToplevel):
     def _log_srt_placement(self, cues, written):
         """保存した中に .srt があれば、それを、編集ソフトのタイムラインのどこへ置くかを、メイン画面のログに出す。"""
         if cues and any(str(name).lower().endswith(".srt") for name in written):
-            for line in srt_placement_lines(min(c.start for c in cues), self.timeline.get("tb"), self.t):
+            first, tb = min(c.start for c in cues), self.timeline.get("tb")
+            if (first, tb) == self._placement_logged:           # 同じ案内を、続けて出さない（「保存」を続けて押したとき）
+                return
+            self._placement_logged = (first, tb)
+            for line in srt_placement_lines(first, tb, self.t):
                 self.app._log(line, "info")
 
     def _mark_saved(self):

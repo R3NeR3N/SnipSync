@@ -54,15 +54,10 @@ def timecode(seconds: float, fps: float | None) -> str:
     return f"{h:02d}:{m:02d}:{rest // base:02d}:{rest % base:02d}"
 
 
-SRT_PLACE_GAP = 3.0        # 最初の字幕が、これ（秒）より後なら、「先頭から字幕までは、声のない区間」の注意も出す
-
-
 def srt_placement_lines(first_start: float, fps: float | None, tr) -> list[str]:
-    """字幕（.srt）を、編集ソフトのタイムラインのどこへ置けばよいかの案内。字幕の時刻は、タイムラインの先頭（0 秒）が基準。"""
-    lines = [tr("log_srt_place", timecode(0.0, fps), timecode(first_start, fps), f"{first_start:.1f}")]
-    if first_start >= SRT_PLACE_GAP:
-        lines.append(tr("log_srt_place_gap"))
-    return lines
+    """字幕（.srt）を、編集ソフトのタイムラインのどこへ置けばよいかの案内。
+    Resolve は、読み込むとき、最初の字幕より前の空白を詰めるので、置く場所は、最初の字幕の時刻になる。"""
+    return [tr("log_srt_place", timecode(first_start, fps), f"{first_start:.1f}")]
 
 
 def edited_range_to_source(tm: TimeMap, start: float, end: float, margin: float = 0.0) -> tuple[float, float]:

@@ -367,8 +367,7 @@ I18N = {
         "log_srt_held": "字幕ができました。確認して保存してください",
         "log_review_wait": "字幕の確認を待っています",
         "log_review_saved": "字幕を保存しました: {}",
-        "log_srt_place": "字幕（.srt）の置き場所: SRT の先頭（0 秒）を、タイムラインの先頭（{}）に合わせてください。最初の字幕は、タイムラインの {}（{} 秒）に出ます。",
-        "log_srt_place_gap": "先頭から最初の字幕までは、声のない区間です（冒頭を倍速・カットにしたときなど）。最初の字幕の声が、この時刻に聞こえれば、合っています。",
+        "log_srt_place": "字幕（.srt）の置き場所: 最初の字幕は、タイムラインの {}（{} 秒）に出ます。DaVinci Resolve は、読み込むときに、最初の字幕より前の空白を詰めるので、字幕トラックの左端（最初の字幕）を、この時刻に置いてください。読み込んだ時点で、最初の字幕がすでにこの時刻にあれば、動かす必要はありません。マーカー「字幕の先頭」も、この時刻に入っています。",
         "log_review_discarded": "字幕は保存しませんでした",
         "log_srt_temp_start": "字幕用の音声を準備しています…",
         "log_stopped": "処理を停止しました",
@@ -384,6 +383,7 @@ I18N = {
         "log_vad_start": "声の区間を探しています…",
         "log_wav_missing": "字幕用の音声を作れませんでした。処理を中止します",
         "marker_cut": "カット",
+        "marker_srt_head": "字幕の先頭",
     },
     "en": {
         "title": f"SnipSync v{APP_VERSION}",
@@ -745,8 +745,7 @@ I18N = {
         "log_srt_held": "Subtitles are ready. Review them, then save",
         "log_review_wait": "Waiting for you to review the subtitles",
         "log_review_saved": "Saved subtitles: {}",
-        "log_srt_place": "Where the .srt goes: line the start of the SRT (0 s) up with the start of the timeline ({}). The first subtitle appears at {} ({} s) on the timeline.",
-        "log_srt_place_gap": "Nothing is spoken between the start and the first subtitle (for example when the opening is sped up or cut). If the first subtitle's voice is heard at that time, it is aligned.",
+        "log_srt_place": "Where the .srt goes: the first subtitle appears at {} ({} s) on the timeline. DaVinci Resolve trims the empty time before the first subtitle when it imports, so put the left edge of the subtitle track (the first subtitle) at this time. If the first subtitle already sits at this time after importing, there is nothing to move. The marker \"Subtitles start\" is also at this time.",
         "log_review_discarded": "Subtitles were not saved",
         "log_srt_temp_start": "Preparing the audio for subtitles…",
         "log_stopped": "Processing stopped",
@@ -762,6 +761,7 @@ I18N = {
         "log_vad_start": "Looking for voice segments…",
         "log_wav_missing": "Could not prepare the audio for subtitles. Stopping",
         "marker_cut": "Cut",
+        "marker_srt_head": "Subtitles start",
     },
 }
 

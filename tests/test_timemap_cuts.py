@@ -193,9 +193,21 @@ def test_timecode_uses_the_timeline_frame_rate_or_falls_back_to_seconds():
     assert timecode(-1.0, 30.0) == "00:00:00:00"
 
 
-def test_the_placement_note_names_the_timeline_start_and_warns_only_about_a_long_gap():
+def test_the_placement_note_gives_the_time_of_the_first_subtitle():
     from snipsync.core.timemap import srt_placement_lines
     tr = lambda key, *args: f"{key}:{'|'.join(map(str, args))}"  # noqa: E731
-    gap = srt_placement_lines(19.7, 60.0, tr)
-    assert gap == ["log_srt_place:00:00:00:00|00:00:19:42|19.7", "log_srt_place_gap:"]
-    assert srt_placement_lines(1.2, 60.0, tr) == ["log_srt_place:00:00:00:00|00:00:01:12|1.2"]
+    assert srt_placement_lines(19.7, 60.0, tr) == ["log_srt_place:00:00:19:42|19.7"]
+    assert srt_placement_lines(23.2, 50.0, tr) == ["log_srt_place:00:00:23:10|23.2"]
+
+
+def test_the_subtitle_head_marker_sits_at_the_first_cue_and_merges_with_a_marker_on_the_same_frame():
+    from snipsync.core.markers import merge_head_marker, resolve_marks, subtitle_head_marker
+    cues = [Cue(23.2, 25.0, "a", 0), Cue(30.0, 31.0, "b", 1)]
+    head = subtitle_head_marker(cues, "字幕の先頭")
+    assert head == [(23.2, "字幕の先頭")] and subtitle_head_marker([], "x") == []
+    marks = resolve_marks([(10.0, "カット 1")], [(23.2, "話者1"), (30.0, "話者2")], head)
+    assert [(t, n) for t, n, _ in marks] == [(10.0, "カット 1"), (23.2, "字幕の先頭 / 話者1"), (30.0, "話者2")]
+    assert marks[1][2] == "ResolveColorGreen"
+    alone = resolve_marks([(10.0, "カット 1")], [], head)
+    assert [(t, n, c) for t, n, c in alone] == [(10.0, "カット 1", "ResolveColorBlue"), (23.2, "字幕の先頭", "ResolveColorGreen")]
+    assert merge_head_marker([(5.0, "x")], head) == [(5.0, "x"), (23.2, "字幕の先頭")]

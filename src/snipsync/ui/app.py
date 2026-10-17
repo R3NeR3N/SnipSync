@@ -39,9 +39,11 @@ from snipsync.core.manualcuts import CUT, SPEED, ManualEdit, format_precise, nor
 from snipsync.core.manualcuts import from_json as manual_from_json
 from snipsync.core.manualcuts import to_json as manual_to_json
 from snipsync.core.markers import (
-    add_speaker_markers,
+    add_markers,
+    merge_head_marker,
     resolve_marks,
     speaker_turn_markers,
+    subtitle_head_marker,
     write_marker_edl,
 )
 from snipsync.core.models import model_folder, models_dir
@@ -1483,16 +1485,20 @@ class SnipSyncApp(_Base):
         info = outcome["info"]
         if result.marker_edl_path:          # Resolve: マーカーは EDL。カット点に、話者交代を足して、書き直す
             speaker = speaker_turn_markers(info["saved_cues"] or [], self.lang, info["names"])
+            head = subtitle_head_marker(info["saved_cues"] or [], self.t("marker_srt_head"))
             try:
                 written = write_marker_edl(result.marker_edl_path, result.timeline_path,
-                                           resolve_marks(result.marker_cuts, speaker), title=result.marker_edl_path.stem)
+                                           resolve_marks(result.marker_cuts, speaker, head), title=result.marker_edl_path.stem)
             except Exception:
                 written = 0
             count = len(speaker) if written else 0
             result.markers_added = written or result.markers_added
         else:
-            count = add_speaker_markers(result.timeline_path, info["saved_cues"] or [], self.lang, info["names"])
-            result.markers_added += count
+            speaker = speaker_turn_markers(info["saved_cues"] or [], self.lang, info["names"])
+            head = subtitle_head_marker(info["saved_cues"] or [], self.t("marker_srt_head"))
+            added = add_markers(result.timeline_path, merge_head_marker(speaker, head))
+            count = len(speaker) if added else 0
+            result.markers_added += added
         if count:
             self._log(self.t("log_markers_speaker_added", count), "success")
 

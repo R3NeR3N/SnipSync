@@ -872,7 +872,8 @@ def test_resolve_speaker_markers_rewrite_the_edl_with_the_cut_points_kept(app, t
     text = edl.read_bytes().decode("utf-8")
     assert text.count("|D:1") == 3 == result.markers_added and result.speaker_markers_pending is False
     assert "|M:カット 1 " in text and "|M:山田 " in text
-    assert text.index("|M:話者1 ") < text.index("|M:山田 ") < text.index("|M:カット 1 ")      # 0.0 秒、2.0 秒、3.0 秒の順
+    assert "|M:字幕の先頭 / 話者1 " in text and "|C:ResolveColorGreen" in text
+    assert text.index("|M:字幕の先頭 / 話者1 ") < text.index("|M:山田 ") < text.index("|M:カット 1 ")      # 0.0 秒、2.0 秒、3.0 秒の順
 
 
 def test_resolve_speaker_markers_are_skipped_when_the_subtitles_were_not_saved(app, tmp_path):
@@ -2046,7 +2047,10 @@ def test_saving_an_srt_logs_where_it_goes_on_the_timeline_but_other_formats_do_n
     monkeypatch.setattr(app, "_log", lambda msg, tag="": logged.append(msg))
     ed.save()
     pump(app, 3)
-    assert any("SRT の先頭（0 秒）を、タイムラインの先頭（00:00:00:00）" in m and "00:00:00:00" in m for m in logged)
+    assert any("最初の字幕は、タイムラインの 00:00:00:00（0.0 秒）に出ます" in m for m in logged)
+    n = len(logged)
+    ed.save()                                                      # 同じ内容を、続けて保存しても、案内は 1 回だけ
+    assert len(logged) == n
     logged.clear()
     ed.paths = {"txt": cut_env.out / "talk.txt"}
     ed.editor.set_text(0, "変えた")

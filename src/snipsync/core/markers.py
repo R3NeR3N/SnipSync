@@ -57,15 +57,36 @@ def speaker_turn_markers(cues, ui_lang: str = "ja", names: dict | None = None) -
     return out
 
 
+def subtitle_head_marker(cues, label: str) -> list[tuple[float, str]]:
+    """最初の字幕の開始時刻のマーカー（字幕ファイルを、タイムラインのどこへ置くかの目印）。字幕が無ければ空。"""
+    starts = [c.start for c in cues]
+    return [(min(starts), label)] if starts else []
+
+
+def merge_head_marker(marks, head, color: str | None = None) -> list[tuple]:
+    """marks に、head の目印を足す。同じ時刻に、すでにマーカーがあれば、名前をつなげて 1 つにする
+    （Resolve は、同じフレームに、マーカーを 2 つ置けない）。color を渡すと、足した目印の色にする。"""
+    out = list(marks)
+    for t, name in head:
+        for i, m in enumerate(out):
+            if abs(m[0] - t) < 1e-6:
+                out[i] = (t, f"{name} / {m[1]}", *([color] if color else m[2:]))
+                break
+        else:
+            out.append((t, name, color) if color else (t, name))
+    return sorted(out, key=lambda m: m[0])
+
+
 RESOLVE_CUT_COLOR = "ResolveColorBlue"
 RESOLVE_SPEAKER_COLOR = "ResolveColorYellow"
+RESOLVE_HEAD_COLOR = "ResolveColorGreen"
 
 
-def resolve_marks(cut_marks=(), speaker_marks=()) -> list[tuple[float, str, str]]:
-    """カット点と話者交代のマーカーを、色つきで、時刻順に並べる（Resolve の EDL 用）。"""
+def resolve_marks(cut_marks=(), speaker_marks=(), head_marks=()) -> list[tuple[float, str, str]]:
+    """カット点・話者交代・字幕の先頭のマーカーを、色つきで、時刻順に並べる（Resolve の EDL 用）。"""
     marks = [(t, n, RESOLVE_CUT_COLOR) for t, n in cut_marks] + \
             [(t, n, RESOLVE_SPEAKER_COLOR) for t, n in speaker_marks]
-    return sorted(marks, key=lambda m: m[0])
+    return merge_head_marker(sorted(marks, key=lambda m: m[0]), head_marks, RESOLVE_HEAD_COLOR)
 
 
 def _timecode(frames: int, nominal_fps: int) -> str:
