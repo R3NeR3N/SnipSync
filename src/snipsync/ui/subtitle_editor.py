@@ -27,7 +27,7 @@ from snipsync.core.session import (
 )
 from snipsync.core.speaker_cleanup import count_after, plan_sandwiched, plan_small_speakers
 from snipsync.core.subtitle_edit import CueEditor, format_for_path, render, save
-from snipsync.core.timemap import TimeMap, edited_range_to_source
+from snipsync.core.timemap import TimeMap, edited_range_to_source, srt_placement_lines
 from snipsync.core.transcript import parse_srt
 from snipsync.ui import theme as T
 from snipsync.ui import widgets as W
@@ -980,9 +980,16 @@ class SubtitleEditor(ctk.CTkToplevel):
         self._mark_saved()
         names = ", ".join(written)
         self.flash(self.t("ed_saved", names))
+        self._log_srt_placement(self.editor.cues, written)
         self._write_session()
         if plan or retry:
             self._start_reexport(new_path=None)
+
+    def _log_srt_placement(self, cues, written):
+        """保存した中に .srt があれば、それを、編集ソフトのタイムラインのどこへ置くかを、メイン画面のログに出す。"""
+        if cues and any(str(name).lower().endswith(".srt") for name in written):
+            for line in srt_placement_lines(min(c.start for c in cues), self.timeline.get("tb"), self.t):
+                self.app._log(line, "info")
 
     def _mark_saved(self):
         self.editor.mark_saved()
@@ -1013,6 +1020,7 @@ class SubtitleEditor(ctk.CTkToplevel):
             self._commit_cuts(plan, None)
         self._mark_saved()
         self.flash(self.t("ed_saved", Path(path).name))
+        self._log_srt_placement(self.editor.cues, [Path(path).name])
         self._write_session()
         if plan:
             self._start_reexport(new_path=Path(path))

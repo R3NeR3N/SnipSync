@@ -2038,3 +2038,17 @@ def test_a_reexport_is_refused_while_another_job_runs(app, tmp_path, monkeypatch
     started = app.reexport_timeline(timeline={"source": str(tmp_path)}, settings={}, out_dir=tmp_path, stem="x", cues=[],
                                     names={}, on_done=lambda *a: None)
     assert started is False
+
+
+def test_saving_an_srt_logs_where_it_goes_on_the_timeline_but_other_formats_do_not(app, cut_env, monkeypatch):
+    ed = cut_env.ed
+    logged = []
+    monkeypatch.setattr(app, "_log", lambda msg, tag="": logged.append(msg))
+    ed.save()
+    pump(app, 3)
+    assert any("SRT の先頭（0 秒）を、タイムラインの先頭（00:00:00:00）" in m and "00:00:00:00" in m for m in logged)
+    logged.clear()
+    ed.paths = {"txt": cut_env.out / "talk.txt"}
+    ed.editor.set_text(0, "変えた")
+    ed.save()
+    assert logged == []

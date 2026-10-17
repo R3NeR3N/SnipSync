@@ -62,6 +62,7 @@ from snipsync.core.subtitles import (  # noqa: F401  (format_timestamp re-export
     cuda_libs_ready,
     format_timestamp,
 )
+from snipsync.core.timemap import srt_placement_lines
 from snipsync.core.vad import SAMPLE_RATE, decode_mix
 from snipsync.i18n import I18N
 from snipsync.presets import delete_preset, load_store, save_store, set_last_used, upsert_preset
@@ -1411,6 +1412,8 @@ class SnipSyncApp(_Base):
             if result.pending_paths and not result.stopped:
                 self._review_and_wait(result, inp.stem if stem is None else stem, str(inp), timeline)
             elif result.ok and not result.stopped and result.srt_path and result.cues:
+                for line in srt_placement_lines(min(c.start for c in result.cues), timeline.get("tb"), self.t):
+                    self._log(line, "info")
                 self._save_run_session(result, inp, timeline)          # 確認なしで書いた字幕も、あとで続きを編集できるように
             if result.ok and not result.stopped:
                 finished += 1

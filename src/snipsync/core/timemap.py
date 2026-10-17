@@ -41,6 +41,30 @@ class TimeMap:
         return self.duration
 
 
+def timecode(seconds: float, fps: float | None) -> str:
+    """秒を、タイムラインの目盛りの形（時:分:秒:フレーム）にする。fps が分からなければ、小数の秒（時:分:秒.1）。"""
+    seconds = max(0.0, float(seconds))
+    if not fps or fps <= 0:
+        whole, tenth = divmod(int(round(seconds * 10)), 10)
+        h, rest = divmod(whole, 3600)
+        return f"{h:02d}:{rest // 60:02d}:{rest % 60:02d}.{tenth}"
+    base = max(1, round(fps))
+    h, rest = divmod(int(round(seconds * base)), 3600 * base)
+    m, rest = divmod(rest, 60 * base)
+    return f"{h:02d}:{m:02d}:{rest // base:02d}:{rest % base:02d}"
+
+
+SRT_PLACE_GAP = 3.0        # 最初の字幕が、これ（秒）より後なら、「先頭から字幕までは、声のない区間」の注意も出す
+
+
+def srt_placement_lines(first_start: float, fps: float | None, tr) -> list[str]:
+    """字幕（.srt）を、編集ソフトのタイムラインのどこへ置けばよいかの案内。字幕の時刻は、タイムラインの先頭（0 秒）が基準。"""
+    lines = [tr("log_srt_place", timecode(0.0, fps), timecode(first_start, fps), f"{first_start:.1f}")]
+    if first_start >= SRT_PLACE_GAP:
+        lines.append(tr("log_srt_place_gap"))
+    return lines
+
+
 def edited_range_to_source(tm: TimeMap, start: float, end: float, margin: float = 0.0) -> tuple[float, float]:
     """編集後の区間 [start, end]（前後に margin 秒を足す）を、元の動画の区間（秒）にする。
     間に、すでにカットされた所があれば、それも含む（切った所は、切ったまま）。"""

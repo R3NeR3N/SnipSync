@@ -180,3 +180,22 @@ def test_a_session_written_before_this_feature_still_opens(tmp_path):
     path.write_text(json.dumps({"format": 1, "title": "old", "editor": state}), encoding="utf-8")
     got = sess.read_session(path)
     assert got.timeline == {} and CueEditor.from_state(got.editor).cuts == []
+
+
+# ── .srt の置き場所の案内 ───────────────────────────────────────────────────────────────────
+def test_timecode_uses_the_timeline_frame_rate_or_falls_back_to_seconds():
+    from snipsync.core.timemap import timecode
+    assert timecode(19.7, 60.0) == "00:00:19:42"
+    assert timecode(0.0, 60.0) == "00:00:00:00"
+    assert timecode(3725.5, 30.0) == "01:02:05:15"
+    assert timecode(19.7, 29.97) == "00:00:19:21"                                 # 29.97 は、30 の目盛りで数える
+    assert timecode(19.7, None) == "00:00:19.7"
+    assert timecode(-1.0, 30.0) == "00:00:00:00"
+
+
+def test_the_placement_note_names_the_timeline_start_and_warns_only_about_a_long_gap():
+    from snipsync.core.timemap import srt_placement_lines
+    tr = lambda key, *args: f"{key}:{'|'.join(map(str, args))}"  # noqa: E731
+    gap = srt_placement_lines(19.7, 60.0, tr)
+    assert gap == ["log_srt_place:00:00:00:00|00:00:19:42|19.7", "log_srt_place_gap:"]
+    assert srt_placement_lines(1.2, 60.0, tr) == ["log_srt_place:00:00:00:00|00:00:01:12|1.2"]
