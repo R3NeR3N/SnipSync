@@ -11,6 +11,7 @@ pytest.importorskip("customtkinter")
 
 from snipsync.core.player import sounddevice_available  # noqa: E402
 from snipsync.core.subtitles import Cue  # noqa: E402
+from snipsync.version import APP_VERSION  # noqa: E402
 
 needs_audio = pytest.mark.skipif(not sounddevice_available(),
                                   reason="sounddevice（音の再生）が無い環境では、再生バーは作られない（CI など）")
@@ -960,9 +961,9 @@ def test_clicking_a_cue_time_without_a_ready_preview_says_why(app, monkeypatch):
 
 
 # ── 更新の確認画面 ────────────────────────────────────────────────────────────────────
-def _release(version="0.3.0", sha="a" * 64, url="https://github.com/R3NeR3N/SnipSync/releases/download/v0.3.0/SnipSync.exe"):
+def _release(version="9.9.9", sha="a" * 64, url="https://github.com/R3NeR3N/SnipSync/releases/download/v9.9.9/SnipSync.exe"):
     from snipsync.core.updater import Release
-    return Release(version, f"v{version}", "新機能のお知らせ", "https://github.com/R3NeR3N/SnipSync/releases/tag/v0.3.0",
+    return Release(version, f"v{version}", "新機能のお知らせ", "https://github.com/R3NeR3N/SnipSync/releases/tag/v9.9.9",
                    url, 1_000_000, sha)
 
 
@@ -1011,7 +1012,7 @@ def _texts(dlg):
 
 def test_update_dialog_offers_the_download_page_when_the_app_cannot_replace_itself(app, dialog_env):
     ud = dialog_env.ud
-    found = ud.Findings(release=_release(), latest="0.3.0", model_updates=[_model_update()], models_checked=1)
+    found = ud.Findings(release=_release(), latest="9.9.9", model_updates=[_model_update()], models_checked=1)
     dlg = ud.UpdateDialog(app, found)
     pump(app, 10)
     assert dlg.btn_install is None                                   # ソース実行: 入れ替えは申し出ない
@@ -1022,11 +1023,11 @@ def test_update_dialog_offers_the_download_page_when_the_app_cannot_replace_itse
 def test_skipping_a_version_is_remembered_and_closes_the_dialog(app, dialog_env):
     from snipsync.core import updater
     ud = dialog_env.ud
-    dlg = ud.UpdateDialog(app, ud.Findings(release=_release(), latest="0.3.0"))
+    dlg = ud.UpdateDialog(app, ud.Findings(release=_release(), latest="9.9.9"))
     pump(app, 10)
     dlg._skip_app()
     state = updater.load_state()
-    assert state["skip_version"] == "0.3.0"
+    assert state["skip_version"] == "9.9.9"
     none = ud.models.ModelCheck([], 0, 0)
     assert ud.collect(state, manual=False, fetch=_release, check_models=lambda: none).release is None   # 自動では出さない
     assert ud.collect(state, manual=True, fetch=_release, check_models=lambda: none).release is not None  # 手動では出す
@@ -1052,11 +1053,11 @@ def test_collect_reports_only_newer_releases_and_unskipped_models():
 
 def test_update_dialog_checks_on_open_and_says_when_everything_is_current(app, dialog_env, monkeypatch):
     ud = dialog_env.ud
-    monkeypatch.setattr(ud, "collect", lambda state, manual: ud.Findings(latest="0.2.0", models_checked=2))
+    monkeypatch.setattr(ud, "collect", lambda state, manual: ud.Findings(latest=APP_VERSION, models_checked=2))
     dlg = ud.UpdateDialog(app)
     pump(app, 10)
     texts = _texts(dlg)
-    assert app.t("upd_uptodate", "0.2.0") in texts and app.t("upd_models_latest") in texts
+    assert app.t("upd_uptodate", APP_VERSION) in texts and app.t("upd_models_latest") in texts
     assert not dlg.busy
 
 
@@ -1112,7 +1113,7 @@ def _install_env(app, ud, monkeypatch, tmp_path, *, confirm=True, swap=None):
 def test_installing_downloads_swaps_and_exits_only_after_unsaved_edits_are_settled(app, dialog_env, monkeypatch, tmp_path):
     ud = dialog_env.ud
     events = _install_env(app, ud, monkeypatch, tmp_path)
-    dlg = ud.UpdateDialog(app, ud.Findings(release=_release(), latest="0.3.0"))
+    dlg = ud.UpdateDialog(app, ud.Findings(release=_release(), latest="9.9.9"))
     pump(app, 10)
     assert dlg.btn_install is not None
     dlg._install()
@@ -1123,7 +1124,7 @@ def test_installing_downloads_swaps_and_exits_only_after_unsaved_edits_are_settl
 def test_installing_is_abandoned_when_the_user_keeps_unsaved_subtitles(app, dialog_env, monkeypatch, tmp_path):
     ud = dialog_env.ud
     events = _install_env(app, ud, monkeypatch, tmp_path, confirm=False)
-    dlg = ud.UpdateDialog(app, ud.Findings(release=_release(), latest="0.3.0"))
+    dlg = ud.UpdateDialog(app, ud.Findings(release=_release(), latest="9.9.9"))
     dlg._install()
     pump(app, 10)
     assert events == ["download", "confirm"] and not dlg.busy        # 入れ替えない・終了しない
@@ -1136,7 +1137,7 @@ def test_a_failed_swap_reports_the_reason_and_keeps_the_app_running(app, dialog_
         raise ud.updater.UpdateError("locked")
 
     events = _install_env(app, ud, monkeypatch, tmp_path, swap=swap)
-    dlg = ud.UpdateDialog(app, ud.Findings(release=_release(), latest="0.3.0"))
+    dlg = ud.UpdateDialog(app, ud.Findings(release=_release(), latest="9.9.9"))
     dlg._install()
     pump(app, 10)
     assert "exit" not in events and dlg.status.cget("text") == app.t("upd_failed", "locked")
@@ -1147,9 +1148,9 @@ def test_the_auto_check_stays_quiet_unless_something_is_new(app, monkeypatch):
     opened = []
     monkeypatch.setattr("snipsync.ui.app.UpdateDialog", lambda a, f=None: opened.append(f))
     monkeypatch.setattr(app, "update_win", None)
-    app._auto_checked(ud.Findings(latest="0.2.0"))
+    app._auto_checked(ud.Findings(latest=APP_VERSION))
     assert opened == []
-    news = ud.Findings(release=_release(), latest="0.3.0")
+    news = ud.Findings(release=_release(), latest="9.9.9")
     monkeypatch.setattr(app, "running", True)                        # 処理中は、画面を割り込ませない
     app._auto_checked(news)
     assert opened == []
