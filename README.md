@@ -42,7 +42,7 @@
 
 ## About SnipSync
 
-**SnipSync** is a standalone desktop application for Windows that automates the most tedious parts of video editing. Drop in your footage, and SnipSync will:
+**SnipSync** is a standalone desktop application for Windows that automates the most tedious parts of video editing. **It works on audio files too, not just video.** Drop in your video or audio footage, and SnipSync will:
 
 1. **Detect and remove silent segments** using a configurable audio threshold — powered by `auto-editor`.
 2. **Export a ready-to-import timeline** in the format of your choice (.fcpxml or .xml) — no rendering required.
@@ -51,6 +51,8 @@
 Because the subtitle pipeline runs transcription on the *already-cut* audio (not the raw source), timecodes in the `.srt` file are always in perfect sync with the exported timeline — a problem that plagues most other tools.
 
 **Hand-tune it after the automatic pass.** Select a span on the waveform by dragging or by typing times, and delete it or speed it up. In the review window, deleting a subtitle can also cut that span of video and audio, and rewrites the subtitles and the timeline. Saved edits can be reopened later.
+
+> 🔒 **Your recordings never leave your PC.** Silence cutting, transcription and speaker separation all run locally. Once the AI model is downloaded, you can edit video and audio **with no internet connection**. The only network use is the one-time download of models and GPU components and a once-a-day update check (which you can turn off); your video and audio are never uploaded. The one exception is when you paste text into a chat yourself with the Polish “files to paste” option, which sends that text to the chat service.
 
 No Python installation required. SnipSync ships as a single `.exe` file.
 
@@ -70,6 +72,7 @@ No Python installation required. SnipSync ships as a single `.exe` file.
 | 🌐 **Multilingual UI** | Full Japanese / English interface switchable at runtime |
 | 📁 **Drag & Drop** | Simply drag your video file onto the app window |
 | 📦 **Zero Setup** | Ships as a single `.exe` — no Python, no dependencies to install |
+| 🔒 **Offline & Private** | Recordings are never sent to any online service; once the models are downloaded, no internet connection is needed |
 | 🎙 **Voice-Activity Cut** | Choose volume threshold or speech detection (Silero VAD); optionally speed silence up instead of cutting |
 | 〰 **Waveform Preview** | See exactly what will be cut before you process; zoom the time axis and the wave height separately |
 | ✋ **Manual Cuts & Speed-ups** | Drag a span on the waveform, or type its start and end, then delete it or speed it up. It is laid over the automatic cuts and shows up at once |
