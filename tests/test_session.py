@@ -194,3 +194,18 @@ def test_sandwiched_short_remarks_move_to_the_surrounding_speaker():
 
 def test_speaker_seconds_ignores_cues_without_a_speaker():
     assert speaker_seconds([Cue(0, 4, "a", 0), Cue(4, 5, "b", None), Cue(5, 6, "c", 0)]) == {0: 5.0}
+
+
+@pytest.mark.parametrize("title", [r"..\..\evil", r"C:\x\y", "/etc/x", "a/b", "..", ".", "a\x00b"])
+def test_a_title_that_is_not_a_bare_file_name_is_dropped(tmp_path, title):
+    path = tmp_path / "t.snipsync.json"
+    state = CueEditor([Cue(0.0, 1.0, "a", 0)]).export_state()
+    path.write_text(json.dumps({"format": 1, "title": title, "editor": state}), encoding="utf-8")
+    assert sess.read_session(path).title == ""
+
+
+def test_a_plain_title_is_kept(tmp_path):
+    path = tmp_path / "t.snipsync.json"
+    state = CueEditor([Cue(0.0, 1.0, "a", 0)]).export_state()
+    path.write_text(json.dumps({"format": 1, "title": "2026-09-27 talk", "editor": state}), encoding="utf-8")
+    assert sess.read_session(path).title == "2026-09-27 talk"

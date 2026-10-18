@@ -2056,3 +2056,19 @@ def test_saving_an_srt_logs_where_it_goes_on_the_timeline_but_other_formats_do_n
     ed.editor.set_text(0, "変えた")
     ed.save()
     assert logged == []
+
+
+def test_opening_a_session_pins_the_timeline_output_to_the_session_folder(app, cut_env, tmp_path):
+    import json
+
+    from snipsync.core.subtitle_edit import CueEditor
+    ed = cut_env.ed
+    elsewhere = tmp_path / "elsewhere"
+    session = cut_env.out / "talk.snipsync.json"
+    hostile = {**cut_env.timeline, "path": str(elsewhere / ".." / "evil" / "x_snipsynced.fcpxml")}
+    session.write_text(json.dumps({"format": 1, "title": r"..\..\evil", "source": cut_env.timeline["source"],
+                                   "editor": CueEditor([Cue(0.0, 1.0, "a", 0)]).export_state(), "timeline": hostile}),
+                       encoding="utf-8")
+    ed._open_session(session)
+    assert Path(ed.timeline["path"]).parent == cut_env.out and Path(ed.timeline["path"]).name == "x_snipsynced.fcpxml"
+    assert ed.stem == "talk"                                                         # 名前は、セッションのファイル名から決める

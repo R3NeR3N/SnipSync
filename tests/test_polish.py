@@ -257,3 +257,22 @@ def test_guide_text_carries_no_personal_data_or_transcript_text():
         assert "@" not in text and "\\" not in text and "C:" not in text
         assert all(len(u) < 1500 for u in links.values())
     assert "Ollama" in polish.guide_links("en")["claude"] and polish.guide_links("xx") == polish.guide_links("ja")
+
+
+def test_the_local_llm_request_ignores_system_and_environment_proxies(monkeypatch):
+    import urllib.request
+    seen = {}
+
+    class FakeOpener:
+        def open(self, req, timeout=None):
+            seen["opened"] = True
+            return "response"
+
+    def fake_build_opener(*handlers):
+        seen["handlers"] = handlers
+        return FakeOpener()
+
+    monkeypatch.setattr(urllib.request, "build_opener", fake_build_opener)
+    assert polish._default_open(object(), 1) == "response"
+    proxies = [h for h in seen["handlers"] if isinstance(h, urllib.request.ProxyHandler)]
+    assert len(proxies) == 1 and proxies[0].proxies == {}      # 空の ProxyHandler: プロキシを通さない

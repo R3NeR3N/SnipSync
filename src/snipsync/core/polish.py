@@ -179,7 +179,9 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 def _default_open(req, timeout):
-    return urllib.request.build_opener(_NoRedirect()).open(req, timeout=timeout)  # nosec B310 - 宛先は is_local_endpoint で検査済み
+    # Windows の「システムのプロキシ」や環境変数のプロキシを、通さない（通すと、文章が、プロキシ経由で PC の外へ出る）
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect())
+    return opener.open(req, timeout=timeout)  # nosec B310 - 宛先は is_local_endpoint で検査済み
 
 
 class LocalLLM:

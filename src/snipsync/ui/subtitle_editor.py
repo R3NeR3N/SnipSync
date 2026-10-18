@@ -148,8 +148,8 @@ class SubtitleEditor(ctk.CTkToplevel):
         self.sp_var = tk.BooleanVar(value=bool(getattr(self.app, "speaker_labels", True)))   # 既定は、処理の設定どおり
         self.sp_switch = W.switch(opts, self.t("ed_speaker_names"), self.sp_var, command=self._show_view)
         self.sp_switch.grid(row=0, column=1, sticky="w", padx=(T.S4, 0))
-        self.status = W.caption(foot)
-        self.status.grid(row=0, column=1, sticky="w", padx=T.S4)
+        self.status = W.caption(foot, wraplength=1000)                       # 長い案内（書き直しの結果・失敗の理由）が切れないよう、ボタンの下の段に置く
+        self.status.grid(row=1, column=0, columnspan=6, sticky="w", pady=(T.S2, 0))
         self.btn_open = W.Btn(foot, self.t("ed_open"), self.open_file)
         self.btn_open.grid(row=0, column=2, padx=(0, T.S2))
         self.btn_copy = W.Btn(foot, self.t("ed_copy"), self.copy)
@@ -161,7 +161,7 @@ class SubtitleEditor(ctk.CTkToplevel):
         self.close_note = None
         if self._on_closed is not None:         # 処理が、この画面を閉じるのを待っている
             self.close_note = W.caption(foot, self.t("ed_close_note"), wraplength=900)
-            self.close_note.grid(row=1, column=0, columnspan=6, sticky="w", pady=(T.S2, 0))
+            self.close_note.grid(row=2, column=0, columnspan=6, sticky="w", pady=(T.S2, 0))
 
     def _view_options(self) -> dict:
         return {"edit": self.t("ed_view_edit"), "speakers": self.t("ed_view_speakers"), "txt": ".txt", "md": ".md",
@@ -1086,6 +1086,8 @@ class SubtitleEditor(ctk.CTkToplevel):
         self.paths = paths
         self.source, self.settings = session.source, dict(session.settings)
         self.timeline, self._tm, self._synced_cuts = dict(session.timeline), None, None
+        if self.timeline.get("path"):         # タイムラインの書き直し先は、このセッションと同じフォルダー（ファイル内の別の場所を、信用しない）
+            self.timeline["path"] = str(path.parent / Path(self.timeline["path"]).name)
         self.pending = False
         self._refresh_all()
         problem = self.app.restore_context(session.source, session.settings)

@@ -105,6 +105,18 @@ def _clean_timeline(tl) -> dict:
     return out
 
 
+FORBIDDEN_NAME_CHARS = "/\\:\x00"      # パスの区切り・ドライブ・NUL
+
+
+def _bare_name(value) -> str:
+    """ファイル名として使える、名前だけの文字列にする。パスの区切り・ドライブ・「..」を含むときは、空（呼ぶ側が、ファイル名から決める）。
+    セッションは、人から受け取ることもあるので、書き出し先の名前に、そのまま使わない。"""
+    name = str(value or "")
+    if not name or name in (".", "..") or any(ch in name for ch in FORBIDDEN_NAME_CHARS) or Path(name).name != name:
+        return ""
+    return name
+
+
 def read_session(path) -> Session:
     """path のセッションを読む。形式が合わなければ SessionError。"""
     path = Path(path)
@@ -136,6 +148,6 @@ def read_session(path) -> Session:
         raise SessionError("the pending cuts are malformed")
     settings = data.get("settings")
     return Session(timeline=_clean_timeline(data.get("timeline")),
-        title=str(data.get("title") or ""), source=str(data.get("source") or ""),
+        title=_bare_name(data.get("title")), source=str(data.get("source") or ""),
         settings=pick_settings(settings) if isinstance(settings, dict) else {},
         editor=ed, saved_at=str(data.get("saved_at") or ""))
