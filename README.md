@@ -50,6 +50,8 @@
 
 Because the subtitle pipeline runs transcription on the *already-cut* audio (not the raw source), timecodes in the `.srt` file are always in perfect sync with the exported timeline — a problem that plagues most other tools.
 
+**Hand-tune it after the automatic pass.** Select a span on the waveform by dragging or by typing times, and delete it or speed it up. In the review window, deleting a subtitle can also cut that span of video and audio, and rewrites the subtitles and the timeline. Saved edits can be reopened later.
+
 No Python installation required. SnipSync ships as a single `.exe` file.
 
 **It also works for meeting minutes.** Give it a recording of a meeting (Zoom, Teams, or in person) and it transcribes the audio with the silences taken out, split by speaker, and writes `.txt` or `.md`. Speakers can be given names such as "Yamada" and "Sato", so the result is a ready first draft of the minutes. Audio-only files work too. Transcription and speaker separation still make mistakes, so fix them in the subtitle review window before saving.
@@ -69,11 +71,15 @@ No Python installation required. SnipSync ships as a single `.exe` file.
 | 📁 **Drag & Drop** | Simply drag your video file onto the app window |
 | 📦 **Zero Setup** | Ships as a single `.exe` — no Python, no dependencies to install |
 | 🎙 **Voice-Activity Cut** | Choose volume threshold or speech detection (Silero VAD); optionally speed silence up instead of cutting |
-| 〰 **Waveform Preview** | See exactly what will be cut before you process |
+| 〰 **Waveform Preview** | See exactly what will be cut before you process; zoom the time axis and the wave height separately |
+| ✋ **Manual Cuts & Speed-ups** | Drag a span on the waveform, or type its start and end, then delete it or speed it up. It is laid over the automatic cuts and shows up at once |
+| ✂ **Delete a Subtitle, Cut the Footage** | In the review window, deleting a subtitle can also cut its video and audio; the subtitles and the timeline are rewritten |
+| 🔁 **Resume Editing** | Reopen a saved session (`<name>.snipsync.json`): speaker names, change marks, the source video and manual spans come back |
+| 🧹 **Transcript Polish (LLM)** | Add punctuation and fix obvious mishearings with an LLM on your PC (the text stays on it), or with files to paste into a chat |
 | 🧩 **Batch & Audio Files** | Drop several files or a folder; audio-only inputs and cut-media export supported |
 | 🈶 **Readable Subtitles** | Japanese phrase-aware line breaks (BudouX), glossary hints, optional speaker separation |
 | 📄 **Transcript Export** | Preview and save the whole transcript as `.txt` / `.md` / `.srt` |
-| 📍 **Timeline Markers** | Optional cut-point / speaker-change markers (confirmed in DaVinci Resolve 21; not yet verified in Premiere Pro or Final Cut Pro) |
+| 📍 **Timeline Markers** | Optional cut-point / speaker-change / subtitle-start markers (confirmed in DaVinci Resolve 21; not yet verified in Premiere Pro or Final Cut Pro) |
 
 ### Supported Export Formats
 
@@ -188,7 +194,7 @@ flowchart LR
 | # | Where | What it is |
 |:-:|---|---|
 | ① | Choose files / Clear | You can also drop video or audio files (several, or a whole folder) onto the waveform. **Choose files…** opens a file picker |
-| ② | Waveform | See what will be cut *before* you process. **Red** is removed, **blue** is sped up, grey is kept. Click the waveform to move the playhead there |
+| ② | Waveform | See what will be cut *before* you process. **Red** is removed, **blue** is sped up, grey is kept. Click the waveform to move the playhead there. Drag to select a span for a manual cut or speed-up; the buttons under it zoom |
 | ③ | Playback | Previous cut / Play / Next cut, and playback speed (0.5× to 4×). Listen to the result before processing |
 | ④ | Length and reduction | Length before → after, percent shorter, number of cuts. After changing a setting, press **Preview again** |
 | ⑤ | Setting tabs | **Cut** (method, threshold, padding, silence), **Subtitles** (AI model, speakers, …), **Export** (format, save folder, …) |
@@ -247,12 +253,20 @@ While **Review before saving** is on (the default), processing pauses at the sub
 | ③ | **Preview again** — press it after changing the cut settings to recalculate |
 | ④ | Playback, jumping to the previous or next cut, and playback speed |
 | ⑤ | The bar above the waveform: **red** = removed, **blue** = sped up, grey = kept |
+| ⑥ | Zoom: the **Time** and **Wave size** buttons, **All**, and the scroll bar |
+| ⑦ | Manual cuts: drag a span (or press **Enter times**), then **Cut it** / **Speed up N x** |
 
 **Zooming the waveform:** the **Time** buttons (or the mouse wheel over the waveform) zoom in and out along the time axis, down to half a second; the point under the cursor stays put. While zoomed in, Shift + wheel or the scroll bar moves left and right, and **All** shows everything. **Wave size** (or Ctrl + wheel) makes the waveform taller so quiet sounds are visible. Zooming does not change the cuts.
 
 **Entering a span by numbers:** press **Enter times** (it starts a 5-second span at the play position), or drag a span first, then type **From** and **To** as `90`, `1:30`, `1:30.25` or `0:01:30.250`. Press Enter to confirm; a value that cannot be read, or an end that is not later than the start, goes back to the previous span. The span is clamped to the video length.
 
 **Manual cuts and speed-ups:** drag on the waveform to select a span, then press **Cut it** or **Speed up N x** (N is the Speed value of the Cut tab). The span is laid over the automatic cuts and shows up on the waveform at once, so you can play it to check. **Manual edits: N…** lists them and removes them one by one. A cut is always cut; a speed-up affects only the part that is kept. They apply to the video you have chosen (choosing another clears them), and they go into the timeline, the subtitle times and the editing session when you press Start. A speed-up also speeds up the audio that subtitles are made from, so a very high rate can make the recognised text unreliable.
+
+<p align="center"><img src="docs/images/manual_en.gif" width="760" alt="Manual cuts and speed-ups: select a span, edit its start and end as numbers, delete it (red), speed up another (blue), zoom the time axis and wave height, and open the list of manual edits"></p>
+
+The animation selects a span, edits its start and end as numbers, deletes it (red), speeds up another span (blue), zooms in on time and wave height, and opens the list. **Manual edits: N…** lists the spans you set and removes them one by one.
+
+<p align="center"><img src="docs/images/manual_list_en.png" width="420" alt="The list of manual edits: each span with its kind, start, end and length, removable one by one"></p>
 
 #### 4. (Optional) Read and fix the subtitles — the review window
 
@@ -270,11 +284,24 @@ While **Review before saving** is on (the default), processing pauses at the sub
 | ⑧ | **Save**. **Save as…**, **Copy** and **Open…** are next to it |
 
 - **Speakers tab:** lists each speaker with their speaking time, cue count and share. Speaker separation can split one person into dozens of labels. Select the labels that are the same person and **Merge** them into one; **Listen** plays the speaker's longest cue in the main window so you can tell whose voice it is; **Set name** names a speaker. Two automatic helpers move tiny labels (less than 30 seconds in total, by default) and short remarks between two turns of the same speaker to the nearest speaker in time, after showing you how many speakers remain. **Renumber** orders speakers by speaking time. Every step can be undone.
+
+<p align="center"><img src="docs/images/editor_speakers_en.png" width="640" alt="The Speakers tab: each speaker's speaking time, cue count and share"></p>
+
 - **Click a time** (in the list, or above the text box) to play the main window's preview from that subtitle. It works when the video is chosen in the main window and the cut map is shown.
 - **Delete a subtitle and cut its video and audio at the same time:** turn on **When deleting, also cut the video/audio** under the subtitle, then delete a subtitle. Its span, plus a **margin** on each side (default 0.1 s), is marked for cutting, and the mark also shows on the main window's cut map when the same video is open there. Undo removes the mark. **Save** asks for confirmation, re-times the saved subtitles, and overwrites the timeline in place. **Save as…** writes the subtitles and the timeline (`<name>_snipsynced.<extension>`) under the new name and leaves the original files alone. If rewriting the timeline fails, that is remembered and the next save retries it. It is unavailable while the subtitles are still waiting for the pre-save review, and when the export is the video or audio file itself.
+
+<p align="center"><img src="docs/images/cut_en.gif" width="640" alt="Delete a subtitle and cut its footage: select a subtitle, turn the switch on, delete it, see the span marked on the cut map, then save to rewrite the timeline"></p>
+
+The animation selects a subtitle, turns the switch on, deletes it, shows the red mark on the main window's cut map, and presses **Save** to rewrite the timeline.
+
 - **Where the .srt goes:** every time you save, the log in the main window shows when the first subtitle appears on the timeline (for example `00:00:23:10`). DaVinci Resolve trims the empty time before the first subtitle when it imports an SRT, so put the left edge of the subtitle track (the first subtitle) at that time; if it already sits there after importing, there is nothing to move. When the opening is sped up or cut, the first subtitle is far from 0 s. If timeline markers are on, a green marker named **Subtitles start** is also placed at that time.
 - **Pick up where you left off:** saving also writes `<name>.snipsync.json` next to the output. **Open saved…** (main window) or **Open…** (editor) reads it back after you restart the app: speaker names, the marks for changed rows, the source video and the cut settings come back. An `.srt` alone can be opened too; its `Speaker N:` prefixes are read as speakers, but names, change marks and the video are not kept.
 - **Polish… (LLM):** have an LLM add punctuation and fix obvious mishearings in the tidied transcript. Two ways. **LLM on this PC** talks to an OpenAI-compatible server running on your PC (Ollama, LM Studio, llama.cpp server). Only `127.0.0.1` / `localhost` is accepted, so the text never leaves the PC; prepare the model yourself and enter its name. **Files to paste** writes a `<name>_polish` folder with `00_howto.md` and `01.txt`, `02.txt`… (instructions plus text, split to a length you choose) for pasting into the chat you normally use; that sends the text to that service, so check first. The LLM is told not to summarise or add content, and a returned line is accepted only if its length stays close to the original; otherwise the original line is kept. The result is written as `<name>_polished.txt` / `.md`; the `.srt` and your editing are not touched.
+
+<p align="center"><img src="docs/images/polish_en.png" width="560" alt="The Polish window: choose LLM on this PC or files to paste, then set the endpoint, model and length"></p>
+
+<p align="center"><img src="docs/images/polish_paste_en.png" width="560" alt="The Polish window with Files to paste chosen: the length of each file"></p>
+
 
 <p align="center"><img src="docs/images/editor_en.gif" width="640" alt="Using the review window: select several rows, change their speaker at once, name the speaker, check the .srt preview, and turn off speaker names"></p>
 
@@ -288,22 +315,23 @@ See [Importing into your editor](#importing-into-your-editor) below.
 
 | Setting | What it does |
 |---|---|
-| **Silence Margin** | Extra time kept around speech at each cut (default `0.20 s`) |
-| **Volume Threshold** | Level below which sound counts as silence (default `4.0 %`). Not used by *Voice detection* |
-| **Cut Method** | *Volume threshold*, or *Voice detection (VAD)* — cuts everything that is not a human voice, so it usually copes better with background noise |
+| **Padding around speech** | Extra time kept around speech at each cut (default `0.20 s`) |
+| **Volume threshold** | Level below which sound counts as silence (default `4.0 %`). Not used by *Voice detection* |
+| **Method** | *Volume threshold*, or *Voice detection (VAD)* — cuts everything that is not a human voice, so it usually copes better with background noise |
 | **Silence** | *Cut out* removes silence; *Speed up* keeps it but plays it at the speed you set (default ×8) |
-| **Export Format** | DaVinci Resolve, Premiere Pro, Final Cut Pro, or *Cut media* (a rendered video/audio file) |
+| **Output** | DaVinci Resolve, Premiere Pro, Final Cut Pro, or *Cut media* (a rendered video/audio file) |
 | **Make a dated folder for each run** | On by default. Creates a `date_model` folder (for example `2026-10-04_190357_large-v3`) inside the save folder and writes everything there. Each run gets its own folder, so earlier results are never overwritten. When you process several files at once, they all go into the same folder. If subtitles are off, the name is the date only. A `.fcpxml` stores the location of its audio (`_tracks`) as an absolute path, so do not move the folder after importing. If you did, choose **Yes** in Resolve's dialog and point it at the `_tracks` folder |
-| **Subtitles** | Generate `.srt` with Whisper |
-| **AI Model Size** | `tiny`/`base`/`small` are fast; **`large-v3-turbo` is the recommended accurate model**; `kotoba-whisper` is Japanese-specialised but experimental (its word timing is coarse); `distil-large-v3` is English only |
-| **Use GPU (CUDA)** | Optional. Needs an NVIDIA GPU. The first time, it asks before downloading the components (about 1.4 GB) |
-| **Split subtitles at cut boundaries** | Starts a new subtitle at every cut, so subtitles line up with your clips |
-| **Chars per subtitle line** | Wraps Japanese at natural phrase boundaries (BudouX) and keeps each subtitle to 2 lines. `0` turns it off (default `20`) |
-| **Separate speakers** | Labels who is speaking (`Speaker 1: …`) and starts a new subtitle when the speaker changes. Set **Speakers** (2 to 20) if you know how many people there are: that is the most accurate. On **Auto**, small speaker labels with a similar voice are merged into larger ones, and anything left can be fixed in the review window's Speakers tab |
+| **Make subtitles** | Generate `.srt` with Whisper |
+| **Review before saving** | On by default. After the subtitles are made, processing pauses in the review window; fix them, then save |
+| **AI model** | `tiny`/`base`/`small` are fast; **`large-v3-turbo` is the recommended accurate model**; `kotoba-whisper` is Japanese-specialised but experimental (its word timing is coarse); `distil-large-v3` is English only |
+| **Use the GPU** | Optional. Needs an NVIDIA GPU. The first time, it asks before downloading the components (about 1.4 GB) |
+| **New subtitle at every cut** | Starts a new subtitle at every cut, so subtitles line up with your clips |
+| **Characters per line** | Wraps Japanese at natural phrase boundaries (BudouX) and keeps each subtitle to 2 lines. `0` turns it off (default `20`) |
+| **Label speakers** | Labels who is speaking (`Speaker 1: …`) and starts a new subtitle when the speaker changes. Set **Speakers** (2 to 20) if you know how many people there are: that is the most accurate. On **Auto**, small speaker labels with a similar voice are merged into larger ones, and anything left can be fixed in the review window's Speakers tab |
 | **Add punctuation** | Adds `、` `。` `？` to Japanese transcripts, using a sample sentence for Whisper and the pauses between words. It goes into `.txt` / `.md` and the editor, never into the `.srt` (subtitles carry no commas or full stops) |
 | **Tidy the transcript** | In `.txt` / `.md`, a short remark from another speaker (8 characters or fewer) inside someone's turn is put in brackets in the middle of the sentence, so the sentence is not broken up. Long turns are split into paragraphs at sentence ends. The `.srt` is unchanged. Turn it off in the editor with **Tidy for reading** |
-| **Also write .txt / .md** | Saves the whole transcript (with speakers and timestamps) next to the subtitles |
-| **Add markers** | Adds markers for every cut and every speaker change to the timeline. For Resolve only, they are written to a separate `<name>_markers.edl` file *(experimental — see notes)* |
+| **Also save** (**.txt transcript**, **.md transcript**) | Saves the whole transcript (with speakers and timestamps) next to the subtitles |
+| **Markers (experimental)** | Adds markers for every cut and every speaker change to the timeline. For Resolve only, they are written to a separate `<name>_markers.edl` file *(experimental — see notes)* |
 | **Glossary** | Comma-separated terms (names, product names) that Whisper should prefer |
 | **Preset** | Save and load a whole set of settings. Your last settings are restored on launch |
 
@@ -330,7 +358,7 @@ Menu names can differ slightly between versions.
 
 - **Cut media export at 4K**: the bundled auto-editor (no license key) scales rendered output down to 3200×1800 or less. SnipSync warns you before it starts. **Timeline exports are not affected** — use them for full-resolution work.
 - **Audio-only cut media** is written as `.wav` / `.flac` / `.ogg` / `.opus`. `.mp3`, `.m4a`, `.aac` and `.wma` are written as `.wav` because the bundled auto-editor has no encoder for them.
-- **Markers** are experimental: they are confirmed to import into DaVinci Resolve 21, but not yet verified in Premiere Pro or Final Cut Pro. **DaVinci Resolve does not read markers from `.fcpxml`**, so for Resolve they are written to a separate `<name>_markers.edl` (blue = cut point, yellow = speaker change). In the Media Pool, right-click the **icon of the timeline** you want to mark, choose **Timelines > Import > Timeline Markers from EDL**, then pick that file. Do not use the menu that opens when you right-click an empty area (Timeline > Import > AAF / EDL / XML…): it loads the EDL as a separate timeline of one-frame clips. The EDL's times follow the timeline's start timecode. For Premiere Pro and Final Cut Pro, the markers go inside the timeline file.
+- **Markers** are experimental: they are confirmed to import into DaVinci Resolve 21, but not yet verified in Premiere Pro or Final Cut Pro. **DaVinci Resolve does not read markers from `.fcpxml`**, so for Resolve they are written to a separate `<name>_markers.edl` (blue = cut point, yellow = speaker change, green = start of the subtitles). In the Media Pool, right-click the **icon of the timeline** you want to mark, choose **Timelines > Import > Timeline Markers from EDL**, then pick that file. Do not use the menu that opens when you right-click an empty area (Timeline > Import > AAF / EDL / XML…): it loads the EDL as a separate timeline of one-frame clips. The EDL's times follow the timeline's start timecode. For Premiere Pro and Final Cut Pro, the markers go inside the timeline file.
 - **Cuts differ from SnipSync 0.1.0**: the newer auto-editor also removes cuts and clips that are too short (`--smooth`), so you will see fewer, longer cuts.
 - Subtitles start at the first spoken word, so each subtitle begins a little after the start of its clip. This is expected (the margin is kept silent).
 
