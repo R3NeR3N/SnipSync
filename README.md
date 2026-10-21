@@ -267,8 +267,6 @@ While **Review before saving** is on (the default), processing pauses at the sub
 
 <p align="center"><img src="docs/images/manual_en.gif" width="760" alt="Manual cuts and speed-ups: select a span, edit its start and end as numbers, delete it (red), speed up another (blue), zoom the time axis and wave height, and open the list of manual edits"></p>
 
-The animation loops through these 6 frames. The number at the bottom left of each frame is the step (for example 1 / 6); the first frame is tagged **START** and the last **END**.
-
 1. Drag on the waveform, or type a range, to delete or speed up that part
 2. Once a range is selected, its start and end show as numbers
 3. Edit the numbers to set the range precisely
@@ -304,8 +302,6 @@ The animation loops through these 6 frames. The number at the bottom left of eac
 
 <p align="center"><img src="docs/images/cut_en.gif" width="640" alt="Delete a subtitle and cut its footage: select a subtitle, turn the switch on, delete it, see the span marked on the cut map, then save to rewrite the timeline"></p>
 
-The animation loops through these 6 frames. The number at the bottom left of each frame is the step (for example 1 / 6); the first frame is tagged **START** and the last **END**.
-
 1. Select the subtitle you want to remove
 2. Turn on “When deleting, also cut the video/audio”
 3. Deleting marks that span to be cut
@@ -323,8 +319,6 @@ The animation loops through these 6 frames. The number at the bottom left of eac
 
 
 <p align="center"><img src="docs/images/editor_en.gif" width="640" alt="Using the review window: select several rows, change their speaker at once, name the speaker, check the .srt preview, and turn off speaker names"></p>
-
-The animation loops through these 6 frames. The number at the bottom left of each frame is the step (for example 1 / 6); the first frame is tagged **START** and the last **END**.
 
 1. The subtitle list. Select a row to edit it below
 2. Select several rows with Shift or Ctrl
