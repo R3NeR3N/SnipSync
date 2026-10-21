@@ -84,6 +84,7 @@ class SubtitleEditor(ctk.CTkToplevel):
         self._refresh_all()
         if self.pending and self.paths:
             self.status.configure(text=self.t("ed_dest", ", ".join(p.name for p in self.paths.values())))
+        W.fit_window(self, default=(980, 720), floor=(820, 580), slack_h=220, first=True)
         self.after(50, self.lift)
 
     # ── 構築 ───────────────────────────────────────────────────────────────────────
@@ -1171,4 +1172,5 @@ class SubtitleEditor(ctk.CTkToplevel):
         self._empty_btn.configure(text=self.t("ed_open"))
         sel = self._sel
         self._refresh_all(select=sel)
+        W.fit_window(self, default=(980, 720), floor=(820, 580), slack_h=220)
 

@@ -2073,3 +2073,18 @@ def test_opening_a_session_pins_the_timeline_output_to_the_session_folder(app, c
     ed._open_session(session)
     assert Path(ed.timeline["path"]).parent == cut_env.out and Path(ed.timeline["path"]).name == "x_snipsynced.fcpxml"
     assert ed.stem == "talk"                                                         # 名前は、セッションのファイル名から決める
+
+
+def test_the_minimum_window_sizes_never_cut_the_content_off(app, cut_env):
+    """最小サイズまで縮めても、中身（ボタンや文字）が切れない。言語を変えて、文字の幅が変わっても、同じ。"""
+    for lang in ("ja", "en"):
+        app._on_lang_change(lang)
+        pump(app, 5)
+        for win in (app, cut_env.ed):
+            win.update()
+            scale = win._get_window_scaling()
+            min_w, min_h = win.wm_minsize()
+            sw = win.winfo_screenwidth() / scale
+            assert min_w >= min(win.winfo_reqwidth() / scale, sw - 40) - 1, (lang, type(win).__name__, min_w)
+            assert min_h >= 560
+    app._on_lang_change("ja")

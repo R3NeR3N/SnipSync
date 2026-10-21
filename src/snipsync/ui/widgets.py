@@ -47,6 +47,23 @@ def fmt_time_step(sec: float, step: float) -> str:
 
 # ── text ────────────────────────────────────────────────────────────────────────────
 
+def fit_window(win, default, floor, slack_h=0, first=False):
+    """ウィンドウの大きさを、中身が切れない大きさに合わせる（画面に収まる範囲で）。
+    最小サイズは、中身が要る大きさ（言語を変えると、文字の幅が変わる）。slack_h は、縮めてよい高さ（一覧やログ）。
+    first=True のときだけ、最初の大きさも決める。大きさの単位は、画面の拡大率をかける前（CustomTkinter の geometry と同じ）。"""
+    win.update_idletasks()
+    scale = win._get_window_scaling() if hasattr(win, "_get_window_scaling") else 1.0
+    need_w, need_h = win.winfo_reqwidth() / scale, win.winfo_reqheight() / scale
+    max_w, max_h = max(win.winfo_screenwidth() / scale - 40, 640), max(win.winfo_screenheight() / scale - 90, 560)
+    min_w = int(min(max(need_w, floor[0]), max_w))
+    min_h = int(min(max(need_h - slack_h, floor[1]), max_h))
+    win.minsize(min_w, min_h)
+    if first:
+        win.geometry(f"{int(min(max(need_w, default[0]), max_w))}x{int(min(max(need_h, default[1]), max_h))}")
+    elif win.winfo_width() / scale < min_w - 1 or win.winfo_height() / scale < min_h - 1:
+        win.geometry(f"{max(min_w, int(win.winfo_width() / scale))}x{max(min_h, int(win.winfo_height() / scale))}")
+
+
 def label(parent, text="", role="body", color=T.CHALK, **kw):
     return ctk.CTkLabel(parent, text=text, font=T.font(ctk, role), text_color=color, **kw)
 

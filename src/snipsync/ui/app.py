@@ -787,6 +787,13 @@ class SnipSyncApp(_Base):
         self.cutmap.redraw()
         for win in self._open_editors():
             win.relabel()
+        self._fit_window()
+
+    def _fit_window(self):
+        """中身が切れない大きさにする（画面に収まる範囲で）。最初の 1 回は、最初の大きさも決める。"""
+        first = not getattr(self, "_fitted", False)
+        self._fitted = True
+        W.fit_window(self, default=(1020, 990), floor=(940, 860), slack_h=80, first=first)
 
     # ── 設定の収集・反映 ──────────────────────────────────────────────────────────────
     def line_chars(self) -> int:
