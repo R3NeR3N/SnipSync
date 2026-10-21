@@ -64,25 +64,25 @@ No Python installation required. SnipSync ships as a single `.exe` file.
 
 | Feature | Details |
 |---|---|
-| 🔇 **Auto Silent Cut** | Automatically detects and removes silent portions from any video |
+| 🔇 **Auto Silent Cut** | Automatically detects and removes silent portions from any video or audio file |
+| 🎙 **Voice-Activity Cut** | Choose volume threshold or speech detection (Silero VAD); optionally speed silence up instead of cutting |
 | 🎬 **NLE Timeline Export** | Exports cut-ready timelines for DaVinci Resolve, Final Cut Pro, and Premiere Pro |
 | 📝 **AI Subtitle Generation** | Generates `.srt` files with `faster-whisper` — no timecode drift |
-| ⚙️ **Fine-grained Controls** | Adjustable volume threshold (%) and silence margin (seconds) |
-| 🤖 **AI Model Choice** | Pick `tiny` / `base` / `small` / `medium` / `large-v3-turbo` / `large-v3` for the speed and accuracy you need. Also available: `kotoba-whisper` (Japanese-specialised, experimental) and `distil-large-v3` (English only) |
-| 🌐 **Multilingual UI** | Full Japanese / English interface switchable at runtime |
-| 📁 **Drag & Drop** | Simply drag your video file onto the app window |
-| 📦 **Zero Setup** | Ships as a single `.exe` — no Python, no dependencies to install |
+| 📁 **Drag & Drop** | Simply drag your video or audio files (several at once, or a whole folder) onto the app window |
+| 🧩 **Batch & Audio Files** | Drop several files or a folder; audio-only inputs and cut-media export supported |
 | 🔒 **Offline & Private** | Recordings are never sent to any online service; once the models are downloaded, no internet connection is needed |
-| 🎙 **Voice-Activity Cut** | Choose volume threshold or speech detection (Silero VAD); optionally speed silence up instead of cutting |
 | 〰 **Waveform Preview** | See exactly what will be cut before you process; zoom the time axis and the wave height separately |
 | ✋ **Manual Cuts & Speed-ups** | Drag a span on the waveform, or type its start and end, then delete it or speed it up. It is laid over the automatic cuts and shows up at once |
-| ✂ **Delete a Subtitle, Cut the Footage** | In the review window, deleting a subtitle can also cut its video and audio; the subtitles and the timeline are rewritten |
-| 🔁 **Resume Editing** | Reopen a saved session (`<name>.snipsync.json`): speaker names, change marks, the source video and manual spans come back |
-| 🧹 **Transcript Polish (LLM)** | Add punctuation and fix obvious mishearings with an LLM on your PC (the text stays on it), or with files to paste into a chat |
-| 🧩 **Batch & Audio Files** | Drop several files or a folder; audio-only inputs and cut-media export supported |
 | 🈶 **Readable Subtitles** | Japanese phrase-aware line breaks (BudouX), glossary hints, optional speaker separation |
+| ✂ **Delete a Subtitle, Cut the Footage** | In the review window, deleting a subtitle can also cut its video and audio; the subtitles and the timeline are rewritten |
 | 📄 **Transcript Export** | Preview and save the whole transcript as `.txt` / `.md` / `.srt` |
+| 🧹 **Transcript Polish (LLM)** | Add punctuation and fix obvious mishearings with an LLM on your PC (the text stays on it), or with files to paste into a chat |
+| 🔁 **Resume Editing** | Reopen a saved session (`<name>.snipsync.json`): speaker names, change marks, the source video and manual spans come back |
 | 📍 **Timeline Markers** | Optional cut-point / speaker-change / subtitle-start markers (confirmed in DaVinci Resolve 21; not yet verified in Premiere Pro or Final Cut Pro) |
+| 🤖 **AI Model Choice** | Pick `tiny` / `base` / `small` / `medium` / `large-v3-turbo` / `large-v3` for the speed and accuracy you need. Also available: `kotoba-whisper` (Japanese-specialised, experimental) and `distil-large-v3` (English only) |
+| ⚙️ **Fine-grained Controls** | Adjustable volume threshold (%) and silence margin (seconds) |
+| 🌐 **Multilingual UI** | Full Japanese / English interface switchable at runtime |
+| 📦 **Zero Setup** | Ships as a single `.exe` — no Python, no dependencies to install |
 
 ### Supported Export Formats
 
@@ -267,7 +267,16 @@ While **Review before saving** is on (the default), processing pauses at the sub
 
 <p align="center"><img src="docs/images/manual_en.gif" width="760" alt="Manual cuts and speed-ups: select a span, edit its start and end as numbers, delete it (red), speed up another (blue), zoom the time axis and wave height, and open the list of manual edits"></p>
 
-The animation selects a span, edits its start and end as numbers, deletes it (red), speeds up another span (blue), zooms in on time and wave height, and opens the list. **Manual edits: N…** lists the spans you set and removes them one by one.
+The animation loops through these 6 frames. The number at the bottom left of each frame is the step (for example 1 / 6); the first frame is tagged **START** and the last **END**.
+
+1. Drag on the waveform, or type a range, to delete or speed up that part
+2. Once a range is selected, its start and end show as numbers
+3. Edit the numbers to set the range precisely
+4. Deleted ranges turn red
+5. Sped-up ranges turn blue
+6. Zoom the time axis and the wave height separately
+
+**Manual edits: N…** lists the spans you set and removes them one by one.
 
 <p align="center"><img src="docs/images/manual_list_en.png" width="420" alt="The list of manual edits: each span with its kind, start, end and length, removable one by one"></p>
 
@@ -295,7 +304,14 @@ The animation selects a span, edits its start and end as numbers, deletes it (re
 
 <p align="center"><img src="docs/images/cut_en.gif" width="640" alt="Delete a subtitle and cut its footage: select a subtitle, turn the switch on, delete it, see the span marked on the cut map, then save to rewrite the timeline"></p>
 
-The animation selects a subtitle, turns the switch on, deletes it, shows the red mark on the main window's cut map, and presses **Save** to rewrite the timeline.
+The animation loops through these 6 frames. The number at the bottom left of each frame is the step (for example 1 / 6); the first frame is tagged **START** and the last **END**.
+
+1. Select the subtitle you want to remove
+2. Turn on “When deleting, also cut the video/audio”
+3. Deleting marks that span to be cut
+4. The cut map in the main window shows it in red
+5. Save asks for confirmation, then rewrites the subtitles and the timeline
+6. The timeline has been rewritten
 
 - **Where the .srt goes:** every time you save, the log in the main window shows when the first subtitle appears on the timeline (for example `00:00:23:10`). DaVinci Resolve trims the empty time before the first subtitle when it imports an SRT, so put the left edge of the subtitle track (the first subtitle) at that time; if it already sits there after importing, there is nothing to move. When the opening is sped up or cut, the first subtitle is far from 0 s. If timeline markers are on, a green marker named **Subtitles start** is also placed at that time.
 - **Pick up where you left off:** saving also writes `<name>.snipsync.json` next to the output. **Open saved…** (main window) or **Open…** (editor) reads it back after you restart the app: speaker names, the marks for changed rows, the source video and the cut settings come back. An `.srt` alone can be opened too; its `Speaker N:` prefixes are read as speakers, but names, change marks and the video are not kept.
@@ -308,7 +324,14 @@ The animation selects a subtitle, turns the switch on, deletes it, shows the red
 
 <p align="center"><img src="docs/images/editor_en.gif" width="640" alt="Using the review window: select several rows, change their speaker at once, name the speaker, check the .srt preview, and turn off speaker names"></p>
 
-The animation selects several rows, changes their speaker at once, names the speaker, checks the `.srt` preview, and turns **Show speaker names** off.
+The animation loops through these 6 frames. The number at the bottom left of each frame is the step (for example 1 / 6); the first frame is tagged **START** and the last **END**.
+
+1. The subtitle list. Select a row to edit it below
+2. Select several rows with Shift or Ctrl
+3. Change the speaker of all selected rows at once
+4. Give a speaker a name
+5. The .srt preview, with the speaker name
+6. Turn off “Show speaker names” to write without names
 
 #### 5. Import the results into your editor
 
